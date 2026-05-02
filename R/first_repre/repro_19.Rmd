@@ -1,0 +1,598 @@
+---
+title: "reproduce_18"
+author: "Alexander Unger"
+date: "2026-04-18"
+output: html_document
+---
+
+
+# 1. Setup
+
+## Packages and seed
+
+```{r, message = FALSE, warning=FALSE}
+if (!require("OutcomeWeights")) install.packages("OutcomeWeights", dependencies = TRUE); library(OutcomeWeights)
+if (!require("hdm"))            install.packages("hdm", dependencies = TRUE);            library(hdm)
+if (!require("grf"))            install.packages("grf", dependencies = TRUE);            library(grf)
+if (!require("cobalt"))         install.packages("cobalt", dependencies = TRUE);         library(cobalt)
+if (!require("tidyverse"))      install.packages("tidyverse", dependencies = TRUE);      library(tidyverse)
+if (!require("viridis"))        install.packages("viridis", dependencies = TRUE);        library(viridis)
+if (!require("gridExtra"))      install.packages("gridExtra", dependencies = TRUE);      library(gridExtra)
+
+set.seed(1234)
+```
+
+## Load 401(k) data
+
+```{r}
+data(pension)
+
+D = pension$p401      # Treatment:   401(k) participation (binary)
+Z = pension$e401      # Instrument:  401(k) eligibility   (binary)
+Y = pension$net_tfa   # Outcome:     net total financial assets (continuous, in $)
+
+X = model.matrix(~ 0 + age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+                 data = pension)
+var_nm = c("Age","Benefit pension","Education","Family size","Home owner",
+           "Income","Male","Married","IRA","Two earners")
+colnames(X) = var_nm
+
+N = length(Y)
+cat("N =", N, "\n")
+cat("Share treated D=1:", round(mean(D), 3), "\n")
+cat("Share eligible Z=1:", round(mean(Z), 3), "\n")
+cat("Share D=1 among Z=1:", round(mean(D[Z==1]), 3), "  →  no always-takers? (one-sided?)\n")
+cat("Share D=1 among Z=0:", round(mean(D[Z==0]), 3), "\n")
+```
+
+
+
+---
+
+# 2. DML Estimators (Knaus approach)
+
+## 2a. Run Double ML with 2-fold cross-fitting
+
+```{r}
+dml_2f         = dml_with_smoother(Y, D, X, Z, n_cf_folds = 2)
+results_dml_2f = summary(dml_2f)
+plot(dml_2f)
+```
+
+
+
+## 2b. Extract outcome weights and verify ω'Y = θ̂
+
+```{r}
+omega_dml_2f = get_outcome_weights(dml_2f)
+
+cat("ω'Y replicates point estimates?\n")
+all.equal(as.numeric(omega_dml_2f$omega %*% Y),
+          as.numeric(results_dml_2f[, 1]))
+
+# The four DML estimators stored as rows in the omega matrix:
+# Row 1: PLR       — Partially Linear Regression (no instrument)
+# Row 2: PLR-IV    — Partially Linear IV (uses Z as instrument)
+# Row 3: AIPW      — Augmented IPW (no instrument)
+# Row 4: Wald-AIPW — Wald estimator with AIPW correction (IV, doubly robust)
+
+w_plr      = omega_dml_2f$omega[1, ]
+w_plriv    = omega_dml_2f$omega[2, ]
+w_aipw     = omega_dml_2f$omega[3, ]
+w_waldaipw = omega_dml_2f$omega[4, ]
+
+theta_plriv    = sum(w_plriv * Y)
+theta_waldaipw = sum(w_waldaipw * Y)
+
+cat("\nDML point estimates (LATE candidates):\n")
+cat("PLR-IV:    ", round(theta_plriv, 2), "\n")
+cat("Wald-AIPW: ", round(theta_waldaipw, 2), "\n")
+```
+
+
+
+## 2c. Run Double ML with 5-fold cross-fitting
+
+```{r}
+dml_5f = dml_with_smoother(Y,D,X,Z,
+                           n_cf_folds = 5)
+results_dml_5f = summary(dml_5f)
+plot(dml_5f)
+
+```
+
+---
+
+# 3. Kappa Estimators (Słoczynski, Uysal & Wooldridge 2024)
+
+## Background: What is Abadie's κ?
+
+where the kappa weight for observation i is:
+
+  κᵢ = 1  −  Dᵢ(1−Zᵢ)/(1−p(Xᵢ))  −  (1−Dᵢ)Zᵢ/p(Xᵢ)
+
+with p(X) = P(Z=1|X) = instrument propensity score.
+
+## 3a. Step 1 — Estimate instrument propensity score p̂(X)
+
+```{r}
+# Maximum likelihood logit — same as Słoczynski et al. "τ̂^ml" variants
+ps_fit = glm(
+  Z ~ age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+  data = pension,
+  family = binomial(link = "logit")
+)
+p_hat = predict(ps_fit, type = "response")
+
+# Basic diagnostics
+summary(p_hat)
+hist(p_hat, main = "Instrument propensity score p̂(X) = P(Z=1|X)",
+     xlab = "p̂(X)", col = "steelblue", breaks = 40)
+```
+
+
+
+## 3b. Step 2 — Compute κ, κ₁, κ₀
+```{r}
+# κ
+kappa = 1 - D*(1-Z)/(1-p_hat) - (1-D)*Z/p_hat
+
+# κ1
+kappa1 = D * (Z - p_hat) / (p_hat * (1 - p_hat))
+
+# κ0
+kappa0 = (1-D) * ((1-Z) - (1-p_hat)) / (p_hat * (1 - p_hat))
+
+# correct identity
+cat("κ = p̂·κ₁ + (1-p̂)·κ₀ ? Max diff:",
+    max(abs(kappa - (p_hat*kappa1 + (1-p_hat)*kappa0))), "\n")
+
+cat("mean(κ)  =", round(mean(kappa),  4), "\n")
+cat("mean(κ₁) =", round(mean(kappa1), 4), "\n")
+cat("mean(κ₀) =", round(mean(kappa0), 4), "\n")
+
+
+# sanity check that should hold (they shoudl be more or less identical)
+cat(mean(kappa), mean(kappa1), mean(kappa0))
+```
+
+
+
+
+## 3c. Step 3 — Build all five estimators from Słoczynski et al.
+
+The paper studies five estimators. Here is each one with its formula:
+
+
+```{r}
+# Kappa estimators
+tau_a =
+  (sum(kappa1 * Y) / sum(kappa)) -
+  (sum(kappa0 * Y) / sum(kappa))
+
+tau_a1 =
+  (sum(kappa1 * Y) / sum(kappa1)) -
+  (sum(kappa0 * Y) / sum(kappa1))
+
+tau_a0 =
+  (sum(kappa1 * Y) / sum(kappa0)) -
+  (sum(kappa0 * Y) / sum(kappa0))
+
+# tau_a0 = mean(Y * (Z - p_hat) / (p_hat * (1-p_hat))) / mean(kappa0) gleiches ergebnis
+
+
+tau_a10 =
+  (sum(kappa1 * Y) / sum(kappa1)) -
+  (sum(kappa0 * Y) / sum(kappa0))
+
+
+# Numerator: IPW-weighted reduced form (effect of Z on Y)
+num_z1 = sum(Z * Y / p_hat)     / sum(Z / p_hat)      # E[Y|Z=1] reweighted
+num_z0 = sum((1-Z) * Y / (1-p_hat)) / sum((1-Z) / (1-p_hat))  # E[Y|Z=0] reweighted
+
+# Denominator: IPW-weighted first stage (effect of Z on D)
+den_z1 = sum(Z * D / p_hat)     / sum(Z / p_hat)      # E[D|Z=1] reweighted  
+den_z0 = sum((1-Z) * D / (1-p_hat)) / sum((1-Z) / (1-p_hat))  # E[D|Z=0] reweighted
+
+tau_u = (num_z1 - num_z0) / (den_z1 - den_z0)
+
+
+w_kappa_a  <-  kappa1 / sum(kappa)  - kappa0 / sum(kappa)
+w_kappa_a1 <-  kappa1 / sum(kappa1) - kappa0 / sum(kappa1)
+w_kappa_a0 <-  kappa1 / sum(kappa0) - kappa0 / sum(kappa0)
+w_kappa_a10 <- kappa1 / sum(kappa1) - kappa0 / sum(kappa0)
+
+den = den_z1 - den_z0
+
+w_kappa_u =
+ (Z / p_hat) / sum(Z / p_hat) / den -
+ ((1-Z) / (1-p_hat)) / sum((1-Z) / (1-p_hat)) / den
+
+
+# sind die Gewichtsfaktoren konsistent mit den Schätzer : t = w*Y
+all.equal(sum(w_kappa_a   * Y), tau_a)
+all.equal(sum(w_kappa_a1  * Y), tau_a1)
+all.equal(sum(w_kappa_a0  * Y), tau_a0)
+all.equal(sum(w_kappa_a10 * Y), tau_a10)
+all.equal(sum(w_kappa_u * Y), tau_u)
+
+
+
+# Summary of all estimates
+
+cat("\n========== LATE Estimates ==========\n")
+cat("--- Kappa estimators (Słoczynski et al. 2024) ---\n")
+cat("τ̂_a    (unnormalized, Abadie 2003):         ", round(tau_a,   2), "\n")
+cat("τ̂_{a,1} (unnormalized, Tan/Frölich):         ", round(tau_a1,  2), "\n")
+cat("τ̂_{a,0} (unnormalized, κ₀ denom):            ", round(tau_a0,  2), "\n")
+cat("τ̂_{a,10} (normalized, Abadie & Cattaneo):    ", round(tau_a10, 2), "\n")
+cat("τ̂_u    (normalized, Uysal 2011, RECOMMENDED):", round(tau_u,   2), "\n")
+cat("\n--- DML estimators (Knaus 2024) ---\n")
+cat("PLR-IV (2-fold):                             ", round(theta_plriv, 2), "\n")
+cat("Wald-AIPW (2-fold):                          ", round(theta_waldaipw, 2), "\n")
+
+
+```
+## First Conclusion:
+Der logit schätzt für Z=1 Leute einen mittleren p̂ von 0.4, also nur 46% Wahrscheinlichkeit eligible zu sein, obwohl sie es sind (Z=1). Das ist eine schlechte Schätzung. Dadurch gewichtet das IPW-Reweighting die Y-Werte der Z=1 Gruppe stark runter  und die Z=0 Gruppe stark rauf. 
+
+```{r}
+# sanity check 
+if (!require("AER")) install.packages("AER", dependencies = TRUE)
+library(AER)
+
+w_u = Z / p_hat + (1 - Z) / (1 - p_hat)
+
+iv_u_fit = AER::ivreg(Y ~ D | Z, weights = w_u)
+coef(iv_u_fit)["D"]
+```
+
+---
+
+# 4. Translation Invariance Check
+
+This is the key diagnostic from Słoczynski et al.: unnormalized estimators are sensitive 
+to adding a constant to Y (= changing units/centering), normalized ones are not.
+
+```{r}
+# Add a large constant to Y and recompute all estimators
+# Under correct identification, ALL should give the same θ̂
+# (because τ = E[Y1-Y0|complier] is invariant to shifting Y by a constant c)
+
+c_shift = 10000  # shift Y by $10,000
+
+Y_shifted = Y + c_shift
+
+# Recompute kappa-weighted outcomes with shifted Y
+tau_a_shifted =
+  (sum(kappa1 * Y_shifted) / sum(kappa)) -
+  (sum(kappa0 * Y_shifted) / sum(kappa))
+
+tau_a1_shifted =
+  (sum(kappa1 * Y_shifted) / sum(kappa1)) -
+  (sum(kappa0 * Y_shifted) / sum(kappa1))
+
+tau_a0_shifted =
+  (sum(kappa1 * Y_shifted) / sum(kappa0)) -
+  (sum(kappa0 * Y_shifted) / sum(kappa0))
+
+tau_a10_shifted =
+  (sum(kappa1 * Y_shifted) / sum(kappa1)) -
+  (sum(kappa0 * Y_shifted) / sum(kappa0))
+
+num_z1_s = sum(Z*(Y_shifted)/p_hat)/sum(Z/p_hat)
+num_z0_s = sum((1-Z)*(Y_shifted)/(1-p_hat))/sum((1-Z)/(1-p_hat))
+tau_u_shifted = (num_z1_s - num_z0_s) / (den_z1 - den_z0)
+
+cat("====== Translation Invariance Test: Y → Y + 10,000 ======\n")
+cat("Estimator       | Original  | Shifted   | Difference\n")
+cat(sprintf("τ̂_a (unnorm.)  | %9.2f | %9.2f | %9.2f  ← NOT invariant!\n",
+            tau_a, tau_a_shifted, tau_a_shifted - tau_a))
+cat(sprintf("τ̂_{a,1}        | %9.2f | %9.2f | %9.2f  ← NOT invariant!\n",
+            tau_a1, tau_a1_shifted, tau_a1_shifted - tau_a1))
+cat(sprintf("τ̂_{a,0}        | %9.2f | %9.2f | %9.2f  ← NOT invariant!\n",
+            tau_a0, tau_a0_shifted, tau_a0_shifted - tau_a0))
+cat(sprintf("τ̂_{a,10}       | %9.2f | %9.2f | %9.2f  ← invariant ✓\n",
+            tau_a10, tau_a10_shifted, tau_a10_shifted - tau_a10))
+cat(sprintf("τ̂_u (Uysal)   | %9.2f | %9.2f | %9.2f  ← invariant ✓\n",
+            tau_u, tau_u_shifted, tau_u_shifted - tau_u))
+```
+
+
+---
+
+# 5. Weight Comparison: Kappa vs DML
+
+## 5a. Distribution of weights
+
+```{r, fig.width=12, fig.height=8}
+# We compare the outcome weights of all estimators side by side
+
+weight_list = list(
+  "PLR-IV (DML)"     = w_plriv,
+  "Wald-AIPW (DML)"  = w_waldaipw,
+  "κ_a (unnorm.)"    = w_kappa_a,
+  "κ_{a,10} (norm.)" = w_kappa_a10,
+  "κ_u (Uysal, rec.)"= w_kappa_u
+)
+
+par(mfrow = c(2, 3))
+for (nm in names(weight_list)) {
+  w = weight_list[[nm]]
+  hist(w, main = nm, xlab = "weight", col = "steelblue", breaks = 60,
+       xlim = c(quantile(w, 0.005), quantile(w, 0.995)))
+  abline(v = 0, col = "red", lty = 2)
+}
+par(mfrow = c(1,1))
+
+
+weight_summary = purrr::imap_dfr(weight_list, ~tibble::tibble(
+  estimator = .y,
+  min = min(.x),
+  p01 = quantile(.x, 0.01),
+  p05 = quantile(.x, 0.05),
+  median = median(.x),
+  mean = mean(.x),
+  p95 = quantile(.x, 0.95),
+  p99 = quantile(.x, 0.99),
+  max = max(.x),
+  sum = sum(.x),
+  sum_abs = sum(abs(.x)),
+  n_negative = sum(.x < 0)
+))
+```
+
+
+
+```{r}
+weight_diagnostics = function(w, name) {
+  data.frame(
+    Estimator       = name,
+    Mean            = round(mean(w), 6),
+    Sum             = round(sum(w), 4),
+    SD              = round(sd(w), 6),
+    Min             = round(min(w), 6),
+    Max             = round(max(w), 6),
+    Pct_negative    = round(mean(w < 0) * 100, 2),
+    Sum_abs         = round(sum(abs(w)), 3)
+  )
+}
+
+diag_table = rbind(
+  weight_diagnostics(w_plriv,      "PLR-IV (DML)"),
+  weight_diagnostics(w_waldaipw,   "Wald-AIPW (DML)"),
+  weight_diagnostics(w_kappa_a,    "κ_a (unnormalized)"),
+  weight_diagnostics(w_kappa_a10,  "κ_{a,10} (normalized)"),
+  weight_diagnostics(w_kappa_u,    "κ_u (Uysal, recommended)")
+)
+
+print(diag_table, row.names = FALSE)
+```
+
+
+
+
+
+
+# 6. Check: Covariate Balancing Propensity Score (CBPS)
+
+Słoczynski et al. also consider covariate balancing propensity scores (CBPS) 
+as an alternative to MLE logit. This often further improves balance.
+
+```{r}
+# Optional: install CBPS package for covariate balancing propensity scores
+# This implements the "τ̂_u^cb" estimator — the strongest version in the paper
+
+if (!require("CBPS")) {
+  install.packages("CBPS", dependencies = TRUE)
+}
+
+if (require("CBPS")) {
+  
+  # Fit CBPS
+  cbps_fit = CBPS::CBPS(
+  Z ~ age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+  data = pension,
+  ATT = 0,
+  method = "exact",
+  standardize = FALSE
+)
+  p_hat_cb = fitted(cbps_fit)
+  
+  cat("CBPS propensity score summary:\n")
+  print(summary(p_hat_cb))
+  
+  # Recompute κ₁ and the Uysal estimator with CBPS propensity scores
+  kappa1_cb = D * (Z/p_hat_cb - (1-Z)/(1-p_hat_cb))
+  kappa0_cb = (1-D) * ((1-Z)/(1-p_hat_cb) - Z/p_hat_cb)
+  
+  num_z1_cb = sum(Z*Y/p_hat_cb)/sum(Z/p_hat_cb)
+  num_z0_cb = sum((1-Z)*Y/(1-p_hat_cb))/sum((1-Z)/(1-p_hat_cb))
+  den_z1_cb = sum(Z*D/p_hat_cb)/sum(Z/p_hat_cb)
+  den_z0_cb = sum((1-Z)*D/(1-p_hat_cb))/sum((1-Z)/(1-p_hat_cb))
+  
+  tau_u_cb = (num_z1_cb - num_z0_cb) / (den_z1_cb - den_z0_cb)
+  
+  cat("\nτ̂_u with MLE propensity score:", round(tau_u, 2), "\n")
+  cat("τ̂_u with CBPS propensity score:", round(tau_u_cb, 2), "\n")
+  
+} else {
+  cat("CBPS package not available. Skip this section.\n")
+}
+hist(p_hat_cb, main = "Instrument propensity score p̂(X) estimated with CBPS ",
+     xlab = "p̂(X)", col = "steelblue", breaks = 40)
+```
+
+
+
+```{r}
+kappa_cb  = 1 - D*(1-Z)/(1-p_hat_cb) - (1-D)*Z/p_hat_cb
+kappa1_cb = D * (Z/p_hat_cb - (1-Z)/(1-p_hat_cb))
+kappa0_cb = (1-D) * ((1-Z)/(1-p_hat_cb) - Z/p_hat_cb)
+
+tau_a1_cb =
+  (sum(kappa1_cb * Y) / sum(kappa1_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa1_cb))
+
+tau_a0_cb =
+  (sum(kappa1_cb * Y) / sum(kappa0_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa0_cb))
+
+tau_a10_cb =
+  (sum(kappa1_cb * Y) / sum(kappa1_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa0_cb))
+
+
+c(
+  tau_u_cb   = tau_u_cb,
+  tau_a1_cb  = tau_a1_cb,
+  tau_a0_cb  = tau_a0_cb,
+  tau_a10_cb = tau_a10_cb
+)
+
+
+cat("tau_u^ml   =", round(tau_u, 2), "\n")
+cat("tau_u^cb   =", round(tau_u_cb, 2), "\n")
+cat("tau_a1^cb  =", round(tau_a1_cb, 2), "\n")
+cat("tau_a0^cb  =", round(tau_a0_cb, 2), "\n")
+cat("tau_a10^cb =", round(tau_a10_cb, 2), "\n")
+cat("mean(kappa1_cb) =", round(mean(kappa1_cb), 6), "\n")
+cat("mean(kappa0_cb) =", round(mean(kappa0_cb), 6), "\n")
+
+
+
+
+
+```
+
+
+
+# 6b CBPS via Newton-Raphson (Imai & Ratkovic 2014)
+```{r}
+# ============================================================
+# CBPS via Newton-Raphson (Imai & Ratkovic 2014)
+# Löst die Momentbedingung: E[Z/p(X) * X] = E[(1-Z)/(1-p(X)) * X]
+# Ersatz für das CBPS-Paket mit ATT=0
+# ============================================================
+cbps_iv <- function(Z, X_mat, tol = 1e-8, max_iter = 1000) {
+  
+  sigmoid <- function(x) 1 / (1 + exp(-x))
+  
+  # Momentbedingung: soll = 0 sein
+  moment_fn <- function(b) {
+    p <- pmin(pmax(sigmoid(X_mat %*% b), 1e-10), 1 - 1e-10)
+    colMeans(as.vector(Z / p - (1 - Z) / (1 - p)) * X_mat)
+  }
+  
+  # Jacobian der Momentbedingung
+  jac_fn <- function(b) {
+    p <- pmin(pmax(sigmoid(X_mat %*% b), 1e-10), 1 - 1e-10)
+    w <- as.vector(-Z * (1 - p) / p - (1 - Z) * p / (1 - p))
+    t(w * X_mat) %*% X_mat / length(Z)
+  }
+  
+  # Warmstart: MLE-Logit
+  b <- coef(glm(Z ~ X_mat - 1, family = binomial(link = "logit")))
+  
+  for (i in seq_len(max_iter)) {
+    m <- moment_fn(b)
+    if (max(abs(m)) < tol) break
+    
+    step <- tryCatch(solve(jac_fn(b), -m), error = function(e) NULL)
+    if (is.null(step)) break
+    
+    # Backtracking line search
+    alpha <- 1.0
+    for (j in seq_len(30)) {
+      if (max(abs(moment_fn(b + alpha * step))) < max(abs(m))) break
+      alpha <- alpha * 0.5
+    }
+    b <- b + alpha * step
+  }
+  
+  p <- pmin(pmax(sigmoid(X_mat %*% b), 1e-10), 1 - 1e-10)
+  list(
+    p_hat     = as.vector(p),
+    converged = max(abs(moment_fn(b))) < 1e-5
+  )
+}
+
+
+
+# NEU — einsetzen:
+X_mat <- model.matrix(~ age + db + educ + fsize + hown +
+                        inc + male + marr + pira + twoearn,
+                      data = pension)
+
+cb        <- cbps_iv(Z, X_mat)
+p_hat_cb  <- cb$p_hat
+cat("CBPS converged:", cb$converged, "\n")
+
+
+kappa_cb  = 1 - D*(1-Z)/(1-p_hat_cb) - (1-D)*Z/p_hat_cb
+kappa1_cb = D * (Z - p_hat_cb) / (p_hat_cb * (1 - p_hat_cb))
+kappa0_cb = (1-D) * ((1-Z) - (1 - p_hat_cb)) / (p_hat_cb * (1 - p_hat_cb))
+
+tau_a1_cb =
+  (sum(kappa1_cb * Y) / sum(kappa1_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa1_cb))
+
+tau_a0_cb =
+  (sum(kappa1_cb * Y) / sum(kappa0_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa0_cb))
+
+tau_a10_cb =
+  (sum(kappa1_cb * Y) / sum(kappa1_cb)) -
+  (sum(kappa0_cb * Y) / sum(kappa0_cb))
+
+num_z1_cb <- sum(Z * Y / p_hat_cb) / sum(Z / p_hat_cb)
+num_z0_cb <- sum((1-Z) * Y / (1-p_hat_cb)) / sum((1-Z) / (1-p_hat_cb))
+den_z1_cb <- sum(Z * D / p_hat_cb) / sum(Z / p_hat_cb)
+den_z0_cb <- sum((1-Z) * D / (1-p_hat_cb)) / sum((1-Z) / (1-p_hat_cb))
+tau_u_cb  <- (num_z1_cb - num_z0_cb) / (den_z1_cb - den_z0_cb)
+
+
+c(
+  tau_u_cb   = tau_u_cb,
+  tau_a1_cb  = tau_a1_cb,
+  tau_a0_cb  = tau_a0_cb,
+  tau_a10_cb = tau_a10_cb
+)
+
+
+
+cat("tau_u^ml   =", round(tau_u, 2), "\n")
+cat("tau_u^cb   =", round(tau_u_cb, 2), "\n")
+cat("tau_a1^cb  =", round(tau_a1_cb, 2), "\n")
+cat("tau_a0^cb  =", round(tau_a0_cb, 2), "\n")
+cat("tau_a10^cb =", round(tau_a10_cb, 2), "\n")
+cat("mean(kappa1_cb) =", round(mean(kappa1_cb), 6), "\n")
+cat("mean(kappa0_cb) =", round(mean(kappa0_cb), 6), "\n")
+
+
+
+```
+
+
+
+
+
+
+
+# 7. Check: Trying to debug: The naive Wald
+```{r}
+# Vergleich naive LATE ohne Gewichte
+late_naive = mean(Y[Z==1]) - mean(Y[Z==0])
+fs_naive   = mean(D[Z==1]) - mean(D[Z==0])
+cat("\nNaiver Wald-Schätzer (ohne X):\n")
+cat("Reduced form:", round(late_naive, 2), "\n")
+cat("First stage: ", round(fs_naive, 4), "\n")
+cat("LATE = RF/FS:", round(late_naive/fs_naive, 2), "\n")
+
+
+
+
+```
+
+
+

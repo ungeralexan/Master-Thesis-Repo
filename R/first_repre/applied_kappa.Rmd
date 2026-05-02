@@ -1,0 +1,588 @@
+---
+title: "applied_kappa"
+author: "Alexander Unger"
+date: "2026-04-21"
+output: html_document
+---
+
+```{r}
+# packages to install
+library(haven)      
+library(AER)        
+library(sandwich)   
+library(lmtest)     
+library(boot)       
+
+set.seed(42)  # Reproducibility for bootstrap
+
+data_path <- "/Users/alexung/desktop/suw_jbes_replicate"   
+cat("Loading data...\n")
+sipp <- read_dta(file.path(data_path, "sipp.dta"))
+card <- read_dta(file.path(data_path, "card.dta"))
+ae98 <- read_dta(file.path(data_path, "ae98.dta"))
+
+
+
+################ functions 
+
+# 1a. Logistic function (inverse logit)
+sigmoid <- function(x) 1 / (1 + exp(-x))
+
+# 1b. Logit MLE for instrument propensity score p(X) = P(Z=1|X)
+logit_mle <- function(Z, X) {
+  df <- data.frame(Z = Z, X)
+  fit <- glm(Z ~ . - 1, data = df, family = binomial(link = "logit"))
+  fitted.values(fit)
+}
+
+
+#1c. Covariate Balancing Propensity Score (CBPS)
+cbps <- function(Z, X, tol = 1e-8, max_iter = 1000) {
+  n <- length(Z)
+  k <- ncol(X)
+  
+  # Moment conditions: mean over i of [ (Z_i/p_i - (1-Z_i)/(1-p_i)) * X_i ]
+  moment_fn <- function(b) {
+    p <- pmin(pmax(sigmoid(X %*% b), 1e-10), 1 - 1e-10)
+    residual <- as.vector(Z / p - (1 - Z) / (1 - p))
+    colMeans(residual * X)  # k-vector
+  }
+  
+  # Jacobian of moment conditions w.r.t. b
+  jac_fn <- function(b) {
+    p <- pmin(pmax(sigmoid(X %*% b), 1e-10), 1 - 1e-10)
+    # d/db [ Z/p - (1-Z)/(1-p) ] = [-Z(1-p)/p - (1-Z)p/(1-p)] * X
+    w <- as.vector(-Z * (1 - p) / p - (1 - Z) * p / (1 - p))
+    t(w * X) %*% X / n  # k x k matrix
+  }
+  
+  # Start from logit MLE (warm start for better convergence)
+  fit_mle <- glm(Z ~ X - 1, family = binomial(link = "logit"))
+  b <- coef(fit_mle)
+  
+  converged <- FALSE
+  for (i in seq_len(max_iter)) {
+    m <- moment_fn(b)
+    if (max(abs(m)) < tol) { converged <- TRUE; break }
+    
+    J <- jac_fn(b)
+    step <- tryCatch(solve(J, -m), error = function(e) NULL)
+    if (is.null(step)) break
+    
+    # Backtracking line search (ensures the step reduces the residual norm)
+    alpha <- 1.0
+    for (j in seq_len(30)) {
+      if (max(abs(moment_fn(b + alpha * step))) < max(abs(m))) break
+      alpha <- alpha * 0.5
+    }
+    b <- b + alpha * step
+  }
+  
+  p <- pmin(pmax(sigmoid(X %*% b), 1e-10), 1 - 1e-10)
+  list(p = as.vector(p), converged = converged)
+}
+
+
+
+# 1d) Kappa weights (Abadie 2003, Lemma 2.1)
+kappa_weights <- function(Z, D, p) {
+  list(
+    kappa  = 1 - D * (1 - Z) / (1 - p) - (1 - D) * Z / p,
+    kappa1 = D * (Z - p) / (p * (1 - p)),
+    kappa0 = (1 - D) * ((1 - Z) - (1 - p)) / (p * (1 - p))
+  )
+}
+
+
+
+# Normalized Uysal (2011) estimator [RECOMMENDED]
+tau_u <- function(Y, Z, D, p) {
+  s1 <- sum(Z / p)
+  s0 <- sum((1 - Z) / (1 - p))
+  numerator   <- sum(Y * Z / p) / s1 - sum(Y * (1 - Z) / (1 - p)) / s0
+  denominator <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  numerator / denominator
+}
+
+# Normalized Abadie-Cattaneo (2018) estimator
+tau_a10 <- function(Y, Z, D, p) {
+  kw <- kappa_weights(Z, D, p)
+  sum(kw$kappa1 * Y) / sum(kw$kappa1) - sum(kw$kappa0 * Y) / sum(kw$kappa0)
+}
+
+# Unnormalized estimator (generic): which = "a", "a1", or "a0"
+tau_unnorm <- function(Y, Z, D, p, which = "a") {
+  kw <- kappa_weights(Z, D, p)
+  numerator <- mean(Y * (Z - p) / (p * (1 - p)))
+  denom_val <- switch(which,
+    "a"  = mean(kw$kappa),
+    "a1" = mean(kw$kappa1),
+    "a0" = mean(kw$kappa0)
+  )
+  numerator / denom_val
+}
+
+
+
+# 2a. 2SLS with HC1-robust standard errors
+run_2sls <- function(Y, D, Z, X_df, endog_name = "D") {
+  # Build formula: Y ~ covariates + D | covariates + Z
+  cov_names <- names(X_df)[names(X_df) != "(Intercept)"]
+  
+  df <- data.frame(Y = Y, D = D, Z = Z, X_df)
+  names(df)[names(df) == "D"] <- endog_name
+  names(df)[names(df) == "Z"] <- "instrument"
+  
+  if (length(cov_names) == 0) {
+    fml <- as.formula(paste("Y ~", endog_name, "| instrument"))
+  } else {
+    cov_str <- paste(cov_names, collapse = " + ")
+    fml <- as.formula(paste("Y ~", endog_name, "+", cov_str,
+                            "| instrument +", cov_str))
+  }
+  
+  fit <- ivreg(fml, data = df)
+  
+  # HC1 robust covariance (matches Stata vce(robust))
+  vcov_r <- vcovHC(fit, type = "HC1")
+  ct <- coeftest(fit, vcov = vcov_r)
+  
+  # Return coefficient and SE for the endogenous variable
+  list(
+    coef = ct[endog_name, "Estimate"],
+    se   = ct[endog_name, "Std. Error"],
+    pval = ct[endog_name, "Pr(>|t|)"]
+  )
+}
+
+
+
+
+# 2b. Bootstrap standard errors for all kappa estimators
+boot_se_all <- function(Y, Z, D, X_mat, R = 500) {
+  n <- length(Y)
+  
+  # Function to compute all 6 kappa estimators on a (possibly resampled) dataset
+  compute_all <- function(Y, Z, D, X) {
+    # MLE propensity score
+    p_ml <- tryCatch(logit_mle(Z, X), error = function(e) NULL)
+    if (is.null(p_ml)) return(rep(NA, 6))
+    
+    # CBPS propensity score
+    cb_res <- tryCatch(cbps(Z, X), error = function(e) list(p = NULL, converged = FALSE))
+    
+    estimates <- numeric(6)
+    estimates[1] <- if (!is.null(cb_res$p) && cb_res$converged)
+                      tryCatch(tau_u(Y, Z, D, cb_res$p), error = function(e) NA)
+                    else NA
+    estimates[2] <- tryCatch(tau_u(Y, Z, D, p_ml), error = function(e) NA)
+    estimates[3] <- tryCatch(tau_a10(Y, Z, D, p_ml), error = function(e) NA)
+    estimates[4] <- tryCatch(tau_unnorm(Y, Z, D, p_ml, "a"),  error = function(e) NA)
+    estimates[5] <- tryCatch(tau_unnorm(Y, Z, D, p_ml, "a1"), error = function(e) NA)
+    estimates[6] <- tryCatch(tau_unnorm(Y, Z, D, p_ml, "a0"), error = function(e) NA)
+    estimates
+  }
+  
+  # Point estimates
+  point <- compute_all(Y, Z, D, X_mat)
+  
+  # Bootstrap
+  boot_mat <- matrix(NA, nrow = R, ncol = 6)
+  for (r in seq_len(R)) {
+    idx <- sample(n, n, replace = TRUE)
+    boot_mat[r, ] <- compute_all(Y[idx], Z[idx], D[idx], X_mat[idx, , drop = FALSE])
+  }
+  
+  ses <- apply(boot_mat, 2, function(x) sd(x, na.rm = TRUE))
+  
+  list(
+    estimates = setNames(point, c("tau_cb_u","tau_ml_u","tau_ml_a10",
+                                   "tau_ml_a","tau_ml_t","tau_ml_a0")),
+    se        = setNames(ses,   c("tau_cb_u","tau_ml_u","tau_ml_a10",
+                                   "tau_ml_a","tau_ml_t","tau_ml_a0"))
+  )
+}
+
+
+
+# 2c. Format results as "coef (se)" with significance stars
+fmt <- function(coef, se, digits = 3) {
+  if (is.na(coef)) return("NA")
+  pval <- 2 * pnorm(-abs(coef / se))
+  stars <- ifelse(pval < 0.01, "***",
+           ifelse(pval < 0.05, "**",
+           ifelse(pval < 0.10, "*", "")))
+  sprintf(paste0("%.", digits, "f%s\n(%.", digits, "f)"),
+          round(coef, digits), stars, round(se, digits))
+}
+
+```
+
+
+
+```{r}
+# 3. TABLE 2: ANGRIST (1990) - MILITARY SERVICE
+cat("\n", strrep("=", 70), "\n")
+cat("TABLE 2: ANGRIST (1990) - Causal Effects of Military Service\n")
+cat(strrep("=", 70), "\n")
+
+# --- Data preparation ---
+sipp_clean <- sipp[sipp$rsncode != 999 & !is.na(sipp$educ) & !is.na(sipp$kwage), ]
+sipp_clean$age  <- sipp_clean$age_5
+sipp_clean$age2 <- sipp_clean$age_5^2
+sipp_clean$age3 <- sipp_clean$age_5^3
+sipp_clean$lwage     <- log(sipp_clean$kwage)          # log wages in dollars
+sipp_clean$lwage_cnt <- log(100 * sipp_clean$kwage)    # log wages in cents
+cat(sprintf("N = %d (should be 3,027)\n\n", nrow(sipp_clean)))
+
+# --- Three covariate specifications ---
+# Spec 1: Linear age (Table 2 columns 1-2)
+X1 <- model.matrix(~ age, data = sipp_clean)
+
+# Spec 2: Cubic polynomial in age (Table 2 columns 3-4)
+X2 <- model.matrix(~ age + age2 + age3, data = sipp_clean)
+
+# Spec 3: Saturated - indicator for each age value (Table 2 columns 5-6)
+# This fully controls for age nonparametrically
+sipp_clean$age_fac <- factor(sipp_clean$age_5)
+X3 <- model.matrix(~ age_fac, data = sipp_clean)
+
+specs <- list(
+  list(X = X1, name = "Age linear",   X_df = data.frame(age = sipp_clean$age)),
+  list(X = X2, name = "Cubic in age", X_df = data.frame(age  = sipp_clean$age,
+                                                          age2 = sipp_clean$age2,
+                                                          age3 = sipp_clean$age3)),
+  list(X = X3, name = "Saturated age",X_df = data.frame(age_fac = sipp_clean$age_fac))
+)
+
+# Run for both outcome measurements (cents and dollars)
+for (spec in specs) {
+  cat(sprintf("--- Specification: %s ---\n", spec$name))
+  for (outcome in c("lwage_cnt", "lwage")) {
+    Y <- sipp_clean[[outcome]]
+    D <- sipp_clean$nvstat
+    Z <- sipp_clean$rsncode
+
+    # 2SLS
+    iv_res <- run_2sls(Y, D, Z, spec$X_df, endog_name = "nvstat")
+
+    # Kappa estimators with bootstrap SE (use 200 reps here for speed;
+    # increase to 500 for final results matching the paper)
+    kappa_res <- boot_se_all(Y, Z, D, spec$X, R = 200)
+
+    cat(sprintf("  Outcome: %s\n", outcome))
+    cat(sprintf("    2SLS:       %s\n", fmt(iv_res$coef, iv_res$se)))
+    cat(sprintf("    tau_cb_u:   %s\n", fmt(kappa_res$estimates["tau_cb_u"],
+                                            kappa_res$se["tau_cb_u"])))
+    cat(sprintf("    tau_ml_u:   %s\n", fmt(kappa_res$estimates["tau_ml_u"],
+                                            kappa_res$se["tau_ml_u"])))
+    cat(sprintf("    tau_ml_a10: %s\n", fmt(kappa_res$estimates["tau_ml_a10"],
+                                            kappa_res$se["tau_ml_a10"])))
+    cat(sprintf("    tau_ml_a:   %s\n", fmt(kappa_res$estimates["tau_ml_a"],
+                                            kappa_res$se["tau_ml_a"])))
+    cat(sprintf("    tau_ml_t:   %s\n", fmt(kappa_res$estimates["tau_ml_t"],
+                                            kappa_res$se["tau_ml_t"])))
+    cat(sprintf("    tau_ml_a0:  %s\n", fmt(kappa_res$estimates["tau_ml_a0"],
+                                            kappa_res$se["tau_ml_a0"])))
+    cat("\n")
+  }
+}
+
+
+
+
+```
+
+
+
+```{r}
+# 4. TABLE 3: CARD (1995) - COLLEGE EDUCATION
+
+cat("\n", strrep("=", 70), "\n")
+cat("TABLE 3: CARD (1995) - Causal Effects of College Education\n")
+cat(strrep("=", 70), "\n")
+
+# --- Data preparation ---
+card_clean <- card
+# Drop existing lwage (measured in log cents) and recompute:
+#   lwage     = ln(wage/100)  [dollars]
+#   lwage_cnt = ln(wage)      [cents, since wage is already in cents]
+card_clean$lwage     <- log(card_clean$wage / 100)
+card_clean$lwage_cnt <- log(card_clean$wage)
+card_clean$somecol   <- as.numeric(card_clean$educ > 12)   # some college
+card_clean$educ16    <- as.numeric(card_clean$educ >= 16)  # college completion
+cat(sprintf("N = %d (should be 3,010)\n\n", nrow(card_clean)))
+
+# Card (1995) specification: full set of controls
+cov_card <- c("black","south","smsa","smsa66",
+              "reg661","reg662","reg663","reg664","reg665","reg666","reg667","reg668",
+              "exper","expersq")
+X_card <- model.matrix(~ black + south + smsa + smsa66 +
+                          reg661 + reg662 + reg663 + reg664 + reg665 +
+                          reg666 + reg667 + reg668 + exper + expersq,
+                        data = card_clean)
+X_card_df <- card_clean[, cov_card]
+
+# Kitagawa (2015) specification: more parsimonious
+cov_kita <- c("smsa","smsa66","black","south","south66")
+X_kita <- model.matrix(~ smsa + smsa66 + black + south + south66, data = card_clean)
+X_kita_df <- card_clean[, cov_kita]
+
+treatments <- list(
+  list(D = card_clean$somecol, name = "Some college (educ>12)"),
+  list(D = card_clean$educ16,  name = "College completion (educ>=16)")
+)
+
+for (tr in treatments) {
+  cat(sprintf("=== Treatment: %s ===\n", tr$name))
+  for (spec in list(list(X=X_card, Xdf=X_card_df, name="Card spec"),
+                    list(X=X_kita, Xdf=X_kita_df, name="Kitagawa spec"))) {
+    cat(sprintf("  -- %s --\n", spec$name))
+    for (outcome in c("lwage_cnt", "lwage")) {
+      Y <- card_clean[[outcome]]
+      D <- tr$D
+      Z <- card_clean$nearc4
+
+      iv_res    <- run_2sls(Y, D, Z, spec$Xdf, endog_name = "D")
+      kappa_res <- boot_se_all(Y, Z, D, spec$X, R = 200)
+
+      cat(sprintf("    Outcome: %s\n", outcome))
+      cat(sprintf("      2SLS:       %s\n", fmt(iv_res$coef, iv_res$se)))
+      cat(sprintf("      tau_cb_u:   %s\n", fmt(kappa_res$estimates["tau_cb_u"],
+                                                 kappa_res$se["tau_cb_u"])))
+      cat(sprintf("      tau_ml_u:   %s\n", fmt(kappa_res$estimates["tau_ml_u"],
+                                                 kappa_res$se["tau_ml_u"])))
+      cat(sprintf("      tau_ml_a10: %s\n", fmt(kappa_res$estimates["tau_ml_a10"],
+                                                 kappa_res$se["tau_ml_a10"])))
+      cat(sprintf("      tau_ml_a:   %s\n", fmt(kappa_res$estimates["tau_ml_a"],
+                                                 kappa_res$se["tau_ml_a"])))
+      cat(sprintf("      tau_ml_t:   %s\n", fmt(kappa_res$estimates["tau_ml_t"],
+                                                 kappa_res$se["tau_ml_t"])))
+      cat(sprintf("      tau_ml_a0:  %s\n", fmt(kappa_res$estimates["tau_ml_a0"],
+                                                 kappa_res$se["tau_ml_a0"])))
+      cat("\n")
+    }
+  }
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+# EXTENSION: OUTCOME WEIGHTS ANALYSIS (Knaus 2024)
+
+if (!require("OutcomeWeights")) install.packages("OutcomeWeights", dependencies = TRUE)
+if (!require("ggplot2"))        install.packages("ggplot2",        dependencies = TRUE)
+
+library(OutcomeWeights)   # dml_with_smoother(), get_outcome_weights(), plot()
+library(ggplot2)
+
+
+kappa_outcome_weights <- function(Y, Z, D, p) {
+  n  <- length(Y)
+  kw <- kappa_weights(Z, D, p)   # from Section 1d of main script
+
+  # tau_u (Uysal): normalized ratio estimator
+  s1  <- sum(Z / p);  s0 <- sum((1 - Z) / (1 - p))
+  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  # tau_a10 (Abadie-Cattaneo): normalized kappa ratio
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
+
+  # unnormalized: common numerator structure, different denominators
+  num_w <- (Z - p) / (p * (1 - p)) / n
+  w_a   <- num_w / mean(kw$kappa)
+  w_a1  <- num_w / mean(kw$kappa1)
+  w_a0  <- num_w / mean(kw$kappa0)
+
+  # Verify tau = w'Y for all estimators
+  stopifnot(
+    abs(sum(w_u   * Y) - tau_u(Y, Z, D, p))           < 1e-8,
+    abs(sum(w_a10 * Y) - tau_a10(Y, Z, D, p))         < 1e-8,
+    abs(sum(w_a   * Y) - tau_unnorm(Y, Z, D, p, "a")) < 1e-8,
+    abs(sum(w_a1  * Y) - tau_unnorm(Y, Z, D, p, "a1"))< 1e-8,
+    abs(sum(w_a0  * Y) - tau_unnorm(Y, Z, D, p, "a0"))< 1e-8
+  )
+
+  list(w_u = as.vector(w_u), w_a10 = as.vector(w_a10),
+       w_a = as.vector(w_a), w_a1  = as.vector(w_a1),
+       w_a0 = as.vector(w_a0))
+}
+
+
+weight_diag_table <- function(w_list, names_vec) {
+  do.call(rbind, lapply(seq_along(w_list), function(i) {
+    w <- w_list[[i]]
+    data.frame(
+      Estimator  = names_vec[i],
+      Sum_w      = round(sum(w), 6),        # 0 = translation invariant
+      ESS        = round(1 / sum(w^2), 0),  # effective sample size
+      Pct_neg    = round(mean(w < 0) * 100, 1),
+      Max_abs_w  = round(max(abs(w)), 6),
+      stringsAsFactors = FALSE
+    )
+  }))
+}
+
+
+
+```
+
+```{r}
+
+# ==============================================================================
+# SECTION 5: ANGRIST (1990) — Military Service
+# ==============================================================================
+
+cat("\n", strrep("=", 70), "\n")
+cat("SECTION 5: ANGRIST (1990) — Military Service\n")
+cat("Z = draft eligibility | D = veteran | Y = log wages (dollars)\n")
+cat("Covariate spec: linear age\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- Data (already prepared in Section 3 of main script) ---
+Y5 <- sipp_clean$lwage
+D5 <- sipp_clean$nvstat
+Z5 <- sipp_clean$rsncode
+# X for DML must have NO intercept (OutcomeWeights convention, like Knaus)
+X5 <- as.data.frame(model.matrix(~ 0 + age + I(age^2) + I(age^3), data = sipp_clean))
+
+# --- 5a. DML via OutcomeWeights (Knaus 2024) ---
+cat("--- 5a. Double ML (Knaus 2024) ---\n")
+cat("Running dml_with_smoother() with 5-fold cross-fitting...\n")
+dml_5 <- dml_with_smoother(Y5, D5, X5, Z5, n_cf_folds = 5)
+cat("\nDML results:\n")
+print(summary(dml_5))
+
+# Extract DML outcome weights: w_i s.t. tau_DML = sum(w_i * Y_i)
+# get_outcome_weights() returns an NxK matrix (one column per estimator)
+omega_5    <- get_outcome_weights(dml_5)
+# omega_5$omega rows: PLR, PLR-IV, AIPW-ATE, Wald-AIPW
+# Verify: omega_5$omega %*% Y == point estimates
+cat("\nVerify omega'Y = point estimates:",
+    all.equal(as.numeric(omega_5$omega %*% Y5),
+              as.numeric(summary(dml_5)[, 1])), "\n\n")
+
+# Plot DML weight distributions (Knaus's plot method)
+cat("--- DML weight distributions (Knaus plot) ---\n")
+plot(dml_5)
+
+# --- 5b. Kappa outcome weights (SUW 2025) ---
+cat("\n--- 5b. Kappa estimators (SUW 2025) ---\n")
+p_ml5 <- logit_mle(Z5, model.matrix(~ age, data = sipp_clean))
+kw5   <- kappa_outcome_weights(Y5, Z5, D5, p_ml5)
+
+cat("Point estimates:\n")
+cat(sprintf("  tau_u    = %.4f\n", tau_u(Y5, Z5, D5, p_ml5)))
+cat(sprintf("  tau_a10  = %.4f\n", tau_a10(Y5, Z5, D5, p_ml5)))
+cat(sprintf("  tau_a    = %.4f\n", tau_unnorm(Y5, Z5, D5, p_ml5, "a")))
+cat(sprintf("  tau_a1   = %.4f\n", tau_unnorm(Y5, Z5, D5, p_ml5, "a1")))
+
+cat("\nWeight diagnostics (sum(w)=0 iff translation invariant):\n")
+diag5 <- weight_diag_table(
+  kw5,
+  c("tau_u (norm.)", "tau_a10 (norm.)", "tau_a (unnorm.)", "tau_a1 (unnorm.)", "tau_a0 (unnorm.)")
+)
+print(diag5, row.names = FALSE)
+
+# Add DML Wald-AIPW weights to comparison
+w_waldaipw5 <- as.vector(omega_5$omega[4, ])  # row 4 = Wald-AIPW
+diag5_dml <- data.frame(
+  Estimator = "Wald-AIPW (DML)",
+  Sum_w     = round(sum(w_waldaipw5), 6),
+  ESS       = round(1 / sum(w_waldaipw5^2), 0),
+  Pct_neg   = round(mean(w_waldaipw5 < 0) * 100, 1),
+  Max_abs_w = round(max(abs(w_waldaipw5)), 6)
+)
+cat("\nFor comparison, DML Wald-AIPW:\n")
+print(diag5_dml, row.names = FALSE)
+
+
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# SECTION 6: CARD (1995) — College Education
+# ==============================================================================
+
+cat("\n", strrep("=", 70), "\n")
+cat("SECTION 6: CARD (1995) — College Education\n")
+cat("Z = near 4-year college | D = some college | Y = log wages (dollars)\n")
+cat("Covariate spec: Card (1995) full controls\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- Data (already prepared in Section 4 of main script) ---
+Y6 <- card_clean$lwage
+D6 <- card_clean$somecol
+Z6 <- card_clean$nearc4
+# X for DML: no intercept
+X6 <- as.data.frame(model.matrix(~ 0 + black + south + smsa + smsa66 +
+                     reg661 + reg662 + reg663 + reg664 + reg665 +
+                     reg666 + reg667 + reg668 + exper + expersq,
+                   data = card_clean))
+
+# --- 6a. DML ---
+cat("--- 6a. Double ML (Knaus 2024) ---\n")
+cat("Running dml_with_smoother() with 5-fold cross-fitting...\n")
+dml_6    <- dml_with_smoother(Y6, D6, X6, Z6, n_cf_folds = 5)
+cat("\nDML results:\n")
+print(summary(dml_6))
+
+omega_6  <- get_outcome_weights(dml_6)
+cat("\nVerify omega'Y = point estimates:",
+    all.equal(as.numeric(omega_6$omega %*% Y6),
+              as.numeric(summary(dml_6)[, 1])), "\n\n")
+
+plot(dml_6)
+
+# --- 6b. Kappa weights ---
+cat("\n--- 6b. Kappa estimators (SUW 2025) ---\n")
+p_ml6 <- logit_mle(Z6, X_card)   # X_card has intercept, from main script
+kw6   <- kappa_outcome_weights(Y6, Z6, D6, p_ml6)
+
+cat("Point estimates:\n")
+cat(sprintf("  tau_u    = %.4f\n", tau_u(Y6, Z6, D6, p_ml6)))
+cat(sprintf("  tau_a10  = %.4f\n", tau_a10(Y6, Z6, D6, p_ml6)))
+cat(sprintf("  tau_a    = %.4f\n", tau_unnorm(Y6, Z6, D6, p_ml6, "a")))
+cat(sprintf("  tau_a1   = %.4f\n", tau_unnorm(Y6, Z6, D6, p_ml6, "a1")))
+
+cat("\nWeight diagnostics:\n")
+diag6 <- weight_diag_table(
+  kw6,
+  c("tau_u (norm.)", "tau_a10 (norm.)", "tau_a (unnorm.)", "tau_a1 (unnorm.)", "tau_a0 (unnorm.)")
+)
+print(diag6, row.names = FALSE)
+
+w_waldaipw6 <- as.vector(omega_6$omega[4, ])
+diag6_dml <- data.frame(
+  Estimator = "Wald-AIPW (DML)",
+  Sum_w     = round(sum(w_waldaipw6), 6),
+  ESS       = round(1 / sum(w_waldaipw6^2), 0),
+  Pct_neg   = round(mean(w_waldaipw6 < 0) * 100, 1),
+  Max_abs_w = round(max(abs(w_waldaipw6)), 6)
+)
+cat("\nFor comparison, DML Wald-AIPW:\n")
+print(diag6_dml, row.names = FALSE)
+
+
+
+```
+
+
+
+
+
+

@@ -19,7 +19,7 @@
 
 | Paper | Status | What to read |
 |---|---|---|
-| Angrist, Imbens & Rubin (1996) | 🔲 TODO | Sections 1–2 only: four compliance types, AIR notation |
+| Angrist, Imbens & Rubin (1996) | ✅ Read | Sections 1–2 only: four compliance types, AIR notation |
 | Chernozhukov et al. (2018) | 🔲 TODO | Section 2.3 only: Wald-AIPW estimator formula |
 | Knaus (2024) | 🟡 Started | Read fully. Key: Sec 2 (PIVE), Sec 3.2.1 (instrumental forest), **Appendix A.4** (kappa in PIVE — your Section 3) |
 

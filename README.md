@@ -1,8 +1,8 @@
 # Kappa Weighting Estimators of the LATE — Thesis Repository
 
 **Author:** Alexander Unger  
-**Institution:** [Your University]  
-**Supervisor:** [Supervisor Name]  
+**Institution:** University of Tuebingen
+**Supervisor:** Jun Prof. Michael Knaus 
 **Status:** 🟡 In progress — reading phase complete, replication phase active
 
 ---
