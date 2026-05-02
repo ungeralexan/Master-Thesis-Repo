@@ -1,0 +1,298 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage{amsmath, amssymb, geometry, hyperref, xcolor, booktabs, mdframed, enumitem, titlesec, parskip}
+\geometry{margin=2.5cm}
+\definecolor{chapterblue}{RGB}{30,80,160}
+\definecolor{notegreen}{RGB}{20,120,60}
+\definecolor{warnorange}{RGB}{180,90,0}
+\definecolor{boxbg}{RGB}{240,245,255}
+\definecolor{greenbg}{RGB}{240,250,240}
+
+\titleformat{\section}{\large\bfseries\color{chapterblue}}{}{0em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\newenvironment{notebox}[1][Note]{%
+  \begin{mdframed}[backgroundcolor=boxbg,linecolor=chapterblue,linewidth=1pt]%
+  \textbf{\color{chapterblue}#1:} }{%
+  \end{mdframed}}
+
+\newenvironment{openbox}{%
+  \begin{mdframed}[backgroundcolor=greenbg,linecolor=notegreen,linewidth=1pt]%
+  \textbf{\color{notegreen}Open question / annotation:} }{%
+  \end{mdframed}}
+
+\title{\textbf{Master's Thesis --- Structure Document}\\[0.4em]
+\large Outcome Weights, Kappa Estimators, and Covariate Balance\\
+in LATE Estimation\\[0.3em]
+\normalsize Department of Data Science in Economics, University of Tübingen\\
+Supervisor: Junior Prof.\ Dr.\ Michael Knaus \quad Student: Alexander Unger}
+\date{May 2026 --- Working Draft}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section*{Central Research Question}
+%=============================================================================
+
+\begin{mdframed}[backgroundcolor=boxbg,linecolor=chapterblue,linewidth=1.5pt]
+\textit{To what extent do machine learning-based and classical kappa weighting estimators
+of the LATE implicitly target different subpopulations, and what do their outcome
+weights reveal about covariate balance and estimator reliability across empirical
+applications?}
+\end{mdframed}
+
+\medskip
+\noindent\textbf{Three sub-questions:}
+\begin{enumerate}[leftmargin=1.5cm]
+  \item[\textbf{RQ1.}] What are the structural properties of outcome weights for kappa-based LATE estimators (ESS, negative weight share, sum-to-zero as translation invariance criterion) and how do they differ from those of DML-based estimators, \emph{independently of any specific dataset}?
+  \item[\textbf{RQ2.}] When applied to empirical datasets, how do outcome weights of DML-based estimators (Wald-AIPW with cross-fitted random forests) and kappa estimators compare in terms of covariate balance (Love plots / SMDs), and what does this reveal about which estimators reliably target the complier subpopulation?
+  \item[\textbf{RQ3.}] Can weight diagnostics guide practitioners toward more robust estimator choices, and does the outcome weights lens help explain divergences between estimators?
+\end{enumerate}
+
+\bigskip
+
+%=============================================================================
+\section{Introduction \textnormal{\small(approx.\ 3--4 pages)}}
+%=============================================================================
+
+\subsection*{Content}
+\begin{itemize}
+  \item \textbf{Hook:} In applied IV settings, the same dataset can yield wildly different LATE estimates depending on which estimator is used --- not because of different assumptions, but because of how the outcome variable is coded. Unnormalized kappa weighting estimators violate translation invariance: adding a constant to every outcome observation changes the treatment effect estimate. This is the practical failure mode that motivates the thesis.
+  \item \textbf{Background:} Standard practice uses 2SLS with additive covariates, which Blandhol et al.\ (2022) and Słoczyński (2021) show does not generally recover the LATE under heterogeneous effects. Kappa weighting estimators (Abadie 2003; SUW 2025) are a flexible alternative, but the literature has not yet fully diagnosed their behaviour through the lens of outcome weights.
+  \item \textbf{Gap:} Knaus (2024) introduces the PIVE framework and derives outcome weights $\omega_i$ such that $\hat\tau = \sum_i \omega_i Y_i$ for a broad class of DML/GRF estimators, enabling covariate balance diagnostics via Love plots. Appendix A.4 of Knaus (2024) sketches the same derivation for kappa estimators but does not apply it empirically. \textbf{This thesis fills that gap.}
+  \item \textbf{Contribution:}
+    \begin{itemize}
+      \item Derive closed-form outcome weights for $\hat\tau_u$ and $\hat\tau_{a,10}$ in the Knaus PIVE framework; show analytically why $\sum \omega_i = 0$ iff translation invariant
+      \item Apply Love plots and ESS diagnostics to kappa estimators for the first time, using the same pipeline as Knaus (2024)
+      \item Document the comparison across three or four empirical applications: Angrist (1990), Card (1995), Angrist \& Evans (1998), and optionally 401(k) (Knaus 2024)
+    \end{itemize}
+  \item Road map of the thesis
+\end{itemize}
+
+%=============================================================================
+\section{Econometric Framework \textnormal{\small(approx.\ 8--10 pages)}}
+%=============================================================================
+
+\subsection{IV, LATE, and Compliers}
+
+\begin{itemize}
+  \item Potential outcomes notation: $Y_i(0)$, $Y_i(1)$, $D_i(0)$, $D_i(1)$
+  \item Four compliance types (AIR 1996): always-takers, never-takers, compliers, defiers
+  \item Assumption IV (i)--(iv): conditional independence, exclusion, first stage / overlap, monotonicity
+  \item LATE: $\tau^{\text{LATE}} = E[Y_1 - Y_0 \mid D_1 > D_0]$
+  \item Why 2SLS may not recover LATE under heterogeneous effects and flexible covariates (one-sentence reference to Blandhol et al.\ 2022)
+\end{itemize}
+
+\subsection{Abadie's Kappa and Weighting Estimators of the LATE}
+
+\begin{itemize}
+  \item Lemma 2.1 (Abadie 2003, restated in SUW 2025 notation): the three weights $\kappa$, $\kappa_1$, $\kappa_0$ and their cell-by-cell values (Table 1 of SUW 2025)
+  \item Parts (a), (b), (c) of the kappa theorem: any complier moment identified
+  \item Remark 2.2: $E(\kappa) = E(\kappa_1) = E(\kappa_0) = P(D_1 > D_0)$ in population; why they differ in finite samples
+  \item The five estimators: $\hat\tau_u$ (Uysal 2011), $\hat\tau_{a,10}$ (Abadie \& Cattaneo 2018), and unnormalized $\hat\tau_a$, $\hat\tau_t$ ($= \hat\tau_{a,1}$, Frölich/Tan), $\hat\tau_{a,0}$
+  \item \textbf{Translation invariance} (Definition TI): $\hat\tau(Y, W) = \hat\tau(Y+k, W)$ for all $k$ --- Proposition 3.2: $\hat\tau_u$ and $\hat\tau_{a,10}$ pass; the three unnormalized fail. Concrete example with cents vs.\ dollars.
+  \item \textbf{Scale equivariance} (Definition SE): brief statement, linked to log-unit sensitivity
+  \item \textbf{One-sided noncompliance} (Section 3.4 of SUW 2025): near-zero denominators, Propositions 3.3 and 3.4; why $\hat\tau_u$ is the only normalized estimator that avoids this in both cases
+  \item Propensity score estimation: ML logit ($\hat\tau_u^{\text{ml}}$) vs.\ covariate balancing CBPS ($\hat\tau_u^{\text{cb}}$); Proposition 3.5: with CBPS all normalized estimators coincide
+\end{itemize}
+
+\begin{openbox}
+Your annotation: ``Also maybe the problem of negative weights in one-sided noncompliance for the non-normalized estimators.'' $\to$ \textbf{Answer:} This is exactly Propositions 3.3--3.4 of SUW (2025) and belongs here. The negative weight problem and the near-zero denominator problem are the same phenomenon viewed from two angles: $\sum \kappa_{i1} < 0$ happens when always-takers dominate the sample by accident, making the denominator negative. Covered in Section 2.2.
+\end{openbox}
+
+\subsection{Double Machine Learning and the Outcome Weights Representation}
+
+\begin{itemize}
+  \item \textbf{DML framework} (Chernozhukov et al.\ 2018): the Partially Linear IV (PLR-IV) model and the Wald-AIPW estimator. Two nuisance parameters: $\hat{E}[Y \mid Z, X]$ and $\hat{E}[D \mid Z, X]$, estimated with cross-fitting. Brief description of cross-fitting (K-fold), why it matters for valid inference.
+  \item \textbf{The Wald-AIPW estimator} specifically: this is the DML analog of the Wald ratio, augmented with outcome regression for efficiency. This is the ML estimator you compare kappa to.
+  \item \textbf{PIVE framework} (Knaus 2024): any estimator fitting the pseudo-IV structure can be written as $\hat\tau = \sum_i \omega_i Y_i$. Definition of the PIVE. The two-step: (i) form pseudo-instrument $\tilde{Z}$ and transformation matrix $T$; (ii) outcome weights $\omega' = (\tilde{Z}' \tilde{D})^{-1} \tilde{Z}' T$.
+  \item What ``fully normalized'' means in Knaus (2024): $\sum_{D_i=1} \omega_i = +1$ and $\sum_{D_i=0} \omega_i = -1$. Table 5 of Knaus as reference.
+\end{itemize}
+
+\begin{openbox}
+Your annotation: ``Both estimation techniques explained.'' $\to$ ML logit and CBPS belong in Section 2.2 (kappa framework), since they are used to estimate $p(X)$ for kappa estimators. DML uses random forests for its nuisance parameters, which belongs here in Section 2.3. These are conceptually separate and should \emph{not} be in the same subsection.
+\end{openbox}
+
+\subsection{Covariate Balance as a Diagnostic}
+
+\begin{itemize}
+  \item Standardized Mean Difference (SMD): $\text{SMD}_k = \frac{|\bar{X}_k^{\text{treated}} - \bar{X}_k^{\text{control}}|}{\text{SD}(X_k)}$, computed using outcome weights $\omega_i$
+  \item Love plots: one dot per covariate, unadjusted vs.\ weighted SMD. Threshold at $|$SMD$| \leq 0.1$.
+  \item Effective Sample Size (ESS): $\text{ESS} = 1/\sum_i \omega_i^2$, measures how many observations effectively contribute to the estimate
+  \item Why these diagnostics matter: an estimator that achieves good covariate balance among compliers is more credible; imbalance signals that the estimator is not properly weighting the target subpopulation
+  \item Connection to translation invariance: $\sum_i \omega_i = 0 \Leftrightarrow$ translation invariant (the sum-to-zero condition)
+\end{itemize}
+
+%=============================================================================
+\section{Connecting the Frameworks \textnormal{\small(approx.\ 5--7 pages)}}
+%=============================================================================
+
+\begin{notebox}[This is the thesis's unique contribution]
+Sections 3.1--3.2 contain the new theoretical work. Knaus (2024) Appendix A.4 derives the PIVE representation for $\hat\tau_a$, $\hat\tau_{a,0}$, $\hat\tau_{a,10}$ but does not derive the outcome weights $\omega_i$ explicitly for $\hat\tau_u$, nor does it apply Love plots or ESS diagnostics to kappa estimators empirically. Your Section 3 bridges that gap.
+\end{notebox}
+
+\subsection{Kappa Weights vs.\ Outcome Weights: Clarifying the Distinction}
+
+\begin{itemize}
+  \item \textbf{Kappa weights} $\kappa_i$: identification weights from Abadie (2003). They turn population expectations into complier expectations. They are \emph{not} directly $\tau = \sum \omega_i Y_i$.
+  \item \textbf{Outcome weights} $\omega_i$ (Knaus 2024): the weights such that $\hat\tau = \sum_i \omega_i Y_i$. These are derived from the kappa weights but are not the same object.
+  \item The derivation: for $\hat\tau_u$, write the estimator as a ratio of six sample means, then express algebraically as $\sum_i \omega_i Y_i$. Do the same for $\hat\tau_{a,10}$.
+\end{itemize}
+
+\subsection{Analytical Derivation of Outcome Weights for $\hat\tau_u$ and $\hat\tau_{a,10}$}
+
+\begin{itemize}
+  \item Express $\hat\tau_u$ (equation 3 of SUW 2025) as a weighted sum $\sum_i \omega_i^u Y_i$
+  \item The outcome weights for $\hat\tau_u$:
+    \[
+      \omega_i^u = \frac{1}{\hat{D}} \left( \frac{Z_i}{\hat{S}_1 \, p(X_i)} - \frac{1 - Z_i}{\hat{S}_0 \, (1 - p(X_i))} \right)
+    \]
+    where $\hat{S}_1 = \frac{1}{N}\sum_j \frac{Z_j}{p(X_j)}$, $\hat{S}_0 = \frac{1}{N}\sum_j \frac{1-Z_j}{1-p(X_j)}$, and $\hat{D}$ is the estimated complier share (denominator of $\hat\tau_u$)
+  \item Similarly for $\hat\tau_{a,10}$: weights $\omega_i^{a,10} = \frac{\kappa_{i1}}{\sum_j \kappa_{j1}} - \frac{\kappa_{i0}}{\sum_j \kappa_{j0}}$
+  \item Show: $\sum_i \omega_i^u = 0$ and $\sum_i \omega_i^{a,10} = 0$ $\Leftrightarrow$ translation invariant (algebraic proof)
+  \item Show: for unnormalized $\hat\tau_a$, $\sum_i \omega_i^a \neq 0$ in general (finite sample)
+  \item Place in PIVE framework following Knaus (2024) Appendix A.4: identify $\tilde{Z}$, $\tilde{D}$, $T$ for each kappa estimator
+\end{itemize}
+
+\subsection{Weight Diagnostics: Comparison of Kappa and DML Estimators}
+
+\begin{itemize}
+  \item \textbf{Sum-to-zero check:} $\sum_i \omega_i$ as empirical translation invariance diagnostic. Normalized estimators: exactly zero by construction. Unnormalized: non-zero, magnitude depends on sample.
+  \item \textbf{ESS comparison:} $\hat\tau_u$ vs.\ $\hat\tau_{a,10}$ vs.\ Wald-AIPW. Higher ESS = more stable estimate.
+  \item \textbf{Negative weight share:} What fraction of observations receive $\omega_i < 0$? Always-takers and never-takers receive negative weights under kappa estimators by construction (see Table 1 of SUW 2025). Does Wald-AIPW also assign negative weights, and to whom?
+  \item \textbf{Maximum absolute weight:} which observations are leveraged most?
+  \item Present a summary table of theoretical properties across estimators before any empirical application:
+
+    \begin{center}
+    \renewcommand{\arraystretch}{1.4}
+    \begin{tabular}{lcccc}
+    \toprule
+    Estimator & $\sum \omega_i = 0$? & ESS & Neg.\ weights & Near-zero denom \\
+    \midrule
+    $\hat\tau_u$ & \checkmark (exact) & high & yes (AT + NT) & safe (one-sided) \\
+    $\hat\tau_{a,10}$ & \checkmark (exact) & high & yes & risk (one-sided) \\
+    $\hat\tau_a$, $\hat\tau_t$, $\hat\tau_{a,0}$ & $\times$ (finite sample) & moderate & yes & risk \\
+    Wald-AIPW (DML) & \checkmark (approx.) & moderate & yes & safe \\
+    \bottomrule
+    \end{tabular}
+    \end{center}
+\end{itemize}
+
+%=============================================================================
+\section{Empirical Applications \textnormal{\small(approx.\ 12--15 pages)}}
+%=============================================================================
+
+\begin{notebox}
+For each application, the structure is: (1) data and instrument description; (2) replication of SUW (2025) tables; (3) outcome weight diagnostics (sum, ESS, negative share, max weight); (4) Love plots for kappa estimators and Wald-AIPW; (5) interpretation.
+\end{notebox}
+
+\subsection{Military Service and Wages \textnormal{(Angrist 1990; SUW 2025 Table 2)}}
+
+\begin{itemize}
+  \item $Z$ = draft lottery eligibility, $D$ = veteran status, $Y$ = log wages
+  \item Covariate specs: linear age, cubic age, saturated (fully flexible) age
+  \item \textbf{Key finding to replicate:} normalized estimators stable across cents/dollars; unnormalized flip sign
+  \item \textbf{New analysis:} Love plots and ESS for the three age specifications; does the saturated spec (where unnormalized = normalized) produce better covariate balance?
+\end{itemize}
+
+\subsection{College Education and Wages \textnormal{(Card 1995; SUW 2025 Table 3)}}
+
+\begin{itemize}
+  \item $Z$ = proximity to four-year college, $D$ = some college / college completion (two treatments), $Y$ = log wages
+  \item Two covariate specs: Card (1995) full controls; Kitagawa (2015) parsimonious
+  \item \textbf{Key finding to replicate:} large divergence in unnormalized estimates between Card and Kitagawa specs; normalized estimators more consistent
+  \item \textbf{New analysis:} Love plots for both specs; does the Card spec achieve better complier balance than Kitagawa? Can weight diagnostics explain why estimates diverge?
+\end{itemize}
+
+\subsection{Childbearing and Labor Supply \textnormal{(Angrist \& Evans 1998; SUW 2025 Table 4)}}
+
+\begin{itemize}
+  \item $Z$ = same-sex siblings, $D$ = third child, $Y$ = labor force participation and log income
+  \item Near one-sided noncompliance (no always-takers) $\to$ Proposition 3.3 applies
+  \item \textbf{Key finding to replicate:} most dramatic translation invariance failure; income estimates flip sign across cents/dollars/thousands
+  \item \textbf{New analysis:} demonstrate that $\sum \kappa_{i1} > 0$ by construction; Wald-AIPW comparison; Love plots for both outcomes
+\end{itemize}
+
+\subsection{401(k) Pension Eligibility \textnormal{(Knaus 2024)} \textnormal{[optional]}}
+
+\begin{itemize}
+  \item $Z$ = 401(k) eligibility, $D$ = participation, $Y$ = net financial assets
+  \item No always-takers by design (one-sided noncompliance)
+  \item \textbf{Added value:} this is the dataset Knaus (2024) uses for DML diagnostics; applying the same Love plot pipeline to kappa estimators allows a direct comparison between the DML and kappa frameworks on identical data and covariates
+  \item Depends on computational feasibility of cross-fitting for Wald-AIPW
+\end{itemize}
+
+\begin{openbox}
+Inclusion of 4.4 depends on computational convergence of cross-fitting. If included, it provides the cleanest comparison between frameworks. If excluded, the three SUW applications are sufficient for the thesis argument.
+\end{openbox}
+
+%=============================================================================
+\section{Discussion \textnormal{\small(approx.\ 3--4 pages)}}
+%=============================================================================
+
+\begin{itemize}
+  \item \textbf{Comparative summary:} which estimators achieve best covariate balance across applications? Does $\hat\tau_u^{\text{cb}}$ consistently outperform $\hat\tau_u^{\text{ml}}$?
+  \item \textbf{The outcome weights lens:} what does it add beyond the point estimate comparison? When do Love plots reveal problems that the point estimates alone don't?
+  \item \textbf{DML vs.\ kappa:} are the Wald-AIPW and $\hat\tau_u$ targeting the same complier subpopulation? Do their outcome weight distributions look similar?
+  \item \textbf{Practical guidance:} a decision framework for practitioners: when to use $\hat\tau_u$ vs.\ $\hat\tau_u^{\text{cb}}$ vs.\ Wald-AIPW; when is 2SLS still defensible?
+  \item \textbf{Limitations:} bootstrap inference is computationally expensive; analytical SEs not implemented for all estimators; Love plots are descriptive, not inferential
+\end{itemize}
+
+%=============================================================================
+\section{Conclusion and Outlook \textnormal{\small(approx.\ 2 pages)}}
+%=============================================================================
+
+\begin{itemize}
+  \item Summary of main findings: which estimators are translation invariant, which achieve covariate balance, and what the outcome weights lens adds
+  \item Limitations and possible extensions:
+    \begin{itemize}
+      \item Doubly robust estimators (combine kappa weighting with outcome regression)
+      \item Heterogeneous treatment effects: do the subpopulations targeted by different estimators vary with covariates?
+      \item Formal tests of covariate balance (not just Love plots)
+    \end{itemize}
+\end{itemize}
+
+%=============================================================================
+\section*{Open Questions and Annotations}
+%=============================================================================
+
+\begin{openbox}
+\textbf{Section 3.1 question: ``outcome weights or their weights?''}\\
+Resolved: kappa weights $\kappa_i$ are identification weights; outcome weights $\omega_i$ (Knaus framework) are $\sum_i \omega_i Y_i = \hat\tau$. They are derived from but not equal to $\kappa_i$. Section 3.1 should begin by clearly defining both objects and the relationship between them.
+\end{openbox}
+
+\begin{openbox}
+\textbf{401(k) as first or fourth application?}\\
+The professor's proposal lists 401(k) as 4.1; your structure.pdf omits it. Recommendation: include as 4.4 (last, marked optional) so the three SUW applications come first in the same order as the original paper, and the 401(k) serves as the DML comparison application. If computational issues prevent it, the argument is complete without it.
+\end{openbox}
+
+\begin{openbox}
+\textbf{Motivation framing}\\
+Your note suggests the motivation could be ``the use of unnormalized estimates in the past.'' This is correct but can be sharpened: the hook is that the same dataset + same estimator + same model yields different estimates depending on arbitrary coding choices. This is a concrete, striking failure mode that applied researchers will immediately recognize as problematic.
+\end{openbox}
+
+%=============================================================================
+\section*{Indicative Page Budget}
+%=============================================================================
+
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Chapter & Approx.\ pages \\
+\midrule
+1. Introduction & 3--4 \\
+2. Econometric Framework & 8--10 \\
+3. Connecting the Frameworks & 5--7 \\
+4. Empirical Applications (3--4 datasets) & 12--15 \\
+5. Discussion & 3--4 \\
+6. Conclusion & 1--2 \\
+References & 2--3 \\
+\midrule
+\textbf{Total} & \textbf{34--45} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
