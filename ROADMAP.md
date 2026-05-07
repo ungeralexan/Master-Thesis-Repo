@@ -43,13 +43,57 @@
 
 ---
 
-## Thesis outline (draft)
+## Central Research Question
 
-### Chapter 1 — Introduction (2–3 pages)
-- IV estimation is ubiquitous but 2SLS has limitations under heterogeneous effects
-- Kappa weighting as a flexible alternative (Abadie 2003, SUW 2025)
-- Contribution: replication + extension via outcome weights + Love plots
-- Road map of the thesis
+To what extent do machine learning-based and classical kappa weighting estimators of the LATE implicitly target different subpopulations, and what do their outcome weights reveal about covariate balance and estimator reliability across empirical applications?
+
+### Sub-questions
+
+**RQ1.** What are the structural properties of outcome weights for kappa-based LATE estimators, and how do they differ from those of DML-based estimators independently of any specific dataset?
+
+**RQ2.** When applied to empirical datasets, how do outcome weights of DML-based estimators and kappa estimators compare in terms of covariate balance, effective sample size, negative weights, and estimator stability?
+
+**RQ3.** Can outcome-weight diagnostics guide practitioners toward more robust estimator choices, and can they explain divergences between classical kappa, normalized kappa, and DML-based IV estimators?
+
+
+
+# Thesis outline (draft)
+
+# Chapter 1 — Introduction  
+**Approx. length: 3–4 pages**
+
+## 1.1 Motivation
+ In applied IV settings, the same dataset can yield wildly different LATE esti-
+mates depending on which estimator is used — not because of different assumptions,
+but because of how the outcome variable is coded. Unnormalized kappa weighting
+estimators violate translation invariance: adding a constant to every outcome ob-
+servation changes the treatment effect estimate. This is the practical failure mode
+that motivates the thesis.
+
+## 1.2 Background
+Standard practice uses 2SLS with additive covariates, which Bland-
+hol et al. (2022) and Sloczy´nski (2021) show does not generally recover the LATE
+under heterogeneous effects. Kappa weighting estimators (Abadie 2003; SUW 2025)
+are a flexible alternative, but the literature has not yet fully diagnosed their be-
+haviour through the lens of outcome weights.
+
+## 1.3 Research Gap
+Knaus (2024) introduces the PIVE framework and derives outcome weights. , enabling covariate
+balance diagnostics via Love plots. Appendix A.4 of Knaus (2024) sketches the same
+derivation for kappa estimators but does not apply it empirically. This thesis fills
+that gap.
+
+## 1.4 Contribution
+
+This thesis contributes by:
+
+1. deriving closed-form outcome weights for normalized kappa estimators, especially \(\hat{\tau}_u\) and \(\hat{\tau}_{a,10}\);
+2. clarifying the distinction between Abadie’s kappa weights and outcome weights in the PIVE sense;
+3. showing analytically how the sum-to-zero property of outcome weights is connected to translation invariance;
+4. applying Love plots and effective sample size diagnostics to kappa estimators;
+5. comparing classical kappa estimators, normalized kappa estimators, CBPS-based kappa estimators, and DML/Wald-AIPW estimators across empirical applications.
+
+
 
 ### Chapter 2 — Theoretical Framework (6–8 pages)
 
