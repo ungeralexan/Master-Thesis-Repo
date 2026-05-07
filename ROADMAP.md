@@ -95,42 +95,62 @@ This thesis contributes by:
 
 
 
-### Chapter 2 — Theoretical Framework (6–8 pages)
+# Chapter 2 — Econometric Framework  
+**Approx. length: 8–10 pages**
 
-**2.1 The LATE setup**
-- Potential outcomes notation: Y(0), Y(1), D(0), D(1)
-- Four compliance types (AIR 1996)
-- Assumption IV (i)–(iv): conditional independence, exclusion, first stage, monotonicity
-- LATE definition: E[Y₁ − Y₀ | D₁ > D₀]
+## 2.1 IV, LATE, and Compliers
+- Potential outcomes and potential treatment status
+- Compliance types
+Introduce the four compliance types from the LATE framework:
+- IV assumptions
+- LATE definition
+- Why 2SLS may be problematic
 
-**2.2 The kappa theorem**
+
+
+## 2.2 Abadie’s Kappa and Weighting Estimators of the LATE
 - Lemma 2.1 (Abadie 2003 restated in SUW notation)
 - The three weights κ, κ₁, κ₀ and their cell-by-cell values (Table 1 of SUW)
 - Parts (a), (b), (c): any complier moment identified
 - Remark 2.2: E(κ) = E(κ₁) = E(κ₀) in population; why this matters for finite samples
 
-**2.3 The five estimators**
-- Equations (1) and (2) as distinct starting points
-- τ̂ₐ, τ̂ₐ,₁ (= τ̂ₜ), τ̂ₐ,₀: unnormalized, three denominator choices
-- τ̂ₐ,₁₀: normalized, Abadie-Cattaneo (2018)
-- τ̂ᵤ: normalized, Uysal (2011) — recommended estimator
+## 2.3 Kappa-Based LATE Estimators
 
-**2.4 Why normalization matters**
+Define and compare the five kappa estimators.
+
+- Normalized estimators
+
+## 2.4 Why normalization matters**
 - Definition TI (translation invariance) and Definition SE (scale equivariance)
 - Proposition 3.2: τ̂ᵤ and τ̂ₐ,₁₀ pass; τ̂ₐ, τ̂ₜ, τ̂ₐ,₀ fail
 - Mechanical explanation: finite-sample non-cancellation of instrument residuals
 
-**2.5 One-sided noncompliance**
+## 2.5 One-sided noncompliance**
 - Definition and examples (401k, randomized trials, twin births)
 - Table 1 cell-by-cell signs of κ₁ and κ₀
 - Proposition 3.3: positive denominators guaranteed
 - Proposition 3.4: τ̂ᵤ denominator positive in both one-sided cases
 - Why τ̂ₐ,₁₀ fails here but τ̂ᵤ doesn't
 
-**2.6 Estimation of the propensity score**
+## 2.6 Estimation of the propensity score**
 - ML logit (τ̂ᵤᵐˡ) vs covariate balancing CBPS (τ̂ᵤᶜᵇ)
 - Proposition 3.5: with CBPS, all normalized estimators are identical
 - Why CBPS regularizes weights away from extremes (Heiler 2022 argument)
+
+## 2.7 Double Machine Learning and Wald-AIPW
+
+### DML framework
+
+Introduce the DML framework for IV estimation.
+
+### Nuisance parameters
+
+### Wald-AIPW estimator
+
+- The Wald-AIPW estimator is the DML analogue of the Wald ratio.
+- It augments the IV estimand with outcome and treatment regressions.
+- In the thesis, this estimator serves as the machine-learning benchmark against which kappa estimators are compared.
+
 
 ### Chapter 3 — Outcome Weights Framework (4–5 pages)
 - Knaus (2024) PIVE framework: τ̂ = Σᵢ ωᵢYᵢ
