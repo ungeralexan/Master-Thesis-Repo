@@ -298,6 +298,78 @@ for (spec in specs) {
 
 
 
+Here I start the translation invariance demonstration
+
+```{r}
+# ==============================================================================
+# TRANSLATION INVARIANCE DEMONSTRATION
+# Adding log(100) to every outcome (switching from dollars to cents) shifts
+# unnormalized estimates by exactly Sum_w * log(100) — and zero for normalized.
+# This connects the weight diagnostics table directly to the SUW replication.
+# ==============================================================================
+
+cat("\n--- Translation invariance: dollars vs cents ---\n")
+cat("Switching Y from log-dollars to log-cents adds log(100) =", log(100),
+    "to every observation.\n")
+cat("For any estimator: tau(Y + k) = tau(Y) + k * sum(w)\n")
+cat("=> normalized estimators (sum_w=0): no shift\n")
+cat("=> unnormalized estimators (sum_w≠0): shift = sum_w * log(100)\n\n")
+
+k <- log(100)   # the constant added when switching dollars -> cents
+
+# Re-compute estimates in cents directly
+Y5_cnt <- sipp_clean$lwage_cnt   # log wages in cents
+
+cat("ANGRIST (1990) — cubic age spec, logit MLE propensity score:\n\n")
+cat(sprintf("  %-22s  %8s  %8s  %8s  %8s\n",
+            "Estimator", "Dollars", "Cents", "Diff(act.)", "Diff(pred.)"))
+cat(strrep("-", 70), "\n")
+
+# For each estimator: compare actual shift vs sum_w * log(100)
+estimators_5 <- list(
+  list(name = "tau_u   (norm.)", w = kw5$w_u,
+       est_d = tau_u(Y5,     Z5, D5, p_ml5),
+       est_c = tau_u(Y5_cnt, Z5, D5, p_ml5)),
+  list(name = "tau_a10 (norm.)", w = kw5$w_a10,
+       est_d = tau_a10(Y5,     Z5, D5, p_ml5),
+       est_c = tau_a10(Y5_cnt, Z5, D5, p_ml5)),
+  list(name = "tau_a   (unnorm)", w = kw5$w_a,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a")),
+  list(name = "tau_a1  (unnorm)", w = kw5$w_a1,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a1"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a1")),
+  list(name = "tau_a0  (unnorm)", w = kw5$w_a0,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a0"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a0"))
+)
+
+for (e in estimators_5) {
+  actual_diff    <- e$est_c - e$est_d        # what actually changes
+  predicted_diff <- sum(e$w) * k             # sum_w * log(100)
+  cat(sprintf("  %-22s  %8.4f  %8.4f  %10.4f  %10.4f\n",
+              e$name, e$est_d, e$est_c, actual_diff, predicted_diff))
+}
+
+cat("\nVerify: actual diff == sum_w * log(100) for all estimators?\n")
+all_match <- all(sapply(estimators_5, function(e) {
+  isTRUE(all.equal(e$est_c - e$est_d, sum(e$w) * k, tolerance = 1e-8))
+}))
+cat(sprintf("  => %s\n\n", if (all_match) "TRUE — exact algebraic identity confirmed" 
+                            else "FALSE — check implementation"))
+```
+
+
+
+
+
+Here I jump over to card 
+
+
+
+
+
+
 ```{r}
 # 4. TABLE 3: CARD (1995) - COLLEGE EDUCATION
 
@@ -570,7 +642,7 @@ threshold = 0.1
 create_love_plot_5 = function(title, weights) {
   love.plot(
     D5 ~ as.matrix(X5),
-    weights    = weights * (2*D5 - 1),
+    weights    = weights,
     position   = "bottom",
     title      = title,
     thresholds = c(m = threshold),
@@ -688,12 +760,15 @@ print(rbind(diag6_kappa, diag6_dml), row.names = FALSE)
 
 ```{r}
 # love plot 
+library(cobalt)
+library(viridis)
 
+threshold = 0.1
 
 create_love_plot_6 = function(title, weights) {
   love.plot(
     D6 ~ as.matrix(X6),
-    weights    = weights * (2*D6 - 1),
+    weights    = weights,
     position   = "bottom",
     title      = title,
     thresholds = c(m = threshold),
@@ -706,16 +781,22 @@ create_love_plot_6 = function(title, weights) {
   )
 }
 
-love_plot_6_plriv    = create_love_plot_6("Card (1995): PLR-IV",    w_plriv6)
-love_plot_6_waldaipw = create_love_plot_6("Card (1995): Wald-AIPW", w_waldaipw6)
-love_plot_6_tauu     = create_love_plot_6("Card (1995): tau_u",     kw6$w_u)
-love_plot_6_taua10   = create_love_plot_6("Card (1995): tau_a10",   kw6$w_a10)
-
+love_plot_6_plriv    = create_love_plot_6("Card (1995): PLR-IV",    w_plriv6,    is_dml = TRUE)
+love_plot_6_waldaipw = create_love_plot_6("Card (1995): Wald-AIPW", w_waldaipw6, is_dml = TRUE)
+love_plot_6_tauu     = create_love_plot_6("Card (1995): tau_u",     kw6$w_u,     is_dml = FALSE)
+love_plot_6_taua10   = create_love_plot_6("Card (1995): tau_a10",   kw6$w_a10,   is_dml = FALSE)
 # Combined figure
 grid.arrange(love_plot_6_plriv, love_plot_6_waldaipw,
              love_plot_6_tauu,  love_plot_6_taua10,
              nrow = 2)
 
-love_plot_6_tauu
 ```
+
+
+
+
+
+
+
+Angrist and Evans (1998)
 

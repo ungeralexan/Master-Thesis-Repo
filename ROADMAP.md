@@ -144,6 +144,7 @@ Define and compare the five kappa estimators.
 Introduce the DML framework for IV estimation.
 
 ### Nuisance parameters
+Which will be estimated 
 
 ### Wald-AIPW estimator
 
@@ -154,11 +155,15 @@ Introduce the DML framework for IV estimation.
 
 ### Chapter 3 — Outcome Weights Framework (4–5 pages)
 - Knaus (2024) PIVE framework: τ̂ = Σᵢ ωᵢYᵢ
+- Placing Kappa Estimators in the PIVE Framework (Show it)
 - Deriving outcome weights for τ̂ᵤ, τ̂ₐ,₁₀, τ̂ₐ (following Knaus Appendix A.4)
-- Normalization properties of ωᵢ: do treated weights sum to +1, untreated to −1?
+- Normalization properties of ωᵢ: do treated weights sum to +1, untreated to −1? Translation invariance and scale equivariance
 - Love plots as covariate balance diagnostics using ωᵢ
 
 ### Chapter 4 — Empirical Applications (8–10 pages)
+
+**Things you should compare in those three design**
+Differences when it comes to tuning.
 
 **4.1 Angrist (1990) — Military service**
 - Setup: Z = draft lottery, D = veteran, Y = log wages
@@ -180,11 +185,45 @@ Introduce the DML framework for IV estimation.
 - Love plots: standardized mean differences before/after kappa reweighting
 - Covariate balance comparison: normalized vs unnormalized estimators
 - Connection to Knaus (2024) Appendix A.4
+- Cross application comparison
 
-### Chapter 5 — Conclusion (1–2 pages)
-- Summary of findings
-- Policy implications: which estimator to use and when
-- Limitations and future work (doubly robust estimators, weak overlap)
+
+
+
+# Chapter 5 — Discussion  
+
+
+## 5.1 What Outcome Weights Add
+
+- Point estimates alone do not reveal why estimators differ.
+- Outcome weights show which observations drive the estimate.
+- Weight diagnostics reveal instability, imbalance, and excessive leverage.
+- Love plots make the balance properties of IV estimators visible.
+
+## 5.2 DML vs. Kappa Estimators
+
+Discuss whether DML/Wald-AIPW and normalized kappa estimators appear to target the same complier population.
+
+Key comparison dimensions:
+
+- weight distributions;
+- covariate balance;
+- effective sample size;
+- negative weight patterns;
+- sensitivity to covariate specification.
+
+## 5.3 Implement Kappa weights in outcome weights?
+
+
+## 5.4 Limitations
+
+- Bootstrap inference can be computationally expensive.
+- Analytical standard errors are not implemented for all estimators.
+- Love plots are descriptive rather than inferential.
+- Weak overlap can create extreme weights.
+- DML estimates depend on tuning choices and machine-learning specifications.
+- Outcome weights reveal imbalance but do not automatically solve it.
+
 
 ---
 

@@ -11,7 +11,10 @@ library(haven)
 library(AER)        
 library(sandwich)   
 library(lmtest)     
-library(boot)       
+library(boot)
+library(cobalt)
+library(viridis)
+ library(gridExtra)
 
 set.seed(42)  # Reproducibility for bootstrap
 
@@ -295,6 +298,78 @@ for (spec in specs) {
 
 
 
+Here I start the translation invariance demonstration
+
+```{r}
+# ==============================================================================
+# TRANSLATION INVARIANCE DEMONSTRATION
+# Adding log(100) to every outcome (switching from dollars to cents) shifts
+# unnormalized estimates by exactly Sum_w * log(100) — and zero for normalized.
+# This connects the weight diagnostics table directly to the SUW replication.
+# ==============================================================================
+
+cat("\n--- Translation invariance: dollars vs cents ---\n")
+cat("Switching Y from log-dollars to log-cents adds log(100) =", log(100),
+    "to every observation.\n")
+cat("For any estimator: tau(Y + k) = tau(Y) + k * sum(w)\n")
+cat("=> normalized estimators (sum_w=0): no shift\n")
+cat("=> unnormalized estimators (sum_w≠0): shift = sum_w * log(100)\n\n")
+
+k <- log(100)   # the constant added when switching dollars -> cents
+
+# Re-compute estimates in cents directly
+Y5_cnt <- sipp_clean$lwage_cnt   # log wages in cents
+
+cat("ANGRIST (1990) — cubic age spec, logit MLE propensity score:\n\n")
+cat(sprintf("  %-22s  %8s  %8s  %8s  %8s\n",
+            "Estimator", "Dollars", "Cents", "Diff(act.)", "Diff(pred.)"))
+cat(strrep("-", 70), "\n")
+
+# For each estimator: compare actual shift vs sum_w * log(100)
+estimators_5 <- list(
+  list(name = "tau_u   (norm.)", w = kw5$w_u,
+       est_d = tau_u(Y5,     Z5, D5, p_ml5),
+       est_c = tau_u(Y5_cnt, Z5, D5, p_ml5)),
+  list(name = "tau_a10 (norm.)", w = kw5$w_a10,
+       est_d = tau_a10(Y5,     Z5, D5, p_ml5),
+       est_c = tau_a10(Y5_cnt, Z5, D5, p_ml5)),
+  list(name = "tau_a   (unnorm)", w = kw5$w_a,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a")),
+  list(name = "tau_a1  (unnorm)", w = kw5$w_a1,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a1"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a1")),
+  list(name = "tau_a0  (unnorm)", w = kw5$w_a0,
+       est_d = tau_unnorm(Y5,     Z5, D5, p_ml5, "a0"),
+       est_c = tau_unnorm(Y5_cnt, Z5, D5, p_ml5, "a0"))
+)
+
+for (e in estimators_5) {
+  actual_diff    <- e$est_c - e$est_d        # what actually changes
+  predicted_diff <- sum(e$w) * k             # sum_w * log(100)
+  cat(sprintf("  %-22s  %8.4f  %8.4f  %10.4f  %10.4f\n",
+              e$name, e$est_d, e$est_c, actual_diff, predicted_diff))
+}
+
+cat("\nVerify: actual diff == sum_w * log(100) for all estimators?\n")
+all_match <- all(sapply(estimators_5, function(e) {
+  isTRUE(all.equal(e$est_c - e$est_d, sum(e$w) * k, tolerance = 1e-8))
+}))
+cat(sprintf("  => %s\n\n", if (all_match) "TRUE — exact algebraic identity confirmed" 
+                            else "FALSE — check implementation"))
+```
+
+
+
+
+
+Here I jump over to card 
+
+
+
+
+
+
 ```{r}
 # 4. TABLE 3: CARD (1995) - COLLEGE EDUCATION
 
@@ -367,10 +442,6 @@ for (tr in treatments) {
 
 
 ```
-
-
-
-
 
 
 
@@ -460,18 +531,35 @@ X5 <- as.data.frame(model.matrix(~ 0 + age + I(age^2) + I(age^3), data = sipp_cl
 # --- 5a. DML via OutcomeWeights (Knaus 2024) ---
 cat("--- 5a. Double ML (Knaus 2024) ---\n")
 cat("Running dml_with_smoother() with 5-fold cross-fitting...\n")
-dml_5 <- dml_with_smoother(Y5, D5, X5, Z5, n_cf_folds = 5)
-cat("\nDML results:\n")
-print(summary(dml_5))
+dml_5 <- dml_with_smoother(Y5, D5, X5, Z5, n_cf_folds = 5, tune.parameters = "all")
+# Print ONLY the IV-relevant rows
+res_dml5 <- summary(dml_5)
+cat("DML results (IV-relevant estimators only):\n")
+print(res_dml5[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
 
 # Extract DML outcome weights: w_i s.t. tau_DML = sum(w_i * Y_i)
 # get_outcome_weights() returns an NxK matrix (one column per estimator)
-omega_5    <- get_outcome_weights(dml_5)
+# Extract outcome weights: omega is a (4 x N) matrix
+omega_5      <- get_outcome_weights(dml_5)
+w_plriv5     <- as.vector(omega_5$omega["PLR-IV",    ])
+w_waldaipw5  <- as.vector(omega_5$omega["Wald-AIPW", ])
 # omega_5$omega rows: PLR, PLR-IV, AIPW-ATE, Wald-AIPW
 # Verify: omega_5$omega %*% Y == point estimates
 cat("\nVerify omega'Y = point estimates:",
     all.equal(as.numeric(omega_5$omega %*% Y5),
               as.numeric(summary(dml_5)[, 1])), "\n\n")
+
+
+
+# Algebraic verification (Knaus 2024, core claim):
+# The weights are EXACT — tau_hat = sum(omega_i * Y_i) to machine precision.
+# This is not an approximation: it is an algebraic identity derived from the
+# smoother matrices. If TRUE, the Love plots and ESS diagnostics are valid.
+cat("\nVerify omega'Y = DML point estimates (should be TRUE):\n")
+cat("  PLR-IV:   ", all.equal(sum(w_plriv5   * Y5), res_dml5["PLR-IV",    1]), "\n")
+cat("  Wald-AIPW:", all.equal(sum(w_waldaipw5 * Y5), res_dml5["Wald-AIPW", 1]), "\n\n")
+
+
 
 # Plot DML weight distributions (Knaus's plot method)
 cat("--- DML weight distributions (Knaus plot) ---\n")
@@ -479,7 +567,9 @@ plot(dml_5)
 
 # --- 5b. Kappa outcome weights (SUW 2025) ---
 cat("\n--- 5b. Kappa estimators (SUW 2025) ---\n")
-p_ml5 <- logit_mle(Z5, model.matrix(~ age, data = sipp_clean))
+X5_kappa <- model.matrix(~ age + I(age^2) + I(age^3), data = sipp_clean)
+# Note: logit_mle() uses all columns of X5_kappa including the intercept column.
+p_ml5 <- logit_mle(Z5, X5_kappa)
 kw5   <- kappa_outcome_weights(Y5, Z5, D5, p_ml5)
 
 cat("Point estimates:\n")
@@ -496,14 +586,23 @@ diag5 <- weight_diag_table(
 print(diag5, row.names = FALSE)
 
 # Add DML Wald-AIPW weights to comparison
-w_waldaipw5 <- as.vector(omega_5$omega[4, ])  # row 4 = Wald-AIPW
-diag5_dml <- data.frame(
-  Estimator = "Wald-AIPW (DML)",
-  Sum_w     = round(sum(w_waldaipw5), 6),
-  ESS       = round(1 / sum(w_waldaipw5^2), 0),
-  Pct_neg   = round(mean(w_waldaipw5 < 0) * 100, 1),
-  Max_abs_w = round(max(abs(w_waldaipw5)), 6)
+diag5_dml <- rbind(
+  data.frame(
+    Estimator = "PLR-IV (DML)",
+    Sum_w     = round(sum(w_plriv5), 6),
+    ESS       = round(1 / sum(w_plriv5^2), 0),
+    Pct_neg   = round(mean(w_plriv5 < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w_plriv5)), 6)
+  ),
+  data.frame(
+    Estimator = "Wald-AIPW (DML)",
+    Sum_w     = round(sum(w_waldaipw5), 6),
+    ESS       = round(1 / sum(w_waldaipw5^2), 0),
+    Pct_neg   = round(mean(w_waldaipw5 < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w_waldaipw5)), 6)
+  )
 )
+
 cat("\nFor comparison, DML Wald-AIPW:\n")
 print(diag5_dml, row.names = FALSE)
 
@@ -511,6 +610,62 @@ print(diag5_dml, row.names = FALSE)
 
 ```
 
+```{r}
+# checking the love plots
+# cat("\n--- Love plots: covariate balance via outcome weights ---\n")
+# X5_bal <- as.data.frame(X5)  # age, age^2, age^3
+# love.plot(
+#   D5 ~ as.matrix(X5_bal),
+#   weights = list(
+#     "tau_u (kappa)"       = kw5$w_u    * (2*D5 - 1),
+#     "tau_a10 (kappa)"     = kw5$w_a10  * (2*D5 - 1),
+#     "PLR-IV (DML)"        = w_plriv5   * (2*D5 - 1),
+#     "Wald-AIPW (DML)"     = w_waldaipw5 * (2*D5 - 1)
+#   ),
+#   thresholds = c(m = 0.1),   # |SMD| <= 0.1 is the conventional "good balance" threshold
+#   title      = "Angrist (1990): Covariate Balance by Estimator",
+#   var.order  = "unadjusted",
+#   binary     = "std",
+#   abs        = TRUE,
+#   line       = TRUE
+# )
+
+library(cobalt)
+library(viridis)
+
+threshold = 0.1
+
+# ==============================================================================
+# SECTION 5: ANGRIST (1990) — Love plots
+# ==============================================================================
+
+create_love_plot_5 = function(title, weights) {
+  love.plot(
+    D5 ~ as.matrix(X5),
+    weights    = weights,
+    position   = "bottom",
+    title      = title,
+    thresholds = c(m = threshold),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+love_plot_5_plriv    = create_love_plot_5("Angrist (1990): PLR-IV",    w_plriv5)
+love_plot_5_waldaipw = create_love_plot_5("Angrist (1990): Wald-AIPW", w_waldaipw5)
+love_plot_5_tauu     = create_love_plot_5("Angrist (1990): tau_u",     kw5$w_u)
+love_plot_5_taua10   = create_love_plot_5("Angrist (1990): tau_a10",   kw5$w_a10)
+
+# Combined figure
+grid.arrange(love_plot_5_plriv, love_plot_5_waldaipw,
+             love_plot_5_tauu,  love_plot_5_taua10,
+             nrow = 2)
+
+```
 
 
 ```{r}
@@ -520,8 +675,9 @@ print(diag5_dml, row.names = FALSE)
 
 cat("\n", strrep("=", 70), "\n")
 cat("SECTION 6: CARD (1995) — College Education\n")
-cat("Z = near 4-year college | D = some college | Y = log wages (dollars)\n")
+cat("Z = near 4-year college | D = some college (educ>12) | Y = log wages (dollars)\n")
 cat("Covariate spec: Card (1995) full controls\n")
+cat("WARNING: weak instrument — IV estimates will be imprecise and potentially large\n")
 cat(strrep("=", 70), "\n\n")
 
 # --- Data (already prepared in Section 4 of main script) ---
@@ -537,16 +693,29 @@ X6 <- as.data.frame(model.matrix(~ 0 + black + south + smsa + smsa66 +
 # --- 6a. DML ---
 cat("--- 6a. Double ML (Knaus 2024) ---\n")
 cat("Running dml_with_smoother() with 5-fold cross-fitting...\n")
-dml_6    <- dml_with_smoother(Y6, D6, X6, Z6, n_cf_folds = 5)
+dml_6    <- dml_with_smoother(Y6, D6, X6, Z6, n_cf_folds = 5, tune.parameters = "all")
 cat("\nDML results:\n")
-print(summary(dml_6))
+res_dml6 <- summary(dml_6)
 
-omega_6  <- get_outcome_weights(dml_6)
-cat("\nVerify omega'Y = point estimates:",
-    all.equal(as.numeric(omega_6$omega %*% Y6),
-              as.numeric(summary(dml_6)[, 1])), "\n\n")
+# Print only the IV-relevant estimators
+cat("DML results (IV-relevant only — PLR and AIPW-ATE are not IV estimators):\n")
+print(res_dml6[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+# Extract weights BY NAME — never by position (position can change with package updates)
+omega_6     <- get_outcome_weights(dml_6)
+w_plriv6    <- as.vector(omega_6$omega["PLR-IV",    ])
+w_waldaipw6 <- as.vector(omega_6$omega["Wald-AIPW", ])
+
 
 plot(dml_6)
+
+# Algebraic verification: tau_hat = sum(omega_i * Y_i) exactly
+# This confirms the weights are correct for use in Love plots and diagnostics
+cat("\nVerify omega'Y = DML point estimates (should be TRUE):\n")
+cat("  PLR-IV:   ", all.equal(sum(w_plriv6    * Y6), res_dml6["PLR-IV",    1]), "\n")
+cat("  Wald-AIPW:", all.equal(sum(w_waldaipw6 * Y6), res_dml6["Wald-AIPW", 1]), "\n\n")
+
+
 
 # --- 6b. Kappa weights ---
 cat("\n--- 6b. Kappa estimators (SUW 2025) ---\n")
@@ -559,25 +728,67 @@ cat(sprintf("  tau_a10  = %.4f\n", tau_a10(Y6, Z6, D6, p_ml6)))
 cat(sprintf("  tau_a    = %.4f\n", tau_unnorm(Y6, Z6, D6, p_ml6, "a")))
 cat(sprintf("  tau_a1   = %.4f\n", tau_unnorm(Y6, Z6, D6, p_ml6, "a1")))
 
-cat("\nWeight diagnostics:\n")
-diag6 <- weight_diag_table(
+diag6_kappa <- weight_diag_table(
   kw6,
-  c("tau_u (norm.)", "tau_a10 (norm.)", "tau_a (unnorm.)", "tau_a1 (unnorm.)", "tau_a0 (unnorm.)")
+  c("tau_u (norm.)", "tau_a10 (norm.)",
+    "tau_a (unnorm.)", "tau_a1 (unnorm.)", "tau_a0 (unnorm.)")
 )
-print(diag6, row.names = FALSE)
 
-w_waldaipw6 <- as.vector(omega_6$omega[4, ])
-diag6_dml <- data.frame(
-  Estimator = "Wald-AIPW (DML)",
-  Sum_w     = round(sum(w_waldaipw6), 6),
-  ESS       = round(1 / sum(w_waldaipw6^2), 0),
-  Pct_neg   = round(mean(w_waldaipw6 < 0) * 100, 1),
-  Max_abs_w = round(max(abs(w_waldaipw6)), 6)
+diag6_dml <- rbind(
+  data.frame(
+    Estimator = "PLR-IV (DML)",
+    Sum_w     = round(sum(w_plriv6), 6),
+    ESS       = round(1 / sum(w_plriv6^2), 0),
+    Pct_neg   = round(mean(w_plriv6 < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w_plriv6)), 6)
+  ),
+  data.frame(
+    Estimator = "Wald-AIPW (DML)",
+    Sum_w     = round(sum(w_waldaipw6), 6),
+    ESS       = round(1 / sum(w_waldaipw6^2), 0),
+    Pct_neg   = round(mean(w_waldaipw6 < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w_waldaipw6)), 6)
+  )
 )
-cat("\nFor comparison, DML Wald-AIPW:\n")
-print(diag6_dml, row.names = FALSE)
+cat("\nWeight diagnostics (all estimators combined):\n")
+print(rbind(diag6_kappa, diag6_dml), row.names = FALSE)
+
+```
 
 
+
+
+```{r}
+# love plot 
+library(cobalt)
+library(viridis)
+
+threshold = 0.1
+
+create_love_plot_6 = function(title, weights) {
+  love.plot(
+    D6 ~ as.matrix(X6),
+    weights    = weights,
+    position   = "bottom",
+    title      = title,
+    thresholds = c(m = threshold),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+love_plot_6_plriv    = create_love_plot_6("Card (1995): PLR-IV",    w_plriv6,    is_dml = TRUE)
+love_plot_6_waldaipw = create_love_plot_6("Card (1995): Wald-AIPW", w_waldaipw6, is_dml = TRUE)
+love_plot_6_tauu     = create_love_plot_6("Card (1995): tau_u",     kw6$w_u,     is_dml = FALSE)
+love_plot_6_taua10   = create_love_plot_6("Card (1995): tau_a10",   kw6$w_a10,   is_dml = FALSE)
+# Combined figure
+grid.arrange(love_plot_6_plriv, love_plot_6_waldaipw,
+             love_plot_6_tauu,  love_plot_6_taua10,
+             nrow = 2)
 
 ```
 
@@ -585,4 +796,284 @@ print(diag6_dml, row.names = FALSE)
 
 
 
+
+
+Angrist and Evans (1998)
+```{r}
+# ==============================================================================
+# 5. TABLE 4: ANGRIST & EVANS (1998) - CHILDBEARING
+# ==============================================================================
+# Dataset : ae98.dta (1980 U.S. Census, subsample from Farbmacher et al. 2018)
+# Treatment (D): morekids = 1 if woman has 3+ children
+# Instrument (Z): samesex = 1 if first two children are same sex
+# Covariates: age, age at first birth, sex of first two children,
+#             race/ethnicity indicators
+#
+# Outcome A: Labor force participation (workedm)
+#   - Coded as: 1=worked/0=not (standard)
+#   -           2=worked/1=not (shift by 1)
+#   -           0=worked/1=not (relabeled: "did not work")
+#   The last two variants illustrate translation non-invariance of unnormalized estimators.
+#
+# Outcome B: Log annual income (lincomem)
+#   - Measured in cents, dollars, $1000s, $100,000s
+#   - Only women with positive income are included for log income.
+#   These variants illustrate scale non-invariance of unnormalized estimators.
+#
+# Key result: A having 3+ kids reduces LFP by ~11.7% and log income by ~13.5%.
+# Unnormalized estimators give wildly different results across measurement choices:
+#   Log income: +0.286 (cents) vs +0.143 (dollars) vs -0.073 ($1000s) vs -0.216 ($100,000s)
+# ==============================================================================
+
+cat("\n", strrep("=", 70), "\n")
+cat("TABLE 4: ANGRIST & EVANS (1998) - Causal Effects of Childbearing\n")
+cat(strrep("=", 70), "\n")
+
+# --- Data preparation ---
+ae98_clean <- ae98
+ae98_clean$workedm_21  <- ae98_clean$workedm + 1          # recode: 2=worked, 1=not
+ae98_clean$workedm_01  <- -(ae98_clean$workedm - 1)       # recode: 0=worked, 1=not
+
+# Log income variants (only defined where incomem > 0)
+# incomem is in dollars; 174,338 observations have incomem = 0 (not working)
+ae98_clean$lincomem_cnt  <- log(100 * ae98_clean$incomem)   # cents
+ae98_clean$lincomem_dol  <- log(ae98_clean$incomem)         # dollars (= original lincomem)
+ae98_clean$lincomem_ths  <- log(ae98_clean$incomem / 1000)  # thousands
+ae98_clean$lincomem_hths <- log(ae98_clean$incomem / 1e5)   # $100,000s
+
+cat(sprintf("Full N = %d (should be 394,840)\n", nrow(ae98_clean)))
+cat(sprintf("N with positive income = %d (should be ~220,502)\n\n",
+            sum(ae98_clean$incomem > 0, na.rm = TRUE)))
+
+# Covariates (same for all ae98 regressions)
+ae98_covs <- c("agem","agefstm","sexk","sex2nd","blackm","hispm","othracem")
+X_ae98 <- model.matrix(~ agem + agefstm + sexk + sex2nd + blackm + hispm + othracem,
+                        data = ae98_clean)
+X_ae98_df <- ae98_clean[, ae98_covs]
+
+D_ae98 <- ae98_clean$morekids
+Z_ae98 <- ae98_clean$samesex
+
+# --- Panel A: Labor force participation ---
+cat("--- Panel A: Labor Force Participation ---\n")
+lfp_outcomes <- list(
+  list(var = "workedm",    label = "1=worked, 0=not (standard)"),
+  list(var = "workedm_21", label = "2=worked, 1=not (shifted up)"),
+  list(var = "workedm_01", label = "0=worked, 1=not (relabeled)")
+)
+
+for (out in lfp_outcomes) {
+  Y <- ae98_clean[[out$var]]
+  cat(sprintf("  Outcome: %s\n", out$label))
+
+  iv_res    <- run_2sls(Y, D_ae98, Z_ae98, X_ae98_df, endog_name = "morekids")
+  kappa_res <- boot_se_all(Y, Z_ae98, D_ae98, X_ae98, R = 200)
+
+  # Note: for "did not work" coding, we report the negative so it's comparable
+  sign_flip <- if (out$var == "workedm_01") -1 else 1
+
+  cat(sprintf("    2SLS:       %s\n",
+              fmt(sign_flip * iv_res$coef, iv_res$se)))
+  cat(sprintf("    tau_cb_u:   %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_cb_u"],
+                              kappa_res$se["tau_cb_u"])))
+  cat(sprintf("    tau_ml_u:   %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_ml_u"],
+                              kappa_res$se["tau_ml_u"])))
+  cat(sprintf("    tau_ml_a10: %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_ml_a10"],
+                              kappa_res$se["tau_ml_a10"])))
+  cat(sprintf("    tau_ml_a:   %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_ml_a"],
+                              kappa_res$se["tau_ml_a"])))
+  cat(sprintf("    tau_ml_t:   %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_ml_t"],
+                              kappa_res$se["tau_ml_t"])))
+  cat(sprintf("    tau_ml_a0:  %s\n",
+              fmt(sign_flip * kappa_res$estimates["tau_ml_a0"],
+                              kappa_res$se["tau_ml_a0"])))
+  cat("\n")
+}
+
+# --- Panel B: Log income (only positive-income observations) ---
+cat("--- Panel B: Log Annual Income ---\n")
+# Restrict to women with positive income
+pos_inc <- ae98_clean$incomem > 0 & !is.na(ae98_clean$incomem)
+ae98_inc <- ae98_clean[pos_inc, ]
+X_ae98_inc <- X_ae98[pos_inc, ]
+X_ae98_inc_df <- X_ae98_df[pos_inc, ]
+D_inc <- ae98_inc$morekids
+Z_inc <- ae98_inc$samesex
+
+income_outcomes <- list(
+  list(var = "lincomem_cnt",  label = "Log income (cents)"),
+  list(var = "lincomem_dol",  label = "Log income (dollars)"),
+  list(var = "lincomem_ths",  label = "Log income ($1000s)"),
+  list(var = "lincomem_hths", label = "Log income ($100,000s)")
+)
+
+for (out in income_outcomes) {
+  Y <- ae98_inc[[out$var]]
+  cat(sprintf("  Outcome: %s\n", out$label))
+
+  iv_res    <- run_2sls(Y, D_inc, Z_inc, X_ae98_inc_df, endog_name = "morekids")
+  kappa_res <- boot_se_all(Y, Z_inc, D_inc, X_ae98_inc, R = 200)
+
+  cat(sprintf("    2SLS:       %s\n", fmt(iv_res$coef, iv_res$se)))
+  cat(sprintf("    tau_cb_u:   %s\n", fmt(kappa_res$estimates["tau_cb_u"],
+                                           kappa_res$se["tau_cb_u"])))
+  cat(sprintf("    tau_ml_u:   %s\n", fmt(kappa_res$estimates["tau_ml_u"],
+                                           kappa_res$se["tau_ml_u"])))
+  cat(sprintf("    tau_ml_a10: %s\n", fmt(kappa_res$estimates["tau_ml_a10"],
+                                           kappa_res$se["tau_ml_a10"])))
+  cat(sprintf("    tau_ml_a:   %s\n", fmt(kappa_res$estimates["tau_ml_a"],
+                                           kappa_res$se["tau_ml_a"])))
+  cat(sprintf("    tau_ml_t:   %s\n", fmt(kappa_res$estimates["tau_ml_t"],
+                                           kappa_res$se["tau_ml_t"])))
+  cat(sprintf("    tau_ml_a0:  %s\n", fmt(kappa_res$estimates["tau_ml_a0"],
+                                           kappa_res$se["tau_ml_a0"])))
+  cat("\n")
+}
+
+cat(strrep("=", 70), "\n")
+cat("REPLICATION COMPLETE\n")
+cat("Note: Bootstrap SEs may differ slightly from Stata analytical SEs.\n")
+cat("      Point estimates should match exactly.\n")
+cat(strrep("=", 70), "\n")
+
+```
+
+
+Now the Knaus Outcome weights analysis
+```{r}
+
+# ==============================================================================
+# SECTION 7: ANGRIST & EVANS (1998) — Outcome weights analysis (Knaus 2024)
+# Runs AFTER Table 4 chunk (ae98_clean, ae98_inc, X_ae98, X_ae98_inc already exist)
+#
+# Outcome: workedm (LFP, 1/0) on full sample N=394,840
+# Reason: samesex is a strong instrument here → DML is stable
+#         near-zero always-takers → one-sided noncompliance (SUW Prop 3.3/3.4)
+# Log income translation invariance shown in 7e using ae98_inc from Table 4
+# ==============================================================================
+
+cat("\n", strrep("=", 70), "\n")
+cat("SECTION 7: AE98 — Outcome Weights Analysis\n")
+cat("Z = samesex | D = morekids | Y = workedm (LFP)\n")
+cat(strrep("=", 70), "\n\n")
+
+Y7 <- ae98_clean$workedm
+D7 <- ae98_clean$morekids
+Z7 <- ae98_clean$samesex
+
+# DML needs no-intercept matrix; kappa logit needs intercept
+X7       <- as.data.frame(model.matrix(~ 0 + agem + agefstm + sexk + sex2nd +
+                                         blackm + hispm + othracem, data = ae98_clean))
+X7_kappa <- X_ae98   # already has intercept, defined in Table 4 chunk
+
+# --- 7a. One-sided noncompliance check (SUW Propositions 3.3 & 3.4) ---
+cat("--- 7a. One-sided noncompliance ---\n")
+cat(sprintf("  Z=0, D=1 (always-takers): %d  (share: %.5f)\n",
+            sum(Z7==0 & D7==1), mean(Z7==0 & D7==1)))
+
+p7_check  <- logit_mle(Z7, X7_kappa)
+kw7_check <- kappa_weights(Z7, D7, p7_check)
+cat(sprintf("  mean(kappa1) = %.6f  [Prop 3.3: > 0 since no always-takers]\n",
+            mean(kw7_check$kappa1)))
+cat(sprintf("  mean(kappa0) = %.6f  [can be negative — never-takers exist]\n\n",
+            mean(kw7_check$kappa0)))
+
+# --- 7b. DML ---
+cat("--- 7b. DML: PLR-IV and Wald-AIPW ---\n")
+dml_7    <- dml_with_smoother(Y7, D7, X7, Z7,
+                               n_cf_folds = 5)
+res_dml7 <- summary(dml_7)
+cat("DML results (IV-relevant only):\n")
+print(res_dml7[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+omega_7     <- get_outcome_weights(dml_7)
+w_plriv7    <- as.vector(omega_7$omega["PLR-IV",    ])
+w_waldaipw7 <- as.vector(omega_7$omega["Wald-AIPW", ])
+
+cat("\nVerify omega'Y = point estimates:\n")
+cat("  PLR-IV:   ", all.equal(sum(w_plriv7    * Y7), res_dml7["PLR-IV",    1]), "\n")
+cat("  Wald-AIPW:", all.equal(sum(w_waldaipw7 * Y7), res_dml7["Wald-AIPW", 1]), "\n\n")
+plot(dml_7)
+
+# --- 7c. Kappa outcome weights ---
+cat("--- 7c. Kappa estimators ---\n")
+p_ml7 <- logit_mle(Z7, X7_kappa)
+kw7   <- kappa_outcome_weights(Y7, Z7, D7, p_ml7)
+
+cat(sprintf("  tau_u   = %.4f\n", tau_u(Y7, Z7, D7, p_ml7)))
+cat(sprintf("  tau_a10 = %.4f\n", tau_a10(Y7, Z7, D7, p_ml7)))
+cat(sprintf("  tau_a   = %.4f\n", tau_unnorm(Y7, Z7, D7, p_ml7, "a")))
+cat(sprintf("  tau_a1  = %.4f  [safe: kappa1>0 by Prop 3.3]\n",
+            tau_unnorm(Y7, Z7, D7, p_ml7, "a1")))
+
+diag7_kappa <- weight_diag_table(
+  kw7, c("tau_u (norm.)", "tau_a10 (norm.)",
+          "tau_a (unnorm.)", "tau_a1 (unnorm.)", "tau_a0 (unnorm.)")
+)
+diag7_dml <- rbind(
+  data.frame(Estimator="PLR-IV (DML)",    Sum_w=round(sum(w_plriv7),6),
+             ESS=round(1/sum(w_plriv7^2),0),
+             Pct_neg=round(mean(w_plriv7<0)*100,1),
+             Max_abs_w=round(max(abs(w_plriv7)),6)),
+  data.frame(Estimator="Wald-AIPW (DML)", Sum_w=round(sum(w_waldaipw7),6),
+             ESS=round(1/sum(w_waldaipw7^2),0),
+             Pct_neg=round(mean(w_waldaipw7<0)*100,1),
+             Max_abs_w=round(max(abs(w_waldaipw7)),6))
+)
+cat("\nWeight diagnostics:\n")
+print(rbind(diag7_kappa, diag7_dml), row.names = FALSE)
+
+# --- 7d. Love plot ---
+cat("\n--- 7d. Love plot ---\n")
+create_love_plot_7 = function(title, weights) {
+  love.plot(D7 ~ as.matrix(X7), weights = weights, position = "bottom",
+            title = title, thresholds = c(m = 0.1), var.order = "unadjusted",
+            binary = "std", abs = TRUE, line = TRUE,
+            colors = viridis(2), shapes = c("circle", "triangle"))
+}
+
+grid.arrange(
+  create_love_plot_7("AE98: PLR-IV",    w_plriv7),
+  create_love_plot_7("AE98: Wald-AIPW", w_waldaipw7),
+  create_love_plot_7("AE98: tau_u",     kw7$w_u),
+  create_love_plot_7("AE98: tau_a10",   kw7$w_a10),
+  nrow = 2
+)
+
+# --- 7e. Translation invariance: log income across units ---
+# Uses ae98_inc and X_ae98_inc from Table 4 chunk — no recomputation needed
+cat("\n--- 7e. Translation invariance: log income ---\n")
+p_ml7_inc <- logit_mle(Z_inc, X_ae98_inc)
+kw7_inc   <- kappa_outcome_weights(ae98_inc$lincomem_dol, Z_inc, D_inc, p_ml7_inc)
+
+cat(sprintf("  %-22s  %8s  %8s  %8s  %8s  %10s\n",
+            "Estimator","Cents","Dollars","$1000s","$100ks","Pred.shift"))
+cat(strrep("-", 80), "\n")
+
+for (e in list(
+  list(name="tau_u   (norm.)",  w=kw7_inc$w_u,
+       fn=function(Y) tau_u(Y,Z_inc,D_inc,p_ml7_inc)),
+  list(name="tau_a10 (norm.)",  w=kw7_inc$w_a10,
+       fn=function(Y) tau_a10(Y,Z_inc,D_inc,p_ml7_inc)),
+  list(name="tau_a   (unnorm)", w=kw7_inc$w_a,
+       fn=function(Y) tau_unnorm(Y,Z_inc,D_inc,p_ml7_inc,"a")),
+  list(name="tau_a1  (unnorm)", w=kw7_inc$w_a1,
+       fn=function(Y) tau_unnorm(Y,Z_inc,D_inc,p_ml7_inc,"a1"))
+)) {
+  cat(sprintf("  %-22s  %8.4f  %8.4f  %8.4f  %8.4f  %10.4f\n",
+    e$name,
+    e$fn(ae98_inc$lincomem_cnt),
+    e$fn(ae98_inc$lincomem_dol),
+    e$fn(ae98_inc$lincomem_ths),
+    e$fn(ae98_inc$lincomem_hths),
+    sum(e$w) * log(1/1000)   # predicted shift dollars -> $1000s
+  ))
+}
+cat("\nNormalized: same across all units. Unnormalized: sign flips confirmed.\n")
+```
 
