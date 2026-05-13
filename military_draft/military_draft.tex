@@ -1,0 +1,388 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage{setspace}
+\usepackage{natbib}
+\usepackage{hyperref}
+
+\onehalfspacing
+
+\title{Background Notes on Angrist's Vietnam Draft Lottery Design}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Motivation: Selection Bias in Estimating the Effect of Military Service}
+
+A central empirical question in \citet{angrist1990} is whether military service during the Vietnam era had long-run consequences for civilian earnings. A naive way to study this question would be to compare average earnings of veterans and nonveterans:
+\begin{equation}
+    E[Y_i \mid D_i = 1] - E[Y_i \mid D_i = 0],
+\end{equation}
+where $Y_i$ denotes later civilian earnings and $D_i$ is an indicator equal to one if individual $i$ served in the military.
+
+This comparison is not generally causal. Men who served in the military were not randomly selected. Some volunteered, some were drafted, some received deferments, and others were screened out by medical or aptitude requirements. Therefore, veterans and nonveterans may differ in ways that also predict later earnings. For example, men with weaker civilian labor market opportunities may have been more likely to enlist. If such pre-existing differences are not fully observed by the researcher, the naive earnings gap confounds the effect of military service with selection into military service.
+
+In potential-outcomes notation, the causal effect of military service is based on the comparison between $Y_i(1)$, earnings if individual $i$ serves, and $Y_i(0)$, earnings if he does not serve. The naive comparison can be written as
+\begin{align}
+    E[Y_i \mid D_i = 1] - E[Y_i \mid D_i = 0]
+    &= E[Y_i(1) \mid D_i = 1] - E[Y_i(0) \mid D_i = 0].
+\end{align}
+This is not equal to $E[Y_i(1)-Y_i(0)]$ unless veterans and nonveterans are comparable in their potential earnings absent military service. That condition is implausible in this setting because selection into service was related to individual choices, military screening, and institutional rules.
+
+The Vietnam draft lottery provides a way to overcome this selection problem. The lottery generated quasi-random variation in the risk of military induction. Men with low lottery numbers faced a higher probability of military service, while men with high lottery numbers were less likely to serve. Because the lottery number was randomly assigned by birth date, draft eligibility is plausibly unrelated to unobserved earnings potential. This makes draft eligibility a natural instrument for military service.
+
+\section{The Draft Lottery as an Instrument}
+
+The key instrument in Angrist's design is draft eligibility. Let
+\begin{equation}
+    Z_i = \mathbf{1}\{\text{individual } i \text{ is draft eligible}\}.
+\end{equation}
+Draft eligibility is determined by the individual's Random Sequence Number (RSN), which was assigned in the draft lottery. Each birth date received a number from 1 to 365. Lower numbers implied higher priority for induction.
+
+For a given birth cohort, the Department of Defense later announced a draft-eligibility ceiling. Men with RSNs at or below the ceiling were draft eligible, while men with RSNs above the ceiling were not. Formally,
+\begin{equation}
+    Z_i =
+    \begin{cases}
+        1, & \text{if } RSN_i \leq c_b, \\
+        0, & \text{if } RSN_i > c_b,
+    \end{cases}
+\end{equation}
+where $c_b$ denotes the draft-eligibility ceiling for birth cohort $b$.
+
+The instrument is powerful because it satisfies the logic of an instrumental variable design:
+\begin{enumerate}
+    \item \textbf{Relevance:} Draft eligibility increased the probability of military service. Some draft-eligible men were actually drafted, and others volunteered in response to a low lottery number in order to avoid being drafted later under worse terms.
+    \item \textbf{As-good-as-random assignment:} The RSN was randomly assigned to birth dates. Conditional on birth cohort, draft eligibility should therefore be unrelated to individual earnings potential before the lottery.
+    \item \textbf{Exclusion restriction:} Draft eligibility should affect later earnings only through its effect on military service. In other words, the lottery number itself should not directly change civilian earnings except by changing the probability of serving.
+\end{enumerate}
+
+
+\section{Lottery Years, Cohorts, and Draft-Eligibility Cutoffs}
+
+There were five Vietnam-era draft lotteries, but the empirically most important lotteries for Angrist's design are those that could actually affect induction. The relevant cohorts and cutoffs are summarized in Table~\ref{tab:cutoffs}.
+
+\begin{table}[h!]
+\centering
+\caption{Vietnam draft lottery cutoffs used in Angrist's design}
+\label{tab:cutoffs}
+\begin{tabular}{llll}
+\toprule
+Lottery year & Main birth cohort affected & Approximate age at risk & Draft-eligibility cutoff \\
+\midrule
+1970 & Born in 1950 & 19--20 & RSN $\leq 195$ \\
+1971 & Born in 1951 & 19--20 & RSN $\leq 125$ \\
+1972 & Born in 1952 & 19--20 & RSN $\leq 95$ \\
+1973 & Born in 1953 & 19--20 & No actual drafting after 1972; cutoff often set to RSN $\leq 95$ for analysis \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 1970 lottery formally covered men born between 1944 and 1950, who were approximately 19 to 26 years old. However, this broader group is not equally useful for causal estimation. Many men born between 1944 and 1949 had already entered the military before the 1970 lottery took place. For these older cohorts, veteran status was often determined before lottery assignment could matter. Including them would weaken the clean interpretation of draft eligibility as a source of random variation in military service.
+
+For this reason, Angrist focuses on men who turned 19 in the year in which they were at risk of induction. This leads to a cleaner sample of cohorts born between 1950 and 1953. Among these, the cohorts born in 1950, 1951, and 1952 are especially important because these were the cohorts for whom draft eligibility could actually lead to induction. The 1953 cohort is different: no one born in 1953 was drafted because inductions ended after 1972 and congressional conscription authority expired in 1973. Nevertheless, Angrist includes the 1953 cohort in parts of the analysis because the lottery still generated behavioral responses; some men may have reacted to low lottery numbers even though actual drafting had ended.
+
+The older cohorts are therefore avoided not because they are uninteresting, but because the lottery is a weaker and less clean source of variation for them. If many had already served before the lottery, draft eligibility no longer determines their initial risk of service. In contrast, for men born in 1950--1952, the lottery occurred at the relevant age, before their military service decisions were fully resolved.
+
+\section{Interpretation for the Thesis}
+
+For the thesis, this application is useful because it is a clear example of how instrumental variables solve a selection problem. The mapping is:
+\begin{align*}
+    Z_i &= \text{draft eligibility}, \\
+    D_i &= \text{veteran status / military service}, \\
+    Y_i &= \text{civilian earnings or log wages}.
+\end{align*}
+
+
+
+\subsection{Instrument Validity: Relevance, Independence, and Exclusion}
+
+The draft lottery design relies on the idea that draft eligibility can be used as an
+instrument for veteran status. Let \(Z_i\) denote draft eligibility, \(D_i\) veteran
+status, and \(Y_i\) later earnings. A naive comparison of veterans and nonveterans,
+or an OLS regression of earnings on veteran status, is unlikely to identify the causal
+effect of military service because veteran status is self-selected. Men who served may
+differ systematically from men who did not serve in terms of health, ability, schooling,
+labor-market opportunities, or preferences for military service. Angrist therefore uses
+the randomly assigned risk of induction generated by the Vietnam draft lottery as a
+source of exogenous variation in veteran status.
+
+The validity of this instrumental-variables strategy rests on three central conditions:
+relevance, independence, and exclusion.
+
+\paragraph{Relevance / First Stage.}
+The first-stage condition requires that draft eligibility affects the probability of
+military service:
+\[
+    \Pr(D_i = 1 \mid Z_i = 1) \neq \Pr(D_i = 1 \mid Z_i = 0).
+\]
+In the draft lottery setting, this means that draft-eligible men must be more likely to
+become veterans than draft-ineligible men. Angrist documents this empirically in Table 2,
+where he reports veteran probabilities separately for draft-eligible and draft-ineligible
+men. For white men born in 1950--1952, draft eligibility increased the probability of
+military service by roughly 10 to 16 percentage points. This provides the first stage:
+the lottery did not perfectly determine military service, but it shifted the probability
+of serving by a meaningful amount.
+
+\paragraph{Independence / Random Assignment.}
+The independence condition requires that draft eligibility is as good as randomly
+assigned with respect to potential earnings:
+\[
+    Z_i \perp (Y_i(1), Y_i(0), D_i(1), D_i(0)).
+\]
+Intuitively, men with low lottery numbers should not differ systematically from men
+with high lottery numbers in terms of pre-existing earnings potential. This condition is
+plausible because Random Sequence Numbers (RSNs) were assigned by lottery to dates of
+birth. Angrist supports this assumption visually in Figures 1 and 2. Before the year of
+conscription risk, draft-eligible and draft-ineligible men have very similar earnings
+profiles. This absence of pre-lottery earnings differences is important because it suggests
+that the two groups were comparable before draft eligibility could affect military service.
+
+\paragraph{Exclusion Restriction.}
+The exclusion restriction requires that draft eligibility affects later earnings only
+through its effect on military service:
+\[
+    Z_i \rightarrow Y_i \quad \text{only through} \quad D_i.
+\]
+In other words, receiving a low lottery number should not directly change later earnings
+except by changing the probability of becoming a veteran. Angrist states the identifying
+logic as follows: if draft eligibility is correlated with veteran status but uncorrelated
+with other determinants of earnings, then earnings differences by draft-eligibility status
+can be attributed to military service. The reduced-form earnings differences shown in
+Figures 1 and 2 and reported in Table 1 are therefore interpreted as the effect of draft
+eligibility on earnings. Dividing this reduced-form effect by the first-stage effect of
+draft eligibility on veteran status gives the Wald estimator:
+\[
+    \tau^{IV}
+    =
+    \frac{
+        E[Y_i \mid Z_i = 1] - E[Y_i \mid Z_i = 0]
+    }{
+        E[D_i \mid Z_i = 1] - E[D_i \mid Z_i = 0]
+    }.
+\]
+This estimator scales the earnings difference between draft-eligible and draft-ineligible
+men by the difference in their probability of military service.
+
+
+
+
+
+\section{Caveats of the Draft-Lottery Design}
+
+Although the Vietnam draft lottery provides a powerful source of exogenous variation in
+military service, Angrist (1990) discusses several caveats that are important for the
+interpretation of the estimates. These caveats do not invalidate the instrumental-variables
+framework mechanically, but they clarify what the resulting estimate can and cannot be
+interpreted as. In modern terminology, they are closely related to the distinction between
+an average treatment effect for the whole population and a local average treatment effect
+for compliers.
+
+\paragraph{Treatment effect heterogeneity.}
+The effect of military service may differ across individuals. For example, some men may
+benefit from military experience, while others may suffer large earnings losses. In that
+case, an IV estimate based on draft eligibility should not be interpreted as the average
+effect of military service for all men. The draft lottery only shifts the veteran status of
+some individuals: those who serve if draft-eligible but would not serve if draft-ineligible.
+These individuals are the compliers. Therefore, under the standard IV assumptions, the
+lottery-based IV estimand is best interpreted as
+\[
+    \tau^{LATE}
+    =
+    E\!\left[Y_i(1)-Y_i(0)\mid D_i(1)>D_i(0)\right],
+\]
+that is, the effect of military service for draft-lottery compliers.
+
+This caveat is not a failure of the LATE framework. Rather, the LATE framework makes
+the limitation explicit. The estimate is local to the subpopulation induced into military
+service by draft eligibility. It need not equal the effect for always-takers, such as men who
+would have volunteered regardless of their lottery number, nor for never-takers, who would
+not serve regardless of draft eligibility.
+
+\paragraph{Loss of civilian labor-market experience.}
+One possible mechanism behind a veteran earnings penalty is the loss of civilian labor-market
+experience. Men who spend time in the military accumulate less civilian work experience
+during those years. If civilian experience is rewarded more strongly than military experience
+in the labor market, veterans may earn less after leaving the military.
+
+This issue should not necessarily be treated as an omitted-confounder problem. Civilian
+experience after draft exposure is plausibly a post-treatment mediator:
+\[
+    \text{military service}
+    \rightarrow
+    \text{lost civilian experience}
+    \rightarrow
+    \text{earnings}.
+\]
+Thus, if the estimand of interest is the total effect of veteran status on earnings, this
+channel is part of the treatment effect. Controlling for post-treatment experience would
+remove one pathway through which military service affects earnings and could therefore
+change the estimand. In the present thesis, the Angrist application is used mainly as a
+binary-IV setting for comparing LATE estimators; the mechanism through lost experience
+is therefore useful background but not central to the estimator comparison.
+
+\paragraph{Missing covariates and post-treatment variables.}
+The original Social Security data used by Angrist contain only limited covariate information.
+This raises two conceptually different issues. First, omitted pre-treatment covariates are
+less problematic if draft eligibility is genuinely randomly assigned, because random assignment
+implies that such covariates should be balanced across lottery-number groups in expectation.
+Second, omitted post-treatment variables, such as education obtained through veterans'
+benefits or other adjustments after service, affect the interpretation of the estimate. If
+military service changes education, training, or later labor-market behavior, then these
+channels are part of the total effect of veteran status.
+
+For the purposes of the LATE framework, this means that the estimated effect should be
+interpreted as the total effect of military service for compliers, including any downstream
+channels caused by service. It should not be interpreted as a direct effect of military
+service holding all later choices fixed.
+
+\paragraph{Draft-avoidance behavior and the exclusion restriction.}
+The most serious caveat concerns draft-avoidance behavior. Draft eligibility may have
+affected behavior even among men who did not ultimately serve. For example, men with
+low lottery numbers may have enrolled in college, changed employment decisions, migrated,
+or otherwise altered their behavior to reduce the risk of induction. If such behavior later
+affected earnings, then draft eligibility would affect earnings through channels other than
+military service:
+\[
+    Z_i \rightarrow D_i \rightarrow Y_i,
+\]
+but also
+\[
+    Z_i \rightarrow \text{draft-avoidance behavior}
+    \rightarrow Y_i.
+\]
+The second pathway violates the exclusion restriction, which requires that draft eligibility
+affects earnings only through veteran status.
+
+This caveat is not solved by focusing on compliers. The LATE interpretation still requires
+the standard IV assumptions, including exclusion. If the instrument directly affects earnings
+through avoidance behavior, then the IV estimand no longer cleanly represents the causal
+effect of military service, even for compliers. In that case, the estimate would combine the
+effect of military service with the effects of other behavioral responses to the draft lottery.
+The reduced form would be in danger as in this case the lotterly eligibility does not only affect salary by then attending the millitary but also by actually making a study to avoid millitary and then making more money. 
+
+\paragraph{Relation to the present thesis.}
+These caveats concern the validity and interpretation of the underlying draft-lottery research
+design.
+
+The relevant interpretation for the present thesis is therefore conditional: if draft eligibility
+is accepted as a valid instrument, then the different estimators can be compared as alternative
+ways of estimating the LATE for draft-lottery compliers. The caveats above should be kept
+in mind when interpreting the empirical results, especially when discussing what population
+the estimate applies to and whether the estimate should be viewed as a total effect of
+military service or as potentially contaminated by other responses to draft risk.
+
+
+
+\section{Cohort-Specific Draft Risk and the Instrument Propensity Score}
+
+A further feature of the Vietnam draft lottery is that the probability of draft eligibility
+was not constant across cohorts. The lottery assigned Random Sequence Numbers (RSNs)
+from 1 to 365, but the draft-eligibility ceiling differed by lottery year. For example,
+the draft-eligibility ceiling was 195 in the 1970 lottery, 125 in the 1971 lottery, and
+95 in the 1972 lottery. Hence, men in earlier cohorts faced a higher probability of being
+classified as draft-eligible than men in later cohorts.
+
+Formally, the instrument is
+\[
+    Z_i =
+    \mathbf{1}\{\text{RSN}_i \leq \text{draft ceiling for cohort } i\}.
+\]
+Thus, even though the RSN itself was randomly assigned, the probability of receiving
+the instrument depends on cohort:
+\[
+    P(Z_i=1 \mid \text{cohort}_i)
+    =
+    P(\text{RSN}_i \leq \text{cohort-specific ceiling}).
+\]
+For example, abstracting from small calendar details, a ceiling of 195 implies an
+eligibility probability of approximately
+\[
+    \frac{195}{365},
+\]
+whereas a ceiling of 95 implies an eligibility probability of approximately
+\[
+    \frac{95}{365}.
+\]
+Therefore, draft eligibility is best viewed as randomly assigned conditional on cohort
+or age, not as having the same unconditional probability for all men in the pooled sample.
+
+This matters because cohort or age is also related to earnings. If one simply compared all
+draft-eligible men to all draft-ineligible men without accounting for cohort, the comparison
+could mix the effect of draft eligibility with cohort differences in labor-market outcomes.
+For this reason, age or cohort must be included among the covariates \(X_i\).
+
+In the kappa-weighting framework, this adjustment is made through the instrument
+propensity score
+\[
+    p(X_i) = P(Z_i=1\mid X_i).
+\]
+This is the probability of being draft-eligible given covariates, especially age or cohort.
+It is important to distinguish this object from the treatment propensity score:
+\[
+    P(D_i=1\mid X_i),
+\]
+which would be the probability of actually serving in the military. Kappa estimators use
+the former, \(p(X_i)=P(Z_i=1\mid X_i)\), because the weights adjust for differences in the
+assignment probability of the instrument.
+
+The basic weighting terms are functions of
+\[
+    \frac{Z_i}{p(X_i)}
+    \qquad \text{and} \qquad
+    \frac{1-Z_i}{1-p(X_i)}.
+\]
+Intuitively, these terms reweight draft-eligible and draft-ineligible observations so that
+the comparison is made among individuals with comparable covariates. In the Angrist
+application, this means that draft-eligible and draft-ineligible men are compared after
+accounting for the fact that different cohorts had different probabilities of draft
+eligibility.
+
+This distinction is crucial for the interpretation of the instrument. The draft lottery is
+random because RSNs were randomly assigned, but the institutional rule translating RSNs
+into draft eligibility varied across cohorts. Therefore, the relevant independence assumption
+is conditional:
+\[
+    Z_i \perp
+    \bigl(Y_i(1),Y_i(0),D_i(1),D_i(0)\bigr)
+    \mid X_i,
+\]
+where \(X_i\) includes age or cohort. The propensity score \(p(X_i)\) operationalizes this
+conditional assignment mechanism.
+
+This also helps explain why flexible covariate specifications are important. A linear age
+control may not fully capture the cohort-specific eligibility probabilities implied by the
+different draft ceilings. A saturated age or cohort specification allows the assignment
+probability of draft eligibility to vary freely across cohorts. In the context of kappa
+weighting, such flexibility is important because misspecifying \(p(X_i)\) can distort the
+weights and therefore the implied comparison between draft-eligible and draft-ineligible
+men.
+
+Finally, cohort-specific draft risk should be distinguished from treatment-effect
+heterogeneity. Variation in
+\[
+    p(X_i)=P(Z_i=1\mid X_i)
+\]
+describes heterogeneity in the probability of receiving the instrument. It does not by
+itself describe heterogeneity in the causal effect
+\[
+    Y_i(1)-Y_i(0).
+\]
+However, because different cohorts faced different draft risks, the composition of
+compliers may also differ across cohorts. The resulting LATE is therefore an average effect
+for the subpopulation whose military-service status was shifted by draft eligibility, after
+accounting for the cohort-specific assignment mechanism.
+
+\bibliographystyle{apalike}
+\begin{thebibliography}{9}
+
+\bibitem[Angrist, 1990]{angrist1990}
+Angrist, J. D. (1990).
+\newblock Lifetime earnings and the Vietnam era draft lottery: Evidence from Social Security administrative records.
+\newblock \emph{American Economic Review}, 80(3), 313--336.
+
+\end{thebibliography}
+
+\end{document}

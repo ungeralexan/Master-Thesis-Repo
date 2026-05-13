@@ -248,6 +248,7 @@ Brief chapter-by-chapter overview.
 - [x] Love plots via `cobalt::love.plot()` for DML estimators (Angrist, Card)
 - [x] Translation invariance check: Y → Y + constant, verified normalized estimators stable and unnormalized estimators not — for all three covariate specs and both kappa and DML estimators
 - [x] Comparison tables: kappa weight diagnostics vs. DML Wald-AIPW side by side
+- [x] Read the Vietnam War Paper and summarized findings of the original design in the military draft paper
 - [x] **DoubleML learner comparison — Angrist (1990), cubic spec:** installed OutcomeWeights GitHub dev version; ran `DoubleMLIIVM` with three learners (linear+logistic, ranger, XGBoost); extracted omega weights; verified algebraic identity; compared ESS, % negative weights, Sum_w, and Love plots across all learners vs kappa estimators
   - Key result: point estimates converge (0.218–0.246), ESS and % negative weights identical across all learners (ESS=5, 54.4% negative), confirming learner choice immaterial in this low-dimensional near-random-assignment design
   - XGBoost algebraic check = FALSE (Sum_w = −3.73e−06): consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother), documented in Section 4.4 of the paper with EMCS showing outliers ranging −16 to 55
