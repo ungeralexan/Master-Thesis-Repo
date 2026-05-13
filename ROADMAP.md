@@ -243,31 +243,41 @@ Brief chapter-by-chapter overview.
 - [x] `tau_u()`, `tau_a10()`, `tau_unnorm()`: all five kappa estimators
 - [x] `kappa_outcome_weights()`: closed-form ωᵢ for all five kappa estimators with `stopifnot` verification that τ̂ = Σωᵢ Yᵢ
 - [x] `weight_diag_table()`: Σωᵢ, ESS, % negative, max absolute weight
-- [x] DML via `OutcomeWeights::dml_with_smoother()` with 5-fold cross-fitting for Angrist (1990) and Card (1995) applications
-- [x] `get_outcome_weights()` extraction and verification (ω'Y = point estimates, TRUE)
+- [x] DML via `OutcomeWeights::dml_with_smoother()` (grf) with 5-fold cross-fitting for Angrist (1990) cubic + saturated specs
+- [x] `get_outcome_weights()` extraction and verification (ω'Y = point estimates, TRUE) for grf and DoubleML objects
 - [x] Love plots via `cobalt::love.plot()` for DML estimators (Angrist, Card)
-- [x] Translation invariance check: Y → Y + constant, verified normalized estimators stable and unnormalized estimators not
+- [x] Translation invariance check: Y → Y + constant, verified normalized estimators stable and unnormalized estimators not — for all three covariate specs and both kappa and DML estimators
 - [x] Comparison tables: kappa weight diagnostics vs. DML Wald-AIPW side by side
+- [x] **DoubleML learner comparison — Angrist (1990), cubic spec:** installed OutcomeWeights GitHub dev version; ran `DoubleMLIIVM` with three learners (linear+logistic, ranger, XGBoost); extracted omega weights; verified algebraic identity; compared ESS, % negative weights, Sum_w, and Love plots across all learners vs kappa estimators
+  - Key result: point estimates converge (0.218–0.246), ESS and % negative weights identical across all learners (ESS=5, 54.4% negative), confirming learner choice immaterial in this low-dimensional near-random-assignment design
+  - XGBoost algebraic check = FALSE (Sum_w = −3.73e−06): consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother), documented in Section 4.4 of the paper with EMCS showing outliers ranging −16 to 55
 
 ### 🟡 In progress
 
-- [ ] Angrist & Evans (1998): DML Wald-AIPW with `dml_with_smoother()` — convergence issues under near one-sided noncompliance; verify AIPW-ATE NaN is expected
+- [ ] Angrist & Evans (1998): DML Wald-AIPW with `dml_with_smoother()` — AIPW-ATE NaN confirmed expected under near one-sided noncompliance; only Wald-AIPW reported
 - [ ] Love plots for kappa estimators in Angrist & Evans (1998) application
 - [ ] Modularize code: split the single Rmd into one script per application + shared functions file
-- [ ] Check compatibility with OutcomeWeights GitHub dev version (`remotes::install_github("mknaus/OutcomeWeights")`) for DoubleML integration
+- [ ] **DoubleML learner comparison for Card (1995) and Angrist & Evans (1998):** same three-learner comparison (linear+logistic, ranger, XGBoost) as done for Angrist (1990) — pending; results likely similar but worth verifying given richer covariate structure in Card
 
 ### 🔲 TODO
 
 - [ ] **Chapter 3 (theory):** write the analytical proof that Σωᵢᵘ = 0; write the PIVE representation for τ̂ᵤ following Knaus (2024) Appendix A.4
-- [ ] **Section 4.4:** cross-application comparison table and discussion — tabulate ESS, % negative, Σωᵢ across all applications and estimators
-- [ ] **DoubleML integration:** install GitHub dev version of OutcomeWeights; run DoubleML Wald-AIPW on all three applications; extract and compare outcome weights against grf-based Wald-AIPW
+- [ ] **Section 4.4:** cross-application comparison table and discussion — tabulate ESS, % negative, Σωᵢ across all applications and estimators; now include DoubleML learner columns for Angrist (1990)
+- [ ] **DoubleML learner comparison write-up (Section 4.1):** document convergence of estimates across learners, identical ESS and % negative weights, XGBoost non-affine smoother issue; cite Knaus (2024) Table 6 + Figure 1 for the theoretical prediction
 - [ ] **Love plots for kappa in Card (1995):** add cobalt love.plot calls using `kappa_outcome_weights()` output — currently only DML love plots exist for Card
 - [ ] **Tuning sensitivity check (Section 4, inspired by Knaus 2024 Fig. 3):** compare `dml_with_smoother()` with default vs. `tune.parameters = "all"` — already coded for Angrist (1990) but not yet written up
-- [ ] **Translation invariance for Wald-AIPW:** add the Y → Y+c check to DML estimators as a complement to the kappa translation invariance results
-- [ ] **Section 5.3 code:** write a minimal `kappa_to_outcome_weights_format()` wrapper that returns output in the same `$omega` matrix structure as `get_outcome_weights()` — this unifies the pipeline and is the basis for the OutcomeWeights package discussion
+- [ ] **Translation invariance for Wald-AIPW (all learners):** Y → Y+c check already implemented for grf; extend to DoubleML ranger (should hold exactly) and document XGBoost violation analytically
+- [ ] **Section 5.3 code:** write a minimal `kappa_to_outcome_weights_format()` wrapper that returns output in the same `$omega` matrix structure as `get_outcome_weights()` — unifies the pipeline; basis for package discussion
 - [ ] **Write-up:** Chapter 2 draft (framework sections — most reading is done)
 - [ ] **Write-up:** Chapter 3 draft (theoretical derivations — `kappa_outcome_weights()` already implements this, needs to be written up formally)
 - [ ] **Write-up:** Chapter 4 draft (empirical sections — replication done, narrative needed)
+
+### 💡 Later / extension ideas (not part of thesis scope, but worth noting)
+
+- [ ] **Additional DoubleML learners to consider:** beyond linear+logistic, ranger, XGBoost — could add Lasso (note: Lasso is NOT a smoother per Knaus Appendix A.2 and therefore has no closed-form omega), or neural networks (also excluded). The three learners already implemented cover the full range of what `get_outcome_weights()` supports with DoubleML (confirmed in Knaus & Rakov notebook)
+- [ ] **Package contribution — concrete minimal version:** the `kappa_to_outcome_weights_format()` wrapper (already in TODO above) is the most natural contribution. It would make kappa outcome weights directly passable to `cobalt::love.plot()` and any other OutcomeWeights-compatible downstream function, without requiring users to understand the internal omega structure. Could be proposed to Knaus as a PR or companion vignette
+- [ ] **Package contribution — `check_normalization()` utility:** a small function that takes any omega vector and classifies it as fully-normalized / scale-normalized / unnormalized following Knaus (2024) Table 4. Straightforward to implement; useful diagnostic for practitioners comparing different estimators
+- [ ] **Package contribution — kappa vignette:** a worked example showing how to compute kappa outcome weights and pass them alongside DML weights into the same Love plot and weight diagnostics pipeline. Would document the Angrist (1990) analysis from this thesis as a reproducible vignette. Most feasible package contribution given it requires no new code, only documentation
 
 ---
 
