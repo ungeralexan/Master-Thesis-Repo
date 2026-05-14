@@ -413,6 +413,90 @@ cat("  arbitrary outcome translations.\n\n")
 ```
 
 
+```{r}
+# ==============================================================================
+# BLOCK H — DOUBLEML WALD-AIPW LEARNER ROBUSTNESS
+# Requires: DoubleML objects iivm_lm, iivm_rf, iivm_xgb
+# ==============================================================================
 
+cat(strrep("=", 70), "\n")
+cat("BLOCK H — DOUBLEML WALD-AIPW LEARNER ROBUSTNESS\n")
+cat(strrep("=", 70), "\n\n")
+
+cat("Point estimates:\n")
+cat(sprintf("  %-35s  %10s\n", "Estimator", "Estimate"))
+cat(strrep("-", 50), "\n")
+cat(sprintf("  %-35s  %10.4f\n",
+            "Wald-AIPW DoubleML linear/logit", as.numeric(iivm_lm$coef)))
+cat(sprintf("  %-35s  %10.4f\n",
+            "Wald-AIPW DoubleML ranger", as.numeric(iivm_rf$coef)))
+cat(sprintf("  %-35s  %10.4f\n",
+            "Wald-AIPW DoubleML XGBoost", as.numeric(iivm_xgb$coef)))
+cat("\n")
+
+cat("Weight diagnostics:\n")
+print(rbind(
+  weight_diag(w_waipw_lm,  "Wald-AIPW DoubleML linear/logit"),
+  weight_diag(w_waipw_rf,  "Wald-AIPW DoubleML ranger"),
+  weight_diag(w_waipw_xgb, "Wald-AIPW DoubleML XGBoost")
+), row.names = FALSE)
+
+cat("\nTranslation-invariance check:\n")
+
+doubleml_translation_row <- function(name, w) {
+  ed <- sum(w * Y_dol)
+  ec <- sum(w * Y_cnt)
+  data.frame(
+    Estimator   = name,
+    Dollars     = round(ed, 4),
+    Cents       = round(ec, 4),
+    Diff_actual = round(ec - ed, 6),
+    Diff_pred   = round(sum(w) * k, 6),
+    Match       = isTRUE(all.equal(ec - ed, sum(w) * k, tolerance = 1e-8)),
+    stringsAsFactors = FALSE
+  )
+}
+
+print(rbind(
+  doubleml_translation_row("Wald-AIPW DoubleML linear/logit", w_waipw_lm),
+  doubleml_translation_row("Wald-AIPW DoubleML ranger",       w_waipw_rf),
+  doubleml_translation_row("Wald-AIPW DoubleML XGBoost",      w_waipw_xgb)
+), row.names = FALSE)
+
+cat("\n")
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK I — OPTIONAL LOVE PLOTS: DOUBLEML WALD-AIPW LEARNERS
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK I — OPTIONAL LOVE PLOTS: DOUBLEML WALD-AIPW LEARNERS\n")
+cat(strrep("=", 70), "\n\n")
+
+make_love_dml <- function(title_str, w_vec) {
+  love.plot(
+    D ~ X_dml_cub,
+    weights    = w_vec * (2 * D - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+lp_lm  <- make_love_dml("Wald-AIPW DoubleML linear/logit", w_waipw_lm)
+lp_rf  <- make_love_dml("Wald-AIPW DoubleML ranger",       w_waipw_rf)
+lp_xgb <- make_love_dml("Wald-AIPW DoubleML XGBoost",      w_waipw_xgb)
+
+grid.arrange(lp_lm, lp_rf, lp_xgb, nrow = 1)
+```
 
 
