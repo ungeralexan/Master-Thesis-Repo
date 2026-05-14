@@ -1,0 +1,418 @@
+---
+title: "vietnam_14_05_double_ml_extended"
+author: "Alexander Unger"
+date: "2026-05-14"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# ANGRIST (1990) — MILITARY SERVICE: DoubleML EXTENSION
+# Builds on angrist1990_military_kappa.R and angrist1990_dml.R
+# Run those first — this script assumes their objects are in memory.
+# ==============================================================================
+#
+# CRITICAL: INSTALL THE GITHUB DEV VERSION OF OutcomeWeights
+# -----------------------------------------------------------
+# get_outcome_weights() support for DoubleML objects is NOT in the CRAN
+# version of OutcomeWeights. It is only in the development version on GitHub.
+# Your supervisor explicitly mentioned this ("die Development Version vom
+# OutcomeWeights package auf GitHub ist jetzt auch kompatibel mit DoubleML").
+#
+# You MUST run the installation in BLOCK A before anything else works.
+# The CRAN version gives: "no applicable method for 'get_outcome_weights'
+# applied to an object of class c('DoubleMLIIVM', 'DoubleML', 'R6')"
+#
+# STRUCTURE:
+#   BLOCK A — Install dev version + setup
+#   BLOCK B — DoubleMLIIVM: linear + logistic (parametric baseline)
+#   BLOCK C — DoubleMLIIVM: ranger random forest
+#   BLOCK D — DoubleMLIIVM: XGBoost
+#   BLOCK E — Comparison table: all estimators
+#   BLOCK F — Love plots: learner comparison
+# ==============================================================================
+
+
+# ==============================================================================
+# BLOCK A — SETUP
+# MUST be run first. Installs dev version of OutcomeWeights from GitHub.
+# ==============================================================================
+
+
+
+
+# Step 4: load libraries (OutcomeWeights must be loaded AFTER dev install)
+library(OutcomeWeights)   # dev version — now has DoubleML support
+library(DoubleML)
+library(mlr3verse)
+library(cobalt)
+library(viridis)
+library(gridExtra)
+
+get_dml_coef <- function(obj) {
+  as.numeric(obj$coef)
+}
+
+check_doubleml_identity <- function(omega_obj, Y, coef, tol = 1e-8) {
+  isTRUE(all.equal(
+    as.numeric(omega_obj$omega %*% Y),
+    as.numeric(coef),
+    tolerance = tol
+  ))
+}
+
+get_cbps_p <- function(X) {
+  out <- cbps(Z, X)
+  if (is.list(out) && !is.null(out$p)) return(as.vector(out$p))
+  as.vector(out)
+}
+
+kappa_estimates <- function(Y, X_kappa) {
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(X_kappa)
+
+  c(
+    tau_cb_u   = tau_u(Y, Z, D, p_cb),
+    tau_ml_u   = tau_u(Y, Z, D, p_ml),
+    tau_ml_a10 = tau_a10(Y, Z, D, p_ml),
+    tau_ml_a   = tau_unnorm(Y, Z, D, p_ml, "a"),
+    tau_ml_a1  = tau_unnorm(Y, Z, D, p_ml, "a1"),
+    tau_ml_a0  = tau_unnorm(Y, Z, D, p_ml, "a0")
+  )
+}
+
+kappa_weights_bundle <- function(X_kappa) {
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(X_kappa)
+
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  list(
+    tau_cb_u   = kw_cb$w_u,
+    tau_ml_u   = kw_ml$w_u,
+    tau_ml_a10 = kw_ml$w_a10,
+    tau_ml_a   = kw_ml$w_a,
+    tau_ml_a1  = kw_ml$w_a1,
+    tau_ml_a0  = kw_ml$w_a0
+  )
+}
+
+doubleml_translation_row <- function(name, w) {
+  ed <- sum(w * Y_dol)
+  ec <- sum(w * Y_cnt)
+  data.frame(
+    Estimator = name,
+    Dollars = ed,
+    Cents = ec,
+    Diff_actual = ec - ed,
+    Diff_pred = sum(w) * k,
+    Match = isTRUE(all.equal(ec - ed, sum(w) * k, tolerance = 1e-8)),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Verify dev version is loaded (should show > 0.1.0 or similar)
+cat("OutcomeWeights version:", as.character(packageVersion("OutcomeWeights")), "\n")
+cat("Check get_outcome_weights methods available:\n")
+print(methods("get_outcome_weights"))
+cat("\n")
+
+# Check prerequisites from kappa script
+stopifnot(
+  exists("sipp_clean"), exists("D_sipp"), exists("Z_sipp"),
+  exists("kappa_weights"), exists("tau_u"), exists("tau_a10"),
+  exists("tau_unnorm"), exists("logit_mle"),
+  exists("kappa_outcome_weights"), exists("weight_diag")
+)
+
+D     <- D_sipp
+Z     <- Z_sipp
+Y_dol <- sipp_clean$lwage
+Y_cnt <- sipp_clean$lwage_cnt
+k     <- log(100)
+
+cat(sprintf("N=%d | mean(D)=%.3f | mean(Z)=%.3f\n\n",
+            length(D), mean(D), mean(Z)))
+
+# ------------------------------------------------------------------------------
+# DoubleML data object (cubic covariate spec)
+# d and z must be numeric 0/1 (not haven_labelled or factor)
+# ------------------------------------------------------------------------------
+df_dml <- data.frame(
+  y    = as.numeric(sipp_clean$lwage),
+  d    = as.numeric(sipp_clean$nvstat),
+  z    = as.numeric(sipp_clean$rsncode),
+  age  = as.numeric(sipp_clean$age),
+  age2 = as.numeric(sipp_clean$age)^2,
+  age3 = as.numeric(sipp_clean$age)^3
+)
+
+dml_data <- DoubleMLData$new(
+  data   = df_dml,
+  y_col  = "y",
+  d_cols = "d",
+  z_cols = "z",
+  x_cols = c("age", "age2", "age3")
+)
+
+cat("DoubleML data object:\n")
+print(dml_data)
+cat("\n")
+
+# Kappa matrices and weights for comparison
+X_kappa_cub <- model.matrix(~ age + age2 + age3, data = sipp_clean)
+X_dml_cub   <- model.matrix(~ 0 + age + I(age^2) + I(age^3), data = sipp_clean)
+p_ml_cub    <- logit_mle(Z, X_kappa_cub)
+kw_cub <- kappa_outcome_weights(Z, D, p_ml_cub)
+
+cat("BLOCK A complete. Ready for BLOCKS B, C, D.\n\n")
+
+
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK B — LINEAR + LOGISTIC (parametric baseline)
+# ==============================================================================
+#
+# ml_g (outcome regression E[Y|X,D,Z]):  regr.lm       — regression
+# ml_m (instrument propensity P(Z=1|X)): classif.log_reg — classification
+# ml_r (treatment propensity P(D=1|X,Z)):classif.log_reg — classification
+#
+# This is the parametric baseline. With linear/logistic nuisance functions,
+# DoubleML essentially recovers a 2SLS-type estimate.
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK B — DoubleMLIIVM: linear + logistic (parametric baseline)\n")
+cat(strrep("=", 70), "\n\n")
+
+iivm_lm <- DoubleMLIIVM$new(
+  data    = dml_data,
+  ml_g    = lrn("regr.lm"),
+  ml_m    = lrn("classif.log_reg"),
+  ml_r    = lrn("classif.log_reg"),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_lm$fit(store_models = TRUE, store_predictions = TRUE)
+
+cat("Point estimate:\n")
+print(iivm_lm$summary())
+
+omega_lm   <- get_outcome_weights(object = iivm_lm, dml_data = dml_data)
+w_waipw_lm <- as.vector(omega_lm$omega)
+
+ok_lm <- check_doubleml_identity(omega_lm, Y_dol, iivm_lm$coef)
+
+cat(sprintf("Algebraic check (omega'Y = tau_hat): %s\n\n", ok_lm))
+print(weight_diag(w_waipw_lm, "Wald-AIPW (DoubleML, linear+logistic)"), row.names = FALSE)
+cat("\nBLOCK B done. Objects: iivm_lm, w_waipw_lm\n\n")
+```
+
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK C — RANGER RANDOM FOREST
+# ==============================================================================
+#
+# ml_g: regr.ranger    (keep.inbag = TRUE — required for outcome weights)
+# ml_m: classif.ranger (keep.inbag = TRUE)
+# ml_r: classif.ranger (keep.inbag = TRUE)
+#
+# keep.inbag = TRUE is mandatory: get_outcome_weights() needs the in-bag
+# sample indices to reconstruct the smoother matrix from the forest.
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK C — DoubleMLIIVM: ranger random forest\n")
+cat(strrep("=", 70), "\n\n")
+
+iivm_rf <- DoubleMLIIVM$new(
+  data    = dml_data,
+  ml_g    = lrn("regr.ranger",    keep.inbag = TRUE),
+  ml_m    = lrn("classif.ranger", keep.inbag = TRUE),
+  ml_r    = lrn("classif.ranger", keep.inbag = TRUE),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_rf$fit(store_models = TRUE, store_predictions = TRUE)
+
+cat("Point estimate:\n")
+print(iivm_rf$summary())
+
+omega_rf   <- get_outcome_weights(object = iivm_rf, dml_data = dml_data)
+w_waipw_rf <- as.vector(omega_rf$omega)
+
+ok_rf <- check_doubleml_identity(omega_rf, Y_dol, iivm_rf$coef)
+
+cat(sprintf("Algebraic check (omega'Y = tau_hat): %s\n\n", ok_rf))
+print(weight_diag(w_waipw_rf, "Wald-AIPW (DoubleML, ranger)"), row.names = FALSE)
+cat("\nBLOCK C done. Objects: iivm_rf, w_waipw_rf\n\n")
+```
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK D — XGBOOST
+# ==============================================================================
+#
+# ml_g: regr.xgboost    with alpha=0, subsample=1, max_delta_step=0, base_score=0
+# ml_m: classif.xgboost with alpha=0, subsample=1, max_delta_step=0
+# ml_r: classif.xgboost with alpha=0, subsample=1, max_delta_step=0
+#
+# The four hyperparameters on ml_g are required for omega'Y = tau_hat to hold
+# (documented in DML_smoothers_2.rmd by Knaus & Rakov).
+# base_score only applies to regr.xgboost (regression learner), not classif.
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK D — DoubleMLIIVM: XGBoost\n")
+cat(strrep("=", 70), "\n\n")
+
+iivm_xgb <- DoubleMLIIVM$new(
+  data    = dml_data,
+  ml_g    = lrn("regr.xgboost",
+                alpha = 0, subsample = 1, max_delta_step = 0, base_score = 0),
+  ml_m    = lrn("classif.xgboost",
+                alpha = 0, subsample = 1, max_delta_step = 0),
+  ml_r    = lrn("classif.xgboost",
+                alpha = 0, subsample = 1, max_delta_step = 0),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_xgb$fit(store_models = TRUE, store_predictions = TRUE)
+
+cat("Point estimate:\n")
+print(iivm_xgb$summary())
+
+omega_xgb   <- get_outcome_weights(object = iivm_xgb, dml_data = dml_data)
+w_waipw_xgb <- as.vector(omega_xgb$omega)
+
+ok_xgb <- check_doubleml_identity(omega_xgb, Y_dol, iivm_xgb$coef)
+
+cat(sprintf("Algebraic check (omega'Y = tau_hat): %s\n\n", ok_xgb))
+print(weight_diag(w_waipw_xgb, "Wald-AIPW (DoubleML, XGBoost)"), row.names = FALSE)
+cat("\nBLOCK D done. Objects: iivm_xgb, w_waipw_xgb\n\n")
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK E — DOUBLEML LEARNER COMPARISON VS KAPPA
+# Cubic age specification, log wages in dollars
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK E — DOUBLEML LEARNER COMPARISON VS KAPPA\n")
+cat("(cubic age specification, log wages in dollars)\n")
+cat(strrep("=", 70), "\n\n")
+
+k_cub <- kappa_estimates(Y_dol, X_kappa_cub)
+kw_cub <- kappa_weights_bundle(X_kappa_cub)
+
+cat("Point estimates:\n")
+cat(sprintf("  %-42s  %9s\n", "Estimator", "Estimate"))
+cat(strrep("-", 55), "\n")
+
+cat(sprintf("  %-42s  %9.4f\n", "tau_cb_u      (kappa, CBPS, norm.)", k_cub["tau_cb_u"]))
+cat(sprintf("  %-42s  %9.4f\n", "tau_ml_u      (kappa, ML, norm.)",   k_cub["tau_ml_u"]))
+cat(sprintf("  %-42s  %9.4f\n", "tau_ml_a10    (kappa, ML, norm.)",   k_cub["tau_ml_a10"]))
+cat(sprintf("  %-42s  %9.4f\n", "tau_ml_a      (kappa, ML, unnorm.)", k_cub["tau_ml_a"]))
+cat(sprintf("  %-42s  %9.4f\n", "tau_ml_a1/t   (kappa, ML, unnorm.)", k_cub["tau_ml_a1"]))
+cat(sprintf("  %-42s  %9.4f\n", "tau_ml_a0     (kappa, ML, unnorm.)", k_cub["tau_ml_a0"]))
+
+if (exists("res_cub")) {
+  cat(sprintf("  %-42s  %9.4f\n", "PLR-IV        (grf OutcomeWeights)", get_estimate(res_cub, "PLR-IV")))
+  cat(sprintf("  %-42s  %9.4f\n", "Wald-AIPW     (grf OutcomeWeights)", get_estimate(res_cub, "Wald-AIPW")))
+}
+
+cat(sprintf("  %-42s  %9.4f\n", "Wald-AIPW     (DoubleML, linear/logit)", get_dml_coef(iivm_lm)))
+cat(sprintf("  %-42s  %9.4f\n", "Wald-AIPW     (DoubleML, ranger)",       get_dml_coef(iivm_rf)))
+cat(sprintf("  %-42s  %9.4f\n", "Wald-AIPW     (DoubleML, XGBoost)",      get_dml_coef(iivm_xgb)))
+cat("\n")
+
+cat("Weight diagnostics:\n")
+cat("Sum_w = 0 => translation invariant | ESS = 1 / sum(w_i^2)\n\n")
+
+diag_rows <- rbind(
+  weight_diag(kw_cub$tau_cb_u,   "tau_cb_u      (kappa)"),
+  weight_diag(kw_cub$tau_ml_u,   "tau_ml_u      (kappa)"),
+  weight_diag(kw_cub$tau_ml_a10, "tau_ml_a10    (kappa)"),
+  weight_diag(kw_cub$tau_ml_a,   "tau_ml_a      (kappa)"),
+  weight_diag(kw_cub$tau_ml_a1,  "tau_ml_a1/t   (kappa)"),
+  weight_diag(kw_cub$tau_ml_a0,  "tau_ml_a0     (kappa)")
+)
+
+if (exists("w_plriv_cub")) {
+  diag_rows <- rbind(
+    diag_rows,
+    weight_diag(w_plriv_cub,    "PLR-IV        (grf)"),
+    weight_diag(w_waldaipw_cub, "Wald-AIPW     (grf)")
+  )
+}
+
+diag_rows <- rbind(
+  diag_rows,
+  weight_diag(w_waipw_lm,  "Wald-AIPW     (DoubleML linear/logit)"),
+  weight_diag(w_waipw_rf,  "Wald-AIPW     (DoubleML ranger)"),
+  weight_diag(w_waipw_xgb, "Wald-AIPW     (DoubleML XGBoost)")
+)
+
+print(diag_rows, row.names = FALSE)
+cat("\n")
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK F — TRANSLATION INVARIANCE: DOUBLEML LEARNERS VS KAPPA
+# Cubic age specification
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — TRANSLATION INVARIANCE: DOUBLEML LEARNERS VS KAPPA\n")
+cat(sprintf("k = log(100) = %.6f\n", k))
+cat(strrep("=", 70), "\n\n")
+
+kw_cub <- kappa_weights_bundle(X_kappa_cub)
+
+ti_rows <- rbind(
+  doubleml_translation_row("Wald-AIPW DoubleML linear/logit", w_waipw_lm),
+  doubleml_translation_row("Wald-AIPW DoubleML ranger",       w_waipw_rf),
+  doubleml_translation_row("Wald-AIPW DoubleML XGBoost",      w_waipw_xgb),
+  doubleml_translation_row("tau_cb_u kappa",                  kw_cub$tau_cb_u),
+  doubleml_translation_row("tau_ml_u kappa",                  kw_cub$tau_ml_u),
+  doubleml_translation_row("tau_ml_a10 kappa",                kw_cub$tau_ml_a10),
+  doubleml_translation_row("tau_ml_a kappa",                  kw_cub$tau_ml_a),
+  doubleml_translation_row("tau_ml_a1/t kappa",               kw_cub$tau_ml_a1),
+  doubleml_translation_row("tau_ml_a0 kappa",                 kw_cub$tau_ml_a0)
+)
+
+print(transform(
+  ti_rows,
+  Dollars = round(Dollars, 4),
+  Cents = round(Cents, 4),
+  Diff_actual = round(Diff_actual, 6),
+  Diff_pred = round(Diff_pred, 6)
+), row.names = FALSE)
+
+cat("\nInterpretation:\n")
+cat("  If Sum_w is approximately zero, the estimator is invariant to the\n")
+cat("  log-dollars to log-cents shift. Non-zero sums imply sensitivity to\n")
+cat("  arbitrary outcome translations.\n\n")
+
+```
+
+
+
+
+

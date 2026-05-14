@@ -1,0 +1,553 @@
+---
+title: "double_ml_vietnam"
+author: "Alexander Unger"
+date: "2026-05-14"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# ANGRIST (1990) — MILITARY SERVICE: DML EXTENSION
+# Builds on angrist1990_military_kappa.R — run that first.
+# ==============================================================================
+#
+# WHY ONLY TWO DML SPECS?
+# -----------------------
+# The classical kappa replication reports three age specifications:
+# linear age, cubic age, and saturated age indicators.
+#
+# For the DML extension, I focus on the cubic and saturated specifications.
+# The one-dimensional linear-age design is not very informative for a flexible
+# ML-based smoother and has shown unstable behavior with grf/OutcomeWeights in
+# my R setup. The kappa estimates for the linear specification are still reported
+# in the summary table for comparison.
+#
+# The cubic and saturated specifications correspond to the richer Table 2
+# designs and are the relevant cases for comparing DML outcome weights with
+# kappa outcome weights.
+#
+# STRUCTURE (run BLOCKS in order; B and C are independent of each other):
+#   BLOCK A — Setup, helpers, X matrices
+#   BLOCK B — Spec 2: Cubic in age   (main spec)
+#   BLOCK C — Spec 3: Saturated age  (most flexible)
+#   BLOCK D — Translation invariance demo (both specs)
+#   BLOCK E — Combined weight diagnostics (cubic spec)
+#   BLOCK F — Love plots (cubic spec)
+#   BLOCK G — Summary point-estimates table
+# ==============================================================================
+
+
+# ==============================================================================
+# BLOCK A — SETUP
+# Run first. Requires angrist1990_military_kappa.R to be in memory.
+# ==============================================================================
+
+library(OutcomeWeights)  # dml_with_smoother(), get_outcome_weights(), plot()
+library(cobalt)          # love.plot()
+library(viridis)         # colour palette
+library(gridExtra)       # grid.arrange()
+library(ggplot2)         # required by OutcomeWeights
+
+stopifnot(
+  exists("sipp_clean"), exists("D_sipp"), exists("Z_sipp"),
+  exists("kappa_weights"), exists("tau_u"), exists("tau_a10"),
+  exists("tau_unnorm"), exists("logit_mle")
+)
+
+D     <- D_sipp
+Z     <- Z_sipp
+Y_dol <- sipp_clean$lwage        # log wages in dollars
+Y_cnt <- sipp_clean$lwage_cnt    # log wages in cents = Y_dol + log(100)
+k     <- log(100)                 # translation constant
+
+cat(sprintf("BLOCK A ready. N=%d | mean(D)=%.3f | mean(Z)=%.3f\n\n",
+            length(D), mean(D), mean(Z)))
+
+# ------------------------------------------------------------------------------
+# make_X(): strips all attributes from model.matrix to produce a clean
+# numeric matrix that passes grf's validate_X() checks.
+# Requires ncol >= 2 — single-column matrices fail grf in R 4.5.x.
+# ------------------------------------------------------------------------------
+make_X <- function(formula, data) {
+  mm  <- model.matrix(formula, data = data)
+  m   <- matrix(as.numeric(mm), nrow = nrow(mm), ncol = ncol(mm))
+  colnames(m) <- colnames(mm)
+  m
+}
+
+sipp_clean$age_fac <- factor(sipp_clean$age_5)
+
+# Spec 2: Cubic in age — 3 columns, works fine
+X_dml_cub <- make_X(~ 0 + age + I(age^2) + I(age^3), sipp_clean)
+
+# Spec 3: Saturated age — 10 columns (one per age level minus reference)
+X_dml_sat_full <- make_X(~ 0 + age_fac, sipp_clean)
+X_dml_sat      <- X_dml_sat_full[, -1, drop = FALSE]
+
+cat("DML X matrices:\n")
+cat(sprintf("  X_dml_cub: %s | %dx%d | numeric=%s\n",
+            class(X_dml_cub)[1], nrow(X_dml_cub), ncol(X_dml_cub),
+            is.numeric(X_dml_cub)))
+cat(sprintf("  X_dml_sat: %s | %dx%d | numeric=%s\n",
+            class(X_dml_sat)[1], nrow(X_dml_sat), ncol(X_dml_sat),
+            is.numeric(X_dml_sat)))
+
+# Kappa X matrices — WITH intercept (for logit_mle)
+X_kappa_lin <- model.matrix(~ age,               data = sipp_clean)
+X_kappa_cub <- model.matrix(~ age + age2 + age3, data = sipp_clean)
+X_kappa_sat <- model.matrix(~ age_fac,           data = sipp_clean)
+
+# ------------------------------------------------------------------------------
+# Helper: per-observation kappa outcome weights
+# ------------------------------------------------------------------------------
+kappa_outcome_weights <- function(Z, D, p) {
+  n  <- length(Z)
+  kw <- kappa_weights(Z, D, p)
+
+  s1 <- sum(Z / p)
+  s0 <- sum((1 - Z) / (1 - p))
+
+  dD <- sum(D * Z / p) / s1 -
+        sum(D * (1 - Z) / (1 - p)) / s0
+
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) -
+           kw$kappa0 / sum(kw$kappa0)
+
+  num_w <- (Z - p) / (p * (1 - p)) / n
+
+  list(
+    w_u   = as.vector(w_u),
+    w_a10 = as.vector(w_a10),
+    w_a   = as.vector(num_w / mean(kw$kappa)),
+    w_a1  = as.vector(num_w / mean(kw$kappa1)),
+    w_a0  = as.vector(num_w / mean(kw$kappa0))
+  )
+}
+
+# ------------------------------------------------------------------------------
+# Helper: weight diagnostics row
+# Sum_w = 0 => translation invariant | ESS = 1/sum(w^2)
+# ------------------------------------------------------------------------------
+weight_diag <- function(w, name) {
+  data.frame(
+    Estimator = name,
+    Sum_w     = round(sum(w), 8),
+    ESS       = round(1 / sum(w^2), 0),
+    Pct_neg   = round(mean(w < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w)), 6),
+    stringsAsFactors = FALSE
+  )
+}
+
+
+get_estimate <- function(res, row_name) {
+  if ("Estimate" %in% colnames(res)) {
+    return(as.numeric(res[row_name, "Estimate"]))
+  }
+  as.numeric(res[row_name, 1])
+}
+
+check_weight_identity <- function(w, Y, estimate, tol = 1e-8) {
+  isTRUE(all.equal(sum(w * Y), estimate, tolerance = tol))
+}
+
+check_omega_rows <- function(omega_obj, rows = c("PLR-IV", "Wald-AIPW")) {
+  missing_rows <- setdiff(rows, rownames(omega_obj$omega))
+  if (length(missing_rows) > 0) {
+    stop("Missing expected outcome-weight rows: ",
+         paste(missing_rows, collapse = ", "))
+  }
+}
+
+get_cbps_p <- function(X) {
+  out <- cbps(Z, X)
+  if (is.list(out) && !is.null(out$p)) return(as.vector(out$p))
+  as.vector(out)
+}
+
+kappa_estimates <- function(Y, X_kappa) {
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(X_kappa)
+
+  c(
+    tau_cb_u   = tau_u(Y, Z, D, p_cb),
+    tau_ml_u   = tau_u(Y, Z, D, p_ml),
+    tau_ml_a10 = tau_a10(Y, Z, D, p_ml),
+    tau_ml_a   = tau_unnorm(Y, Z, D, p_ml, "a"),
+    tau_ml_a1  = tau_unnorm(Y, Z, D, p_ml, "a1"),
+    tau_ml_a0  = tau_unnorm(Y, Z, D, p_ml, "a0")
+  )
+}
+
+kappa_weights_bundle <- function(X_kappa) {
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(X_kappa)
+
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  list(
+    tau_cb_u   = kw_cb$w_u,
+    tau_ml_u   = kw_ml$w_u,
+    tau_ml_a10 = kw_ml$w_a10,
+    tau_ml_a   = kw_ml$w_a,
+    tau_ml_a1  = kw_ml$w_a1,
+    tau_ml_a0  = kw_ml$w_a0
+  )
+}
+cat("\nBLOCK A complete. Ready for BLOCKS B and C.\n\n")
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK B — SPEC 2: CUBIC IN AGE  (main spec)
+# X = [age, age^2, age^3]   (Table 2, columns 3-4)
+# ==============================================================================
+#
+# Three age terms give the random forest enough variation to adapt.
+# This is the main spec used for the weight diagnostics and Love plots.
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK B — DML: Cubic in age specification\n")
+cat(strrep("=", 70), "\n\n")
+
+dml_cub <- dml_with_smoother(Y_dol, D, X_dml_cub, Z,
+                              n_cf_folds = 5, tune.parameters = "all")
+res_cub <- summary(dml_cub)
+
+cat("Point estimates (IV-relevant rows only):\n")
+print(res_cub[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+# omega$omega is (4 x N): rows = PLR / PLR-IV / AIPW-ATE / Wald-AIPW
+omega_cub      <- get_outcome_weights(dml_cub)
+check_omega_rows(omega_cub)
+w_plriv_cub    <- as.vector(omega_cub$omega["PLR-IV",    ])
+w_waldaipw_cub <- as.vector(omega_cub$omega["Wald-AIPW", ])
+
+# Algebraic identity check: omega'Y = tau_hat exactly (Knaus 2024)
+cat("\nAlgebraic check (omega'Y = tau_hat, must be TRUE):\n")
+cat("  PLR-IV:   ",
+    check_weight_identity(w_plriv_cub,    Y_dol, get_estimate(res_cub, "PLR-IV")), "\n")
+cat("  Wald-AIPW:",
+    check_weight_identity(w_waldaipw_cub, Y_dol, get_estimate(res_cub, "Wald-AIPW")), "\n\n")
+
+cat("Weight diagnostics (Sum_w = 0 => translation invariant):\n")
+print(rbind(
+  weight_diag(w_plriv_cub,    "PLR-IV     (DML, cubic)"),
+  weight_diag(w_waldaipw_cub, "Wald-AIPW  (DML, cubic)")
+), row.names = FALSE)
+
+
+
+cat("\nBLOCK B done. Objects: dml_cub, w_plriv_cub, w_waldaipw_cub\n\n")
+
+
+```
+
+```{r}
+
+
+# ==============================================================================
+# BLOCK C — SPEC 3: SATURATED AGE  (most flexible)
+# X = one dummy per age value   (Table 2, columns 5-6)
+# ==============================================================================
+#
+# Saturated age indicators make the age adjustment nonparametric in the
+# classical kappa specification. In the DML specification, the same age-cell
+# information is supplied to the random-forest nuisance learners.
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK C — DML: Saturated age specification\n")
+cat(strrep("=", 70), "\n\n")
+
+dml_sat <- dml_with_smoother(Y_dol, D, X_dml_sat, Z,
+                              n_cf_folds = 5, tune.parameters = "all")
+res_sat <- summary(dml_sat)
+
+cat("Point estimates (IV-relevant rows only):\n")
+print(res_sat[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+omega_sat      <- get_outcome_weights(dml_sat)
+check_omega_rows(omega_sat)
+w_plriv_sat    <- as.vector(omega_sat$omega["PLR-IV",    ])
+w_waldaipw_sat <- as.vector(omega_sat$omega["Wald-AIPW", ])
+
+cat("\nAlgebraic check (omega'Y = tau_hat, must be TRUE):\n")
+cat("  PLR-IV:   ",
+    check_weight_identity(w_plriv_sat,    Y_dol, get_estimate(res_sat, "PLR-IV")), "\n")
+cat("  Wald-AIPW:",
+    check_weight_identity(w_waldaipw_sat, Y_dol, get_estimate(res_sat, "Wald-AIPW")), "\n\n")
+
+cat("Weight diagnostics:\n")
+print(rbind(
+  weight_diag(w_plriv_sat,    "PLR-IV     (DML, saturated)"),
+  weight_diag(w_waldaipw_sat, "Wald-AIPW  (DML, saturated)")
+), row.names = FALSE)
+
+
+
+cat("\nBLOCK C done. Objects: dml_sat, w_plriv_sat, w_waldaipw_sat\n\n")
+
+
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK D — TRANSLATION INVARIANCE: DML VS KAPPA
+# Requires: BLOCKS B and C.
+# ==============================================================================
+#
+# For any estimator represented as:
+#
+#   tau_hat = sum_i omega_i Y_i,
+#
+# switching from log wages in dollars to log wages in cents adds k = log(100):
+#
+#   Y_cnt = Y_dol + k.
+#
+# Therefore:
+#
+#   tau_hat(Y_cnt) - tau_hat(Y_dol) = k * sum_i omega_i.
+#
+# Hence, sum_i omega_i = 0 is the direct empirical diagnostic for translation
+# invariance. This block compares the two IV-DML estimators with all kappa
+# estimators from the Table 2 replication.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK D — TRANSLATION INVARIANCE: DML VS KAPPA\n")
+cat(sprintf("k = log(100) = %.6f\n\n", k))
+
+print_inv_table <- function(spec_label, w_plriv, w_waldaipw, X_kappa) {
+  cat(sprintf("--- %s ---\n", spec_label))
+  cat(sprintf("  %-22s  %9s  %9s  %10s  %10s  %7s\n",
+              "Estimator", "Dollars", "Cents", "Diff(act)", "Diff(pred)", "Match?"))
+  cat(strrep("-", 78), "\n")
+
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(X_kappa)
+
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  rows <- list(
+    list(name = "PLR-IV",
+         w = w_plriv,
+         ed = sum(w_plriv * Y_dol),
+         ec = sum(w_plriv * Y_cnt)),
+
+    list(name = "Wald-AIPW",
+         w = w_waldaipw,
+         ed = sum(w_waldaipw * Y_dol),
+         ec = sum(w_waldaipw * Y_cnt)),
+
+    list(name = "tau_cb_u",
+         w = kw_cb$w_u,
+         ed = tau_u(Y_dol, Z, D, p_cb),
+         ec = tau_u(Y_cnt, Z, D, p_cb)),
+
+    list(name = "tau_ml_u",
+         w = kw_ml$w_u,
+         ed = tau_u(Y_dol, Z, D, p_ml),
+         ec = tau_u(Y_cnt, Z, D, p_ml)),
+
+    list(name = "tau_ml_a10",
+         w = kw_ml$w_a10,
+         ed = tau_a10(Y_dol, Z, D, p_ml),
+         ec = tau_a10(Y_cnt, Z, D, p_ml)),
+
+    list(name = "tau_ml_a",
+         w = kw_ml$w_a,
+         ed = tau_unnorm(Y_dol, Z, D, p_ml, "a"),
+         ec = tau_unnorm(Y_cnt, Z, D, p_ml, "a")),
+
+    list(name = "tau_ml_a1/t",
+         w = kw_ml$w_a1,
+         ed = tau_unnorm(Y_dol, Z, D, p_ml, "a1"),
+         ec = tau_unnorm(Y_cnt, Z, D, p_ml, "a1")),
+
+    list(name = "tau_ml_a0",
+         w = kw_ml$w_a0,
+         ed = tau_unnorm(Y_dol, Z, D, p_ml, "a0"),
+         ec = tau_unnorm(Y_cnt, Z, D, p_ml, "a0"))
+  )
+
+  for (r in rows) {
+    act  <- r$ec - r$ed
+    pred <- sum(r$w) * k
+    ok   <- isTRUE(all.equal(act, pred, tolerance = 1e-8))
+
+    cat(sprintf("  %-22s  %9.4f  %9.4f  %10.4f  %10.4f  %7s\n",
+                r$name, r$ed, r$ec, act, pred, if (ok) "TRUE" else "FALSE"))
+  }
+
+  cat("\n")
+}
+
+print_inv_table("Cubic in age",  w_plriv_cub, w_waldaipw_cub, X_kappa_cub)
+print_inv_table("Saturated age", w_plriv_sat, w_waldaipw_sat, X_kappa_sat)
+
+cat("Interpretation:\n")
+cat("  Sum_w ~= 0  => translation invariant under dollars-to-cents shift.\n")
+cat("  Sum_w != 0  => estimate changes when the log outcome is shifted.\n\n")
+
+
+
+```
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK E — WEIGHT DIAGNOSTICS: DML VS KAPPA
+# Requires: BLOCKS B and C.
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK E — WEIGHT DIAGNOSTICS: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
+
+cat("Sum_w = 0 => translation invariant | ESS = 1 / sum(w_i^2)\n\n")
+
+kw_cub <- kappa_weights_bundle(X_kappa_cub)
+kw_sat <- kappa_weights_bundle(X_kappa_sat)
+
+diag_cub <- rbind(
+  weight_diag(w_plriv_cub,        "PLR-IV        (DML, cubic)"),
+  weight_diag(w_waldaipw_cub,     "Wald-AIPW     (DML, cubic)"),
+  weight_diag(kw_cub$tau_cb_u,    "tau_cb_u      (kappa, cubic)"),
+  weight_diag(kw_cub$tau_ml_u,    "tau_ml_u      (kappa, cubic)"),
+  weight_diag(kw_cub$tau_ml_a10,  "tau_ml_a10    (kappa, cubic)"),
+  weight_diag(kw_cub$tau_ml_a,    "tau_ml_a      (kappa, cubic)"),
+  weight_diag(kw_cub$tau_ml_a1,   "tau_ml_a1/t   (kappa, cubic)"),
+  weight_diag(kw_cub$tau_ml_a0,   "tau_ml_a0     (kappa, cubic)")
+)
+
+diag_sat <- rbind(
+  weight_diag(w_plriv_sat,        "PLR-IV        (DML, saturated)"),
+  weight_diag(w_waldaipw_sat,     "Wald-AIPW     (DML, saturated)"),
+  weight_diag(kw_sat$tau_cb_u,    "tau_cb_u      (kappa, saturated)"),
+  weight_diag(kw_sat$tau_ml_u,    "tau_ml_u      (kappa, saturated)"),
+  weight_diag(kw_sat$tau_ml_a10,  "tau_ml_a10    (kappa, saturated)"),
+  weight_diag(kw_sat$tau_ml_a,    "tau_ml_a      (kappa, saturated)"),
+  weight_diag(kw_sat$tau_ml_a1,   "tau_ml_a1/t   (kappa, saturated)"),
+  weight_diag(kw_sat$tau_ml_a0,   "tau_ml_a0     (kappa, saturated)")
+)
+
+cat("--- Cubic in age ---\n")
+print(diag_cub, row.names = FALSE)
+
+cat("\n--- Saturated age ---\n")
+print(diag_sat, row.names = FALSE)
+
+cat("\n")
+
+```
+
+```{r}
+
+
+# ==============================================================================
+# BLOCK F — LOVE PLOTS: DML VS KAPPA (cubic spec)
+# Requires: BLOCKS B and E.
+# ==============================================================================
+#
+# Outcome weights are signed because an effect estimate is a contrast. For cobalt,
+# we multiply by (2D - 1) to map signed outcome weights onto the usual
+# treated-versus-control balance diagnostic convention.
+#
+# The goal is descriptive: compare how PLR-IV, Wald-AIPW, and the kappa estimators
+# balance age, age^2, and age^3 in the cubic specification.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — LOVE PLOTS: DML VS KAPPA (cubic spec)\n")
+cat(strrep("=", 70), "\n\n")
+
+make_love <- function(title_str, w_vec) {
+  love.plot(
+    D ~ X_dml_cub,
+    weights    = w_vec * (2 * D - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+kw_cub <- kappa_weights_bundle(X_kappa_cub)
+
+lp1 <- make_love("PLR-IV",        w_plriv_cub)
+lp2 <- make_love("Wald-AIPW",     w_waldaipw_cub)
+lp3 <- make_love("tau_cb_u",      kw_cub$tau_cb_u)
+lp4 <- make_love("tau_ml_u",      kw_cub$tau_ml_u)
+lp5 <- make_love("tau_ml_a10",    kw_cub$tau_ml_a10)
+lp6 <- make_love("tau_ml_a",      kw_cub$tau_ml_a)
+lp7 <- make_love("tau_ml_a1/t",   kw_cub$tau_ml_a1)
+lp8 <- make_love("tau_ml_a0",     kw_cub$tau_ml_a0)
+
+grid.arrange(lp1, lp2, lp3, lp4, lp5, lp6, lp7, lp8, nrow = 2)
+
+```
+
+```{r}
+# ==============================================================================
+# BLOCK G — SUMMARY TABLE: DML VS KAPPA POINT ESTIMATES
+# Requires: BLOCKS B and C.
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK G — POINT ESTIMATES: DML VS KAPPA\n")
+cat("(log wages in dollars)\n")
+cat(strrep("=", 70), "\n\n")
+
+k_lin <- kappa_estimates(Y_dol, X_kappa_lin)
+k_cub <- kappa_estimates(Y_dol, X_kappa_cub)
+k_sat <- kappa_estimates(Y_dol, X_kappa_sat)
+
+cat(sprintf("  %-22s  %10s  %10s  %10s\n",
+            "Estimator", "Linear", "Cubic", "Saturated"))
+cat(strrep("-", 58), "\n")
+
+cat(sprintf("  %-22s  %10s  %10.4f  %10.4f\n",
+            "PLR-IV",
+            "n/a",
+            get_estimate(res_cub, "PLR-IV"),
+            get_estimate(res_sat, "PLR-IV")))
+
+cat(sprintf("  %-22s  %10s  %10.4f  %10.4f\n",
+            "Wald-AIPW",
+            "n/a",
+            get_estimate(res_cub, "Wald-AIPW"),
+            get_estimate(res_sat, "Wald-AIPW")))
+
+cat(strrep("-", 58), "\n")
+
+print_kappa_row <- function(label, key) {
+  cat(sprintf("  %-22s  %10.4f  %10.4f  %10.4f\n",
+              label, k_lin[key], k_cub[key], k_sat[key]))
+}
+
+print_kappa_row("tau_cb_u",    "tau_cb_u")
+print_kappa_row("tau_ml_u",    "tau_ml_u")
+print_kappa_row("tau_ml_a10",  "tau_ml_a10")
+print_kappa_row("tau_ml_a",    "tau_ml_a")
+print_kappa_row("tau_ml_a1/t", "tau_ml_a1")
+print_kappa_row("tau_ml_a0",   "tau_ml_a0")
+
+cat(strrep("=", 70), "\n")
+cat("DML extension complete.\n")
+cat(strrep("=", 70), "\n")
+
+```
