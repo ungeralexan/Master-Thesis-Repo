@@ -506,6 +506,8 @@ grid.arrange(lp1, lp2, lp3, lp4, lp5, lp6, lp7, lp8, nrow = 2)
 
 ```
 
+
+
 ```{r}
 # ==============================================================================
 # BLOCK G — SUMMARY TABLE: DML VS KAPPA POINT ESTIMATES
@@ -556,3 +558,372 @@ cat("DML extension complete.\n")
 cat(strrep("=", 70), "\n")
 
 ```
+
+```{r}
+# ==============================================================================
+# NEW DIAGNOSTIC BLOCKS — WEIGHT INSPECTION
+# Angrist (1990) Military Service Application
+#
+# WHERE EACH BLOCK GOES:
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  BLOCK H  — Weight distribution histograms
+#    File   : vietmam_14_05_double_ml.html  (the DML script)
+#    After  : BLOCK G (summary point-estimates table) — the very last block
+#    Before : nothing; this is the new final block in that file
+#    Needs  : kw_cub (from BLOCK E), w_waldaipw_cub (from BLOCK B),
+#             w_plriv_cub (from BLOCK B), D (from BLOCK A)
+#
+#  BLOCK I  — Weight scatterplot vs. propensity score
+#    File   : vietmam_14_05_double_ml.html  (same file as H)
+#    After  : BLOCK H (the histogram block you just added)
+#    Needs  : kw_cub, w_waldaipw_cub, D, Z, X_kappa_cub, logit_mle()
+#
+#  BLOCK J  — Leverage / influence table
+#    File   : vietmam_14_05_double_ml.html  (same file)
+#    After  : BLOCK I
+#    Needs  : kw_cub, w_waldaipw_cub, w_plriv_cub, D, Z, sipp_clean,
+#             X_kappa_cub, logit_mle()
+#
+#  BLOCK K  — EMCS diagnostic
+#    File   : vietnam_14_05_double_ml_extended.html  (the DoubleML extended script)
+#    After  : BLOCK I (the Love-plot block, the last block in that file)
+#    Needs  : omega_rf (from BLOCK C), omega_lm (from BLOCK B),
+#             omega_xgb (from BLOCK D), dml_data, sipp_clean
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT: run the full preceding blocks first so all variables are in memory.
+# The explicit stopifnot() at the start of each block will catch missing objects.
+# ==============================================================================
+
+
+# ==============================================================================
+# BLOCK H — WEIGHT DISTRIBUTION HISTOGRAMS
+# File: vietmam_14_05_double_ml.html  |  Add after BLOCK G
+# ==============================================================================
+#
+# PURPOSE
+# -------
+# The ESS and Max|omega| in BLOCK E are scalar summaries that compress the full
+# weight distribution into two numbers. Histograms show the shape:
+#   - Are the negative weights a long tail or a compact mass?
+#   - Does one observation have a truly extreme weight, or are the large values
+#     spread across several?
+#   - Do kappa estimators and DML-GRF produce similar distributional shapes?
+#
+# WHAT TO LOOK FOR
+# ----------------
+# Expected shape: bimodal. A dense spike near omega_i = 0 (never-takers with
+# moderate negative weights and non-compliers with small weights), and a smaller
+# mass of positive weights (compliers). The maximum absolute weight should be
+# visible as an isolated bar on the right tail.
+#
+# REQUIRES: BLOCKS A, B, E must have been run.
+
+stopifnot(
+  exists("kw_cub"), exists("w_waldaipw_cub"), exists("w_plriv_cub"),
+  exists("D"), exists("Y_dol")
+)
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK H — WEIGHT DISTRIBUTION HISTOGRAMS\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- Helper: one tidy histogram -------------------------------------------
+# Bars left of zero are "tomato" (negative weights), right of zero "steelblue".
+# A dashed vertical line marks zero.  The subtitle reports ESS and % negative.
+plot_weight_hist <- function(w, label,
+                             breaks = 80,
+                             xlim   = NULL) {
+  ess     <- round(1 / sum(w^2))
+  pct_neg <- round(mean(w < 0) * 100, 1)
+  if (is.null(xlim)) xlim <- c(min(w) * 1.05, max(w) * 1.05)
+
+  h <- hist(w, breaks = breaks, plot = FALSE)
+  cols <- ifelse(h$mids < 0, "tomato", "steelblue")
+
+  hist(w,
+       breaks  = breaks,
+       col     = cols,
+       border  = "white",
+       xlim    = xlim,
+       main    = label,
+       xlab    = expression(omega[i]),
+       ylab    = "Count",
+       sub     = sprintf("ESS = %d  |  %s%% negative weights", ess, pct_neg))
+  abline(v = 0, lty = 2, lwd = 1.5, col = "black")
+}
+
+# --- Figure layout: 3 rows x 3 cols = 9 panels ----------------------------
+# Row 1: normalized kappa  (tau_cb_u, tau_ml_u, tau_ml_a10)
+# Row 2: unnormalized kappa (tau_ml_a, tau_ml_a1/t, tau_ml_a0)
+# Row 3: DML-GRF           (PLR-IV, Wald-AIPW, — blank)
+
+# Use a shared x-axis range across all panels so shapes are comparable.
+all_w <- c(kw_cub$tau_cb_u, kw_cub$tau_ml_u, kw_cub$tau_ml_a10,
+           kw_cub$tau_ml_a,  kw_cub$tau_ml_a1, kw_cub$tau_ml_a0,
+           w_plriv_cub, w_waldaipw_cub)
+shared_xlim <- c(min(all_w) * 1.05, max(all_w) * 1.05)
+
+par(mfrow = c(3, 3),
+    mar   = c(4, 3, 2.5, 1),
+    oma   = c(0, 0, 3, 0))
+
+# --- Row 1: normalized kappa -----------------------------------------------
+plot_weight_hist(kw_cub$tau_cb_u,  "tau_cb_u  (kappa, CBPS, norm.)",  xlim = shared_xlim)
+plot_weight_hist(kw_cub$tau_ml_u,  "tau_ml_u  (kappa, MLE, norm.)",   xlim = shared_xlim)
+plot_weight_hist(kw_cub$tau_ml_a10,"tau_ml_a10 (kappa, MLE, norm.)",  xlim = shared_xlim)
+
+# --- Row 2: unnormalized kappa ---------------------------------------------
+plot_weight_hist(kw_cub$tau_ml_a,  "tau_ml_a  (kappa, unnorm.)",      xlim = shared_xlim)
+plot_weight_hist(kw_cub$tau_ml_a1, "tau_ml_a1/t (kappa, unnorm.)",    xlim = shared_xlim)
+plot_weight_hist(kw_cub$tau_ml_a0, "tau_ml_a0 (kappa, unnorm.)",      xlim = shared_xlim)
+
+# --- Row 3: DML-GRF --------------------------------------------------------
+plot_weight_hist(w_plriv_cub,    "PLR-IV  (DML-GRF, cubic)",          xlim = shared_xlim)
+plot_weight_hist(w_waldaipw_cub, "Wald-AIPW (DML-GRF, cubic)",        xlim = shared_xlim)
+plot.new()  # blank panel to fill 3x3 grid
+
+mtext("Outcome weight distributions — cubic age spec (N = 3,027)",
+      outer = TRUE, cex = 1.1, font = 2)
+
+par(mfrow = c(1, 1))  # reset
+
+cat("BLOCK H done.\n")
+cat("Key things to check in the plot:\n")
+cat("  1. All panels should show a large spike near 0 — most obs. have tiny weights.\n")
+cat("  2. Normalized kappa and DML-GRF should look similar in shape.\n")
+cat("  3. Unnormalized kappa panels: the spike is slightly shifted right of 0,\n")
+cat("     because sum(w) != 0. That rightward shift IS the translation-invariance\n")
+cat("     violation made visually explicit.\n")
+cat("  4. DML-GRF has a narrower right tail (smaller Max|w|) than kappa.\n\n")
+
+```
+```{r}
+# ==============================================================================
+# BLOCK I — WEIGHT SCATTERPLOT AGAINST PROPENSITY SCORE
+# File: vietmam_14_05_double_ml.html  |  Add after BLOCK H
+# ==============================================================================
+#
+# PURPOSE
+# -------
+# Shows WHICH observations get large positive or large negative weights and WHY.
+# The x-axis is the instrument propensity score p(X_i) = P(Z=1|X_i). Units near
+# p = 0.5 are most informative (the instrument is "closest to the coin flip")
+# and should receive the largest absolute weights. Units near p = 0 or p = 1
+# are nearly deterministically assigned and are nearly irrelevant.
+#
+# The four (D, Z) compliance cells are colour-coded and shaped differently:
+#   D=1, Z=1  (eligible + veteran)  : could be complier or always-taker → blue solid
+#   D=1, Z=0  (ineligible + veteran): must be always-taker                → blue open
+#   D=0, Z=1  (eligible + non-vet)  : must be never-taker                 → red solid
+#   D=0, Z=0  (ineligible + non-vet): could be never-taker or complier    → red open
+#
+# Under NO ALWAYS-TAKERS (Angrist 1990 design):
+#   D=1, Z=0 cells are nearly empty (very few always-takers).
+#   Positive weights should be concentrated in D=1, Z=1 cells (compliers).
+#   Negative weights should be concentrated in D=0, Z=1 cells (never-takers).
+#
+# REQUIRES: BLOCKS A, B, E of vietmam_14_05_double_ml.html
+
+stopifnot(
+  exists("kw_cub"), exists("w_waldaipw_cub"), exists("w_plriv_cub"),
+  exists("D"), exists("Z"), exists("X_kappa_cub"), exists("logit_mle")
+)
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK I — WEIGHT SCATTERPLOT VS. PROPENSITY SCORE\n")
+cat(strrep("=", 70), "\n\n")
+
+# Instrument propensity score for the cubic spec
+p_cub <- logit_mle(Z, X_kappa_cub)
+
+# Compliance-cell colour and shape coding
+# col: steelblue = D=1, tomato = D=0
+# pch: 16 (solid) = Z=1, 1 (open) = Z=0
+cell_col <- ifelse(D == 1, "steelblue", "tomato")
+cell_pch <- ifelse(Z == 1, 16, 1)
+cell_lbl <- ifelse(D == 1 & Z == 1, "D=1, Z=1 (comp./AT)",
+            ifelse(D == 1 & Z == 0, "D=1, Z=0 (AT only)",
+            ifelse(D == 0 & Z == 1, "D=0, Z=1 (NT only)",
+                                    "D=0, Z=0 (comp./NT)")))
+
+# --- Helper: one scatter panel --------------------------------------------
+plot_w_vs_p <- function(w, label) {
+  plot(p_cub, w,
+       col  = adjustcolor(cell_col, alpha.f = 0.4),
+       pch  = cell_pch,
+       cex  = 0.5,
+       main = label,
+       xlab = expression(hat(p)(X[i]) == P(Z==1~"|"~X[i])),
+       ylab = expression(omega[i]))
+  abline(h = 0, lty = 2, lwd = 1.2)
+  # Highlight top-5 most influential observations
+  top5_idx <- order(-abs(w))[1:5]
+  points(p_cub[top5_idx], w[top5_idx],
+         col = "black", pch = 8, cex = 1.2, lwd = 1.5)
+}
+
+# --- Figure: 2 rows x 2 cols, main estimators of interest ----------------
+par(mfrow = c(2, 2), mar = c(4, 4, 2.5, 1), oma = c(0, 0, 3, 0))
+
+plot_w_vs_p(kw_cub$tau_cb_u,   "tau_cb_u (kappa, CBPS, norm.)")
+plot_w_vs_p(kw_cub$tau_ml_u,   "tau_ml_u (kappa, MLE, norm.)")
+plot_w_vs_p(w_waldaipw_cub,    "Wald-AIPW (DML-GRF, cubic)")
+plot_w_vs_p(kw_cub$tau_ml_a,   "tau_ml_a (kappa, unnorm.) — note shifted baseline")
+
+mtext("Outcome weights vs. instrument propensity score — cubic age spec",
+      outer = TRUE, cex = 1.05, font = 2)
+
+# --- Legend ----------------------------------------------------------------
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+plot.new()
+legend("center",
+       legend = c("D=1, Z=1 (complier / always-taker)",
+                  "D=1, Z=0 (always-taker only)",
+                  "D=0, Z=1 (never-taker only)",
+                  "D=0, Z=0 (complier / never-taker)",
+                  "Top-5 most influential obs."),
+       col    = c("steelblue", "steelblue", "tomato", "tomato", "black"),
+       pch    = c(16, 1, 16, 1, 8),
+       pt.cex = c(1, 1, 1, 1, 1.3),
+       bty    = "n",
+       cex    = 0.95,
+       title  = "Compliance cell")
+
+cat("BLOCK I done.\n")
+cat("Key things to check in the plot:\n")
+cat("  1. Large POSITIVE weights (top of each panel) should be D=1, Z=1 (blue solid).\n")
+cat("     These are compliers assigned to treatment — they drive the LATE numerator.\n")
+cat("  2. Large NEGATIVE weights (bottom) should be D=0, Z=1 (red solid).\n")
+cat("     These are never-takers assigned to treatment — they are 'down-weighted'.\n")
+cat("  3. Observations with p_hat near 0.5 get the largest absolute weights.\n")
+cat("     Observations with p_hat near 0 or 1 are almost irrelevant.\n")
+cat("  4. For tau_ml_a (unnorm.): the entire weight cloud is slightly shifted UP\n")
+cat("     relative to tau_u. That upward shift equals sum(w) = 0.048.\n\n")
+```
+```{r}
+
+# ==============================================================================
+# BLOCK J — LEVERAGE / INFLUENCE TABLE
+# File: vietmam_14_05_double_ml.html  |  Add after BLOCK I
+# ==============================================================================
+#
+# PURPOSE
+# -------
+# Identifies the specific observations with the largest absolute outcome weights.
+# ESS = 5 means the estimate is dominated by a handful of units — this block
+# names them and shows their covariate values, so the reader can see whether
+# the high-leverage units are substantively sensible.
+#
+# The table reports the top-20 observations ranked by |omega_i| for the main
+# estimator (tau_cb_u). A follow-up table shows the same for Wald-AIPW (DML-GRF)
+# to compare which observations each estimator leverages.
+#
+# REQUIRES: BLOCKS A, B, E of vietmam_14_05_double_ml.html
+
+stopifnot(
+  exists("kw_cub"), exists("w_waldaipw_cub"), exists("sipp_clean"),
+  exists("D"), exists("Z"), exists("p_cub")
+  # p_cub is created in BLOCK I above; if running standalone, run:
+  # p_cub <- logit_mle(Z, X_kappa_cub)
+)
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK J — LEVERAGE / INFLUENCE TABLE (Top-20 by |omega_i|)\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- Helper: build leverage data frame ------------------------------------
+make_influence_df <- function(w, label) {
+  df <- data.frame(
+    obs_idx   = seq_along(w),
+    omega     = round(w, 6),
+    abs_omega = round(abs(w), 6),
+    sign      = ifelse(w > 0, "+", "-"),
+    D         = as.integer(D),
+    Z         = as.integer(Z),
+    age       = sipp_clean$age_5,
+    p_hat     = round(p_cub, 4),
+    Y_dol     = round(Y_dol, 4)
+  )
+  df$compliance_cell <- with(df,
+    ifelse(D == 1 & Z == 1, "D1Z1 (comp/AT)",
+    ifelse(D == 1 & Z == 0, "D1Z0 (AT only)",
+    ifelse(D == 0 & Z == 1, "D0Z1 (NT only)",
+                            "D0Z0 (comp/NT)"))))
+  df <- df[order(-df$abs_omega), ]
+  df$rank <- seq_len(nrow(df))
+  attr(df, "estimator") <- label
+  df
+}
+
+# --- Build for tau_cb_u and Wald-AIPW (DML-GRF) ---------------------------
+infl_kappa <- make_influence_df(kw_cub$tau_cb_u,  "tau_cb_u (kappa, CBPS, norm.)")
+infl_dml   <- make_influence_df(w_waldaipw_cub,   "Wald-AIPW (DML-GRF, cubic)")
+
+# --- Print top-20 for each ------------------------------------------------
+print_top <- function(df, top_n = 20) {
+  cat(sprintf("\nTop-%d most influential observations for: %s\n",
+              top_n, attr(df, "estimator")))
+  cat(strrep("-", 75), "\n")
+  top <- df[1:top_n, c("rank", "obs_idx", "omega", "sign", "D", "Z",
+                        "age", "p_hat", "compliance_cell")]
+  print(top, row.names = FALSE)
+  cat("\n")
+
+  # Summary: how many positives vs negatives in the top-20?
+  cat(sprintf("  Of the top-%d: %d positive weights, %d negative weights\n",
+              top_n,
+              sum(df$sign[1:top_n] == "+"),
+              sum(df$sign[1:top_n] == "-")))
+
+  # Compliance cell breakdown
+  cat("  Compliance cell breakdown:\n")
+  tb <- table(df$compliance_cell[1:top_n])
+  for (nm in names(tb)) {
+    cat(sprintf("    %-20s  %d\n", nm, tb[nm]))
+  }
+  cat("\n")
+}
+
+print_top(infl_kappa, top_n = 20)
+print_top(infl_dml,   top_n = 20)
+
+# --- Overlap: which top-20 obs appear in BOTH estimators? -----------------
+top20_kappa_idx <- infl_kappa$obs_idx[1:20]
+top20_dml_idx   <- infl_dml$obs_idx[1:20]
+shared_idx      <- intersect(top20_kappa_idx, top20_dml_idx)
+
+cat(sprintf("Overlap: %d observations appear in the top-20 for BOTH estimators.\n",
+            length(shared_idx)))
+if (length(shared_idx) > 0) {
+  cat("Shared obs indices:", paste(shared_idx, collapse = ", "), "\n")
+}
+cat("\n")
+
+# --- Cumulative weight concentration plot ---------------------------------
+# Shows what fraction of the TOTAL weight (in absolute value) is accounted
+# for by the top-k observations. If 5 observations account for 90% of total
+# weight, the ESS = 5 interpretation is confirmed visually.
+
+cat("Cumulative weight concentration (|omega|):\n")
+cat(strrep("-", 50), "\n")
+for (label_pair in list(
+    list(df = infl_kappa, name = "tau_cb_u (kappa)"),
+    list(df = infl_dml,   name = "Wald-AIPW (DML-GRF)")
+)) {
+  w_sorted <- sort(abs(label_pair$df$omega), decreasing = TRUE)
+  total_abs <- sum(w_sorted)
+  cat(sprintf("\n%s  (total |omega| = %.4f):\n", label_pair$name, total_abs))
+  for (k in c(1, 5, 10, 20, 50, 100)) {
+    pct <- round(sum(w_sorted[1:min(k, length(w_sorted))]) / total_abs * 100, 1)
+    cat(sprintf("  Top %3d obs: %.1f%% of total absolute weight\n", k, pct))
+  }
+}
+
+cat("\n")
+cat("BLOCK J done.\n\n")
+
+```
+
+
