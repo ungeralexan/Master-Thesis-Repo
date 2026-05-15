@@ -1,0 +1,260 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage{setspace}
+\usepackage{natbib}
+\usepackage{hyperref}
+\begin{document}
+
+\subsection{Translation Invariance and the Cents--Dollars Comparison}
+
+A central finite-sample issue in the application to the Vietnam draft lottery is
+whether the estimator is invariant to arbitrary changes in the measurement unit
+of the outcome. In the Angrist (1990) application, the outcome is log wages.
+Let \(w_i\) denote wages measured in dollars. If wages are instead measured in
+cents, the corresponding wage variable is \(100w_i\). Therefore, the log outcome
+changes as follows:
+\[
+    \log(100w_i)
+    =
+    \log(w_i) + \log(100).
+\]
+Thus, switching from log wages in dollars to log wages in cents does not change
+the economic outcome. It only adds the same constant,
+\[
+    c = \log(100),
+\]
+to every observation:
+\[
+    Y_i^{cents} = Y_i^{dollars} + c.
+\]
+
+This is important because a causal effect estimator should not depend on the
+arbitrary unit in which wages are recorded before taking logs. If an estimator
+changes when wages are measured in cents rather than dollars, the estimate
+reflects not only the causal design but also an arbitrary measurement convention.
+
+To see this formally, consider an estimator that can be written as a weighted
+sum of outcomes:
+\[
+    \hat{\tau}
+    =
+    \sum_{i=1}^n \omega_i Y_i.
+\]
+If the outcome is shifted by a constant \(c\), then
+\[
+    \hat{\tau}(Y+c)
+    =
+    \sum_{i=1}^n \omega_i (Y_i+c).
+\]
+Expanding the expression gives
+\[
+    \hat{\tau}(Y+c)
+    =
+    \sum_{i=1}^n \omega_i Y_i
+    +
+    c \sum_{i=1}^n \omega_i.
+\]
+Hence,
+\[
+    \hat{\tau}(Y+c)
+    -
+    \hat{\tau}(Y)
+    =
+    c \sum_{i=1}^n \omega_i.
+\]
+The estimator is therefore translation invariant if and only if
+\[
+    \sum_{i=1}^n \omega_i = 0.
+\]
+In that case, adding a constant to all outcomes leaves the estimate unchanged:
+\[
+    \hat{\tau}(Y+c) = \hat{\tau}(Y).
+\]
+
+This condition explains the difference between the normalized and unnormalized
+kappa estimators. Consider first a normalized estimator that takes the difference
+between two normalized weighted means:
+\[
+    \hat{\tau}_{norm}
+    =
+    \frac{\sum_{i=1}^n a_i Y_i}{\sum_{i=1}^n a_i}
+    -
+    \frac{\sum_{i=1}^n b_i Y_i}{\sum_{i=1}^n b_i}.
+\]
+If a constant \(c\) is added to all outcomes, then
+\[
+    \hat{\tau}_{norm}(Y+c)
+    =
+    \frac{\sum_{i=1}^n a_i (Y_i+c)}{\sum_{i=1}^n a_i}
+    -
+    \frac{\sum_{i=1}^n b_i (Y_i+c)}{\sum_{i=1}^n b_i}.
+\]
+Expanding both terms yields
+\[
+    \hat{\tau}_{norm}(Y+c)
+    =
+    \left(
+    \frac{\sum_{i=1}^n a_i Y_i}{\sum_{i=1}^n a_i}
+    +
+    c
+    \right)
+    -
+    \left(
+    \frac{\sum_{i=1}^n b_i Y_i}{\sum_{i=1}^n b_i}
+    +
+    c
+    \right).
+\]
+The two constants cancel:
+\[
+    \hat{\tau}_{norm}(Y+c)
+    =
+    \frac{\sum_{i=1}^n a_i Y_i}{\sum_{i=1}^n a_i}
+    -
+    \frac{\sum_{i=1}^n b_i Y_i}{\sum_{i=1}^n b_i}
+    =
+    \hat{\tau}_{norm}(Y).
+\]
+Therefore, normalized estimators are translation invariant.
+
+This applies to the normalized estimators reported in the replication, such as
+\[
+    \hat{\tau}_u
+    =
+    \frac{
+    \frac{\sum_{i=1}^n Y_i Z_i / \hat{p}_i}
+         {\sum_{i=1}^n Z_i / \hat{p}_i}
+    -
+    \frac{\sum_{i=1}^n Y_i (1-Z_i) / (1-\hat{p}_i)}
+         {\sum_{i=1}^n (1-Z_i) / (1-\hat{p}_i)}
+    }{
+    \frac{\sum_{i=1}^n D_i Z_i / \hat{p}_i}
+         {\sum_{i=1}^n Z_i / \hat{p}_i}
+    -
+    \frac{\sum_{i=1}^n D_i (1-Z_i) / (1-\hat{p}_i)}
+         {\sum_{i=1}^n (1-Z_i) / (1-\hat{p}_i)}
+    },
+\]
+where \(\hat{p}_i = \hat{P}(Z_i=1 \mid X_i)\). Since the outcome part consists of
+a difference between normalized weighted means, adding \(\log(100)\) to all
+log wages cancels from the numerator. Hence,
+\[
+    \hat{\tau}_u(Y+\log(100)) = \hat{\tau}_u(Y).
+\]
+
+The same logic applies to the normalized Abadie--Cattaneo estimator:
+\[
+    \hat{\tau}_{a,10}
+    =
+    \frac{\sum_{i=1}^n \hat{\kappa}_{1i}Y_i}
+         {\sum_{i=1}^n \hat{\kappa}_{1i}}
+    -
+    \frac{\sum_{i=1}^n \hat{\kappa}_{0i}Y_i}
+         {\sum_{i=1}^n \hat{\kappa}_{0i}}.
+\]
+After replacing \(Y_i\) by \(Y_i+c\), the constant appears once in each
+normalized weighted mean and therefore cancels:
+\[
+    \hat{\tau}_{a,10}(Y+c)
+    =
+    \hat{\tau}_{a,10}(Y).
+\]
+
+The unnormalized estimators behave differently. For example, the unnormalized
+Abadie estimator can be written as
+\[
+    \hat{\tau}_a
+    =
+    \frac{
+    n^{-1}\sum_{i=1}^n
+    Y_i
+    \frac{Z_i-\hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}
+    }{
+    n^{-1}\sum_{i=1}^n \hat{\kappa}_i
+    }.
+\]
+If \(Y_i\) is replaced by \(Y_i+c\), then
+\[
+    \hat{\tau}_a(Y+c)
+    =
+    \frac{
+    n^{-1}\sum_{i=1}^n
+    (Y_i+c)
+    \frac{Z_i-\hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}
+    }{
+    n^{-1}\sum_{i=1}^n \hat{\kappa}_i
+    }.
+\]
+Expanding the numerator gives
+\[
+    \hat{\tau}_a(Y+c)
+    =
+    \hat{\tau}_a(Y)
+    +
+    c
+    \frac{
+    n^{-1}\sum_{i=1}^n
+    \frac{Z_i-\hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}
+    }{
+    n^{-1}\sum_{i=1}^n \hat{\kappa}_i
+    }.
+\]
+The second term is not generally equal to zero in finite samples. Therefore,
+\[
+    \hat{\tau}_a(Y+c)
+    \neq
+    \hat{\tau}_a(Y)
+\]
+in general. This means that the unnormalized estimator can change simply because
+wages are recorded in cents rather than dollars before taking logarithms.
+
+The same issue applies to the other unnormalized estimators reported in the
+table, such as
+\[
+    \hat{\tau}_{a,1}
+    =
+    \frac{
+    n^{-1}\sum_{i=1}^n
+    Y_i
+    \frac{Z_i-\hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}
+    }{
+    n^{-1}\sum_{i=1}^n \hat{\kappa}_{1i}
+    },
+\]
+and
+\[
+    \hat{\tau}_{a,0}
+    =
+    \frac{
+    n^{-1}\sum_{i=1}^n
+    Y_i
+    \frac{Z_i-\hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}
+    }{
+    n^{-1}\sum_{i=1}^n \hat{\kappa}_{0i}
+    }.
+\]
+These estimators also do not generally have outcome weights that sum to zero.
+Consequently, they are not generally translation invariant.
+
+In the Vietnam draft lottery application, this distinction has a direct
+empirical implication. The normalized estimators produce the same estimate
+whether the log wage is constructed from dollars or cents:
+\[
+    \hat{\tau}_{norm}(\log w_i)
+    =
+    \hat{\tau}_{norm}(\log(100w_i)).
+\]
+By contrast, the unnormalized estimators can change:
+\[
+    \hat{\tau}_{unnorm}(\log w_i)
+    \neq
+    \hat{\tau}_{unnorm}(\log(100w_i)).
+\]
+Since dollars and cents describe the same underlying wage, this difference is
+not economically meaningful. It is a finite-sample artifact of the estimator.
+This is why normalization is important: it ensures that the estimated causal
+effect is not affected by an arbitrary scaling choice in the outcome variable.
+
+\end{document}

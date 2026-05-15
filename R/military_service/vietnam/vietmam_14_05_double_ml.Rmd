@@ -4,6 +4,13 @@ author: "Alexander Unger"
 date: "2026-05-14"
 output: html_document
 ---
+
+```{r setup, include=FALSE}
+source("/Users/alexung/Desktop/master_thesis/code/vietnam/run_through_one.R")   # runs everything, populates environment
+```
+
+
+
 ```{r}
 # ==============================================================================
 # ANGRIST (1990) — MILITARY SERVICE: DML EXTENSION
@@ -57,7 +64,6 @@ D     <- D_sipp
 Z     <- Z_sipp
 Y_dol <- sipp_clean$lwage        # log wages in dollars
 Y_cnt <- sipp_clean$lwage_cnt    # log wages in cents = Y_dol + log(100)
-k     <- log(100)                 # translation constant
 
 cat(sprintf("BLOCK A ready. N=%d | mean(D)=%.3f | mean(Z)=%.3f\n\n",
             length(D), mean(D), mean(Z)))
@@ -74,7 +80,6 @@ make_X <- function(formula, data) {
   m
 }
 
-sipp_clean$age_fac <- factor(sipp_clean$age_5)
 
 # Spec 2: Cubic in age — 3 columns, works fine
 X_dml_cub <- make_X(~ 0 + age + I(age^2) + I(age^3), sipp_clean)
@@ -92,9 +97,9 @@ cat(sprintf("  X_dml_sat: %s | %dx%d | numeric=%s\n",
             is.numeric(X_dml_sat)))
 
 # Kappa X matrices — WITH intercept (for logit_mle)
-X_kappa_lin <- model.matrix(~ age,               data = sipp_clean)
-X_kappa_cub <- model.matrix(~ age + age2 + age3, data = sipp_clean)
-X_kappa_sat <- model.matrix(~ age_fac,           data = sipp_clean)
+X_kappa_lin <- X1
+X_kappa_cub <- X2
+X_kappa_sat <- X3
 
 # ------------------------------------------------------------------------------
 # Helper: per-observation kappa outcome weights

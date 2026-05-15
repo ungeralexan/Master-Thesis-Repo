@@ -4,6 +4,10 @@ author: "Alexander Unger"
 date: "2026-05-14"
 output: html_document
 ---
+```{r setup, include=FALSE}
+source("/Users/alexung/Desktop/master_thesis/code/vietnam/run_through.R")   # runs everything, populates environment
+```
+
 ```{r}
 # ==============================================================================
 # ANGRIST (1990) — MILITARY SERVICE: DoubleML EXTENSION
@@ -101,15 +105,16 @@ doubleml_translation_row <- function(name, w) {
   ed <- sum(w * Y_dol)
   ec <- sum(w * Y_cnt)
   data.frame(
-    Estimator = name,
-    Dollars = ed,
-    Cents = ec,
-    Diff_actual = ec - ed,
-    Diff_pred = sum(w) * k,
-    Match = isTRUE(all.equal(ec - ed, sum(w) * k, tolerance = 1e-8)),
+    Estimator   = name,
+    Dollars     = round(ed, 4),
+    Cents       = round(ec, 4),
+    Diff_actual = round(ec - ed, 6),
+    Diff_pred   = round(sum(w) * k, 6),
+    Match       = isTRUE(all.equal(ec - ed, sum(w) * k, tolerance = 1e-8)),
     stringsAsFactors = FALSE
   )
 }
+
 
 # Verify dev version is loaded (should show > 0.1.0 or similar)
 cat("OutcomeWeights version:", as.character(packageVersion("OutcomeWeights")), "\n")
@@ -129,7 +134,6 @@ D     <- D_sipp
 Z     <- Z_sipp
 Y_dol <- sipp_clean$lwage
 Y_cnt <- sipp_clean$lwage_cnt
-k     <- log(100)
 
 cat(sprintf("N=%d | mean(D)=%.3f | mean(Z)=%.3f\n\n",
             length(D), mean(D), mean(Z)))
@@ -160,7 +164,7 @@ print(dml_data)
 cat("\n")
 
 # Kappa matrices and weights for comparison
-X_kappa_cub <- model.matrix(~ age + age2 + age3, data = sipp_clean)
+X_kappa_cub <- X2
 X_dml_cub   <- model.matrix(~ 0 + age + I(age^2) + I(age^3), data = sipp_clean)
 p_ml_cub    <- logit_mle(Z, X_kappa_cub)
 kw_cub <- kappa_outcome_weights(Z, D, p_ml_cub)
