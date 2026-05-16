@@ -1,0 +1,939 @@
+\documentclass[12pt, a4paper]{article}
+
+% ---------------------------------------------------------------
+% Packages
+% ---------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\usepackage{mdframed}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = blue!60!black,
+  citecolor  = blue!60!black,
+}
+
+% ---------------------------------------------------------------
+% Custom environments
+% ---------------------------------------------------------------
+\newtheoremstyle{condstyle}{}{}{\itshape}{}{\bfseries}{.}{.5em}{}
+\theoremstyle{condstyle}
+\newtheorem{condition}{Condition}[section]
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}{Corollary}[section]
+\newtheorem{remark}{Remark}[section]
+
+% Shaded box for key results
+\tcbuselibrary{skins}
+\newtcolorbox{keyresult}[1][]{
+  enhanced,
+  colback=blue!4!white,
+  colframe=blue!40!black,
+  fonttitle=\bfseries,
+  title=#1,
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  arc=3pt,
+}
+
+\newtcolorbox{notebox}[1][]{
+  enhanced,
+  colback=orange!5!white,
+  colframe=orange!60!black,
+  fonttitle=\bfseries,
+  title=#1,
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  arc=3pt,
+}
+
+% ---------------------------------------------------------------
+% Notation macros
+% ---------------------------------------------------------------
+\newcommand{\EN}{\mathbb{E}_N}
+\newcommand{\bD}{\mathbf{D}}
+\newcommand{\bY}{\mathbf{Y}}
+\newcommand{\bZ}{\mathbf{Z}}
+\newcommand{\bone}{\mathbf{1}_N}
+\newcommand{\bzero}{\mathbf{0}_N}
+\newcommand{\IN}{\mathbf{I}_N}
+\newcommand{\tY}{\tilde{Y}}
+\newcommand{\tD}{\tilde{D}}
+\newcommand{\tZ}{\tilde{Z}}
+\newcommand{\that}[1]{\hat{\tau}_{#1}}
+\newcommand{\phat}{\hat{p}}
+\newcommand{\kone}{\kappa_1}
+\newcommand{\kzero}{\kappa_0}
+
+% ---------------------------------------------------------------
+% Document
+% ---------------------------------------------------------------
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\LARGE\bfseries Outcome Weights for Kappa-Based LATE Estimators}\\[0.5em]
+{\large A Step-by-Step Derivation in the PIVE Framework of Knaus (2024)}\\[2cm]
+
+{\large Working Notes}\\[0.5em]
+{\normalsize Based on Knaus (2024) and Słoczy\'nski, Uysal \& Wooldridge (2024)}\\[3cm]
+
+\begin{abstract}
+\noindent
+These notes derive the outcome weights $\omega_i$ such that $\hat\tau = \sum_i \omega_i Y_i$
+for three kappa-based estimators of the Local Average Treatment Effect (LATE):
+the fully-normalized estimator $\that{a,10}$, the unnormalized Abadie estimator $\that{a}$,
+and the Uysal normalized estimator $\that{u}$.
+The derivation follows the Pseudo-IV Estimator (PIVE) framework of Knaus (2024).
+For each estimator we state which conditions from Knaus (2024) are needed,
+explain what those conditions mean in the kappa context,
+and show step by step whether the outcome weights are
+fully-normalized ($\sum_i \omega_i D_i = 1$, $\sum_i \omega_i (1-D_i) = -1$),
+scale-normalized, or unnormalized.
+\end{abstract}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ===============================================================
+\section{Setting and Notation}
+\label{sec:setup}
+% ===============================================================
+
+We work in a binary instrumental variables (IV) setting.
+The observed data for unit $i = 1, \ldots, N$ are
+\[
+  O_i = (D_i,\; X_i,\; Y_i,\; Z_i)',
+\]
+where $D_i \in \{0,1\}$ is a binary treatment, $Z_i \in \{0,1\}$ is a binary instrument,
+$Y_i$ is the outcome of interest, and $X_i$ is a vector of pre-treatment covariates.
+
+\medskip
+\noindent\textbf{Target parameter.}
+The target is the Local Average Treatment Effect (LATE),
+\[
+  \tau_{\mathrm{LATE}} = \mathbb{E}[Y_i(1) - Y_i(0) \mid \text{Complier}_i],
+\]
+where a \emph{complier} is a unit whose treatment status is shifted by the instrument.
+
+\medskip
+\noindent\textbf{Instrument propensity score.}
+Let $p(X_i) = \mathbb{E}[Z_i \mid X_i]$ denote the true instrument propensity score,
+and $\phat_i = \hat{p}(X_i)$ its estimator (typically logistic regression or CBPS).
+
+\medskip
+\noindent\textbf{Matrix notation.}
+Bold letters denote $N$-vectors or $N\times N$ matrices.
+$\bone$ and $\bzero$ are vectors of ones and zeros of length $N$.
+$\mathbf{D} = (D_1,\ldots,D_N)'$ and $\mathbf{Y} = (Y_1,\ldots,Y_N)'$.
+
+% ===============================================================
+\section{The Three Kappa Weights}
+\label{sec:kappa}
+% ===============================================================
+
+The entire family of estimators studied in S\l oczy\'nski et al.\ (2024) is built from three scalar weights
+per observation, first introduced by Abadie (2003):
+
+\begin{align}
+  \kappa_i   &= 1 - D_i\,\frac{1-Z_i}{1-\phat_i} - (1-D_i)\,\frac{Z_i}{\phat_i},
+  \label{eq:kappa}\\[6pt]
+  \kappa_{i1} &= D_i\,\frac{Z_i - \phat_i}{\phat_i(1-\phat_i)},
+  \label{eq:kappa1}\\[6pt]
+  \kappa_{i0} &= (1-D_i)\,\frac{(1-Z_i)-(1-\phat_i)}{\phat_i(1-\phat_i)}
+               = -(1-D_i)\,\frac{Z_i - \phat_i}{\phat_i(1-\phat_i)}.
+  \label{eq:kappa0}
+\end{align}
+
+\begin{notebox}[Intuition]
+$\kappa_{i1}$ is nonzero \emph{only} for treated units ($D_i=1$).
+It is positive when $Z_i=1$ and negative when $Z_i=0$,
+isolating the complier contribution from the treated group.
+$\kappa_{i0}$ works symmetrically for untreated units ($D_i=0$).
+Together, $\kappa_1$ and $\kappa_0$ identify the complier subpopulation from both directions.
+Note also that $\kappa_{i1} \cdot (1-D_i) = 0$ and $\kappa_{i0} \cdot D_i = 0$ for all $i$
+--- a fact we will use extensively in the normalization proofs.
+\end{notebox}
+
+In vector notation:
+\[
+  \boldsymbol{\kappa} = (\kappa_1,\ldots,\kappa_N)',\quad
+  \boldsymbol{\kappa}_1 = (\kappa_{11},\ldots,\kappa_{N1})',\quad
+  \boldsymbol{\kappa}_0 = (\kappa_{10},\ldots,\kappa_{N0})'.
+\]
+
+% ===============================================================
+\section{The PIVE Framework}
+\label{sec:pive}
+% ===============================================================
+
+Knaus (2024) defines a general class of \emph{Pseudo-IV Estimators} (PIVEs)
+as estimators solving an empirical moment condition of the form
+\begin{equation}
+  \EN\!\left[(\tY_i - \hat\tau\,\tD_i)\,\tZ_i\right] = 0,
+  \label{eq:moment}
+\end{equation}
+with scalar pseudo-outcome $\tY_i = f_Y(O_i;\hat\eta^Y_i)$,
+pseudo-treatment $\tD_i = f_D(O_i;\hat\eta^D_i)$,
+and pseudo-instrument $\tZ_i = f_Z(O_i;\hat\eta^Z_i)$.
+Solving \eqref{eq:moment} yields
+\begin{equation}
+  \hat\tau = \frac{\EN[\tZ_i\tY_i]}{\EN[\tZ_i\tD_i]}
+            = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\tilde{\mathbf{Y}}.
+  \label{eq:pive_sol}
+\end{equation}
+
+\begin{proposition}[Outcome weights of PIVEs, Knaus 2024, Prop.~1]
+\label{prop:weights}
+If $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} \neq 0$ and there exists a unique $N\times N$
+transformation matrix $\mathbf{T}$ such that $\mathbf{T}\mathbf{Y} = \tilde{\mathbf{Y}}$,
+then the outcome weights of a PIVE take the closed form
+\begin{equation}
+  \boldsymbol{\omega}' = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\,\tilde{\mathbf{Z}}'\,\mathbf{T},
+  \label{eq:weights_general}
+\end{equation}
+so that $\hat\tau = \boldsymbol{\omega}'\mathbf{Y} = \sum_{i=1}^N \omega_i Y_i$.
+\end{proposition}
+
+\medskip
+\noindent\textbf{Shortcuts for normalization.}
+To classify the resulting outcome weights,
+Knaus (2024) provides three matrix shortcuts (Section~4.1):
+
+\begin{enumerate}[label=\textbf{SC\arabic*.}]
+  \item $\mathbf{T}\bone = \bzero$ implies $\sum_i \omega_i = 0$
+        \hfill(necessary for normalization)
+  \item $\mathbf{T}\mathbf{D} = \tilde{\mathbf{D}}$ implies $\sum_i \omega_i D_i = 1$
+        \hfill(treated weights sum to one)
+  \item $\mathbf{T}(\bone - \mathbf{D}) = -\tilde{\mathbf{D}}$ implies $\sum_i \omega_i(1-D_i) = -1$
+        \hfill(untreated weights sum to minus one)
+\end{enumerate}
+
+\noindent Full normalization ($\sum_i\omega_i=0$, $\sum_i\omega_iD_i=1$, $\sum_i\omega_i(1-D_i)=-1$)
+follows from SC1 + SC2 (since SC3 is then implied by subtraction).
+
+\medskip
+\noindent\textbf{Important caveat for the kappa estimators.}
+Knaus (2024) notes that for $\that{a,10}$,
+the shortcuts SC1--SC3 via $\mathbf{T}$ alone are \emph{not sufficient}
+because the normalizing scalars $({\bone}'\boldsymbol{\kappa}_1)^{-1}$ and
+$({\bone}'\boldsymbol{\kappa}_0)^{-1}$ are absorbed into the pseudo-instrument
+rather than $\mathbf{T}$.
+We must therefore check the \emph{full weight expression} directly
+(see Appendix~A.4 of Knaus 2024 and Section~\ref{sec:a10} below).
+
+% ===============================================================
+\section{Which Conditions Does Knaus (2024) Introduce?}
+\label{sec:conditions}
+% ===============================================================
+
+Knaus (2024) introduces six conditions in Section~4.2.1 that govern
+when outcome weights exist and what normalization properties they possess.
+Below we state all six, explain their general content, and note
+which ones are relevant for the kappa estimators in our context.
+
+\begin{condition}[Smoother matrix]\label{cond:smoother}
+  A unique smoother matrix exists that produces the outcome nuisance predictions
+  by left-multiplying the outcome vector:
+  \begin{align*}
+    \text{(C1a)} &\quad \mathbf{S}\mathbf{Y} = \hat{\mathbf{Y}},\\
+    \text{(C1b)} &\quad \mathbf{S}^d_0\mathbf{Y} = \hat{\mathbf{Y}}^{d_0},\quad
+                         \mathbf{S}^d_1\mathbf{Y} = \hat{\mathbf{Y}}^{d_1},\\
+    \text{(C1c)} &\quad \mathbf{S}^z_0\mathbf{Y} = \hat{\mathbf{Y}}^{z_0},\quad
+                         \mathbf{S}^z_1\mathbf{Y} = \hat{\mathbf{Y}}^{z_1}.
+  \end{align*}
+  \textit{Purpose:} This is the existence condition for outcome weights.
+  Without a smoother matrix, the pseudo-outcome $\tY$ cannot be written as $\mathbf{T}\mathbf{Y}$,
+  so Proposition~\ref{prop:weights} does not apply.\\
+  \textit{In our context:} The kappa estimators $\that{a}$, $\that{a,10}$, and $\that{u}$
+  involve \emph{no outcome regression whatsoever} --- only $Z_i$, $D_i$, and $\phat_i$.
+  Condition~\ref{cond:smoother} is therefore \textbf{automatically satisfied} (trivially,
+  with the identity matrix as smoother), and outcome weights exist unconditionally.
+\end{condition}
+
+\begin{condition}[Covariate matrix with constant]\label{cond:constant}
+  The covariate matrix $\mathbf{X}$ contains a column of ones as its first column,
+  so that $\mathbf{X}(1, \mathbf{0}_p')' = \bone$.\\
+  \textit{Purpose:} Ensures OLS and TSLS are normalized.\\
+  \textit{In our context:} Not relevant for kappa estimators.
+\end{condition}
+
+\begin{condition}[Affine smoother matrix]\label{cond:affine}
+  All rows of each smoother matrix sum to one:
+  $\mathbf{S}\bone = \mathbf{S}^d_0\bone = \mathbf{S}^d_1\bone =
+   \mathbf{S}^z_0\bone = \mathbf{S}^z_1\bone = \bone$.\\
+  \textit{Purpose:} Ensures normalized weights for AIPW, PLR, and causal/instrumental forests.
+  Most regression smoothers (random forests, kernel regression, ridge) satisfy this;
+  boosted trees may not.\\
+  \textit{In our context:} Not directly required for kappa estimators,
+  but the analogous role is played by the explicit normalization built into
+  $\that{a,10}$ and $\that{u}$.
+\end{condition}
+
+\begin{condition}[No smoothing between treatment groups]\label{cond:nosmoothbetween}
+  Predictions $\hat{Y}^{d_1}$ are formed using treated units only,
+  and $\hat{Y}^{d_0}$ using untreated units only:
+  $\mathbf{S}^d_1(\bone - \mathbf{D}) = \bzero$ and $\mathbf{S}^d_0\mathbf{D} = \bzero$.\\
+  \textit{Purpose:} Ensures AIPW is fully normalized.\\
+  \textit{In our context:} Not relevant for kappa estimators.
+\end{condition}
+
+\begin{condition}[Outcome smoother applied to treatment]\label{cond:same_smoother}
+  \begin{align*}
+    \text{(C5a)} &\quad \mathbf{S}\mathbf{D} = \hat{\mathbf{D}},\\
+    \text{(C5b)} &\quad \mathbf{S}^z_1\mathbf{D} = \hat{\mathbf{D}}^{z_1},\quad
+                          \mathbf{S}^z_0\mathbf{D} = \hat{\mathbf{D}}^{z_0}.
+  \end{align*}
+  \textit{Purpose:} Ensures full normalization for PLR, causal/instrumental forests (C5a),
+  and Wald-AIPW (C5b).
+  This requires using the \emph{same} model to predict both outcome and treatment,
+  which conflicts with standard flexible implementations.\\
+  \textit{In our context:} Not relevant for kappa estimators.
+\end{condition}
+
+\begin{condition}[Normalized IPW weights]\label{cond:ipwnorm}
+  \begin{align*}
+    \text{(C6a)} &\quad \lambda^{\mathrm{norm}}_{1,i} = \lambda^{\mathrm{ipw}}_{1,i}\big/\EN[\lambda^{\mathrm{ipw}}_1],\quad
+                         \bone'\boldsymbol{\lambda}^{\mathrm{norm}}_1 = \bone'\boldsymbol{\lambda}^{\mathrm{norm}}_0 = N,\\
+    \text{(C6b)} &\quad \text{analogous normalization for instrument-group IPW weights.}
+  \end{align*}
+  \textit{Purpose:} Ensures full normalization for standard IPW (C6a) and Wald-IPW (C6b).
+  This is the Hájek (1971) normalization.\\
+  \textit{In our context:} $\that{u}$ is the direct analogue of Wald-IPW with C6b applied.
+  The separate normalization in $\that{a,10}$ is a different mechanism that achieves
+  the same effect without explicitly invoking C6b.
+\end{condition}
+
+\begin{notebox}[Summary for kappa estimators]
+Among the six conditions, only the trivial case of Condition~\ref{cond:smoother} matters
+for the kappa estimators. No smoother for outcome regressions is needed,
+so outcome weights always exist. Normalization properties then follow purely from
+the algebraic structure of the kappa weights themselves.
+Conditions \ref{cond:constant}--\ref{cond:same_smoother} are irrelevant.
+Condition~\ref{cond:ipwnorm} is implicitly used by $\that{u}$.
+\end{notebox}
+
+% ===============================================================
+\section{The Five Estimators}
+\label{sec:estimators}
+% ===============================================================
+
+S\l oczy\'nski et al.\ (2024) study five estimators. In vector form, using the kappa definitions
+from Section~\ref{sec:kappa}:
+
+\begin{align}
+  \that{a}    &= (\bone'\boldsymbol{\kappa})^{-1}\,\bone'\,\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\mathbf{Y},
+  \label{eq:tau_a}\\[4pt]
+  \that{a,1}  &= (\bone'\boldsymbol{\kappa}_1)^{-1}\,\bone'\,\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\mathbf{Y},
+  \label{eq:tau_a1}\\[4pt]
+  \that{a,0}  &= (\bone'\boldsymbol{\kappa}_0)^{-1}\,\bone'\,\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\mathbf{Y},
+  \label{eq:tau_a0}\\[4pt]
+  \that{a,10} &= N^{-1}\,\bone'\,\mathrm{diag}\!\left[\boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+                  - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N\right]\mathbf{Y},
+  \label{eq:tau_a10}\\[4pt]
+  \that{u}    &= \frac{%
+    \displaystyle\left(\sum_i \frac{Z_i}{\phat_i}\right)^{-1}\!\sum_i \frac{Z_i Y_i}{\phat_i}
+    - \left(\sum_i \frac{1-Z_i}{1-\phat_i}\right)^{-1}\!\sum_i \frac{(1-Z_i)Y_i}{1-\phat_i}
+  }{%
+    \displaystyle\left(\sum_i \frac{Z_i}{\phat_i}\right)^{-1}\!\sum_i \frac{Z_i D_i}{\phat_i}
+    - \left(\sum_i \frac{1-Z_i}{1-\phat_i}\right)^{-1}\!\sum_i \frac{(1-Z_i)D_i}{1-\phat_i}
+  }.
+  \label{eq:tau_u}
+\end{align}
+
+\noindent
+Estimators \eqref{eq:tau_a}--\eqref{eq:tau_a0} share the same numerator
+$\bone'\,\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\mathbf{Y}$
+but use different denominators. In scalar form:
+\[
+  \that{a}   = \frac{\bar\kappa_1 - \bar\kappa_0}{\bar\kappa},\quad
+  \that{a,1} = \frac{\bar\kappa_1 - \bar\kappa_0}{\bar\kappa_1},\quad
+  \that{a,0} = \frac{\bar\kappa_1 - \bar\kappa_0}{\bar\kappa_0},
+\]
+where $\bar\kappa = N^{-1}\sum_i \kappa_i Y_i$ and so on.
+
+% ===============================================================
+\section{Derivation: \texorpdfstring{$\hat\tau_{a,10}$}{tau\_a,10}}
+\label{sec:a10}
+% ===============================================================
+
+\subsection{PIVE representation}
+
+Write \eqref{eq:tau_a10} compactly as
+\begin{equation}
+  \that{a,10}
+  = N^{-1}\,\bone'\underbrace{%
+    \mathrm{diag}\!\left[\boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+                        - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N\right]
+    }_{=:\mathbf{T}^{a,10}}\mathbf{Y}.
+  \label{eq:ta10_compact}
+\end{equation}
+
+Matching to the PIVE structure \eqref{eq:pive_sol}:
+\begin{itemize}
+  \item $\tilde{\mathbf{Z}}' = N^{-1}\bone'$ \quad (pseudo-instrument is constant $1/N$ per observation),
+  \item $\tilde{\mathbf{D}} = \bone$ \quad (pseudo-treatment is identically one),
+  \item $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = N^{-1}\bone'\bone = 1$ \quad (normalizing scalar = 1),
+  \item $\mathbf{T}^{a,10} = \mathrm{diag}\!\left[\boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+          - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N\right]$.
+\end{itemize}
+
+\noindent Since the kappa weights are purely functions of $Z_i$, $D_i$, $\phat_i$
+and \emph{not} of $Y_i$, the smoother matrix is trivially available
+(Condition~\ref{cond:smoother} holds without restriction).
+By Proposition~\ref{prop:weights}, the outcome weights are:
+\begin{equation}
+  \boldsymbol{\omega}^{a,10\prime}
+  = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\,\tilde{\mathbf{Z}}'\,\mathbf{T}^{a,10}
+  = N^{-1}\,\bone'\,\mathrm{diag}\!\left[
+      \boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+      - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N
+    \right].
+  \label{eq:w_a10}
+\end{equation}
+
+\noindent The per-observation outcome weight is therefore
+\begin{equation}
+  \boxed{
+    \omega_i^{a,10}
+    = \frac{\kappa_{i1}}{\sum_j \kappa_{j1}}
+    - \frac{\kappa_{i0}}{\sum_j \kappa_{j0}}.
+  }
+  \label{eq:w_a10_scalar}
+\end{equation}
+
+\begin{notebox}[Interpretation]
+Each observation's weight is its share of the treated-side kappa
+minus its share of the untreated-side kappa.
+Treated units ($D_i=1$) receive positive weight through $\kappa_{i1}$;
+untreated units ($D_i=0$) receive negative weight through $-\kappa_{i0}$.
+Units with $D_i=1$ and $Z_i=0$ (defiers in a no-defiers world, or always-takers)
+get negative weight via $\kappa_{i1}<0$.
+\end{notebox}
+
+\subsection{Normalization: weights sum to zero}
+
+We check normalization by computing $\sum_i \omega_i^{a,10}$ directly from \eqref{eq:w_a10}
+(the transformation-matrix shortcut SC1 is not sufficient here because the
+normalizing scalars sit outside $\mathbf{T}$, as noted in Section~\ref{sec:pive}).
+
+\begin{align*}
+  \sum_i \omega_i^{a,10}
+  &= N^{-1}\,\bone'\,\mathbf{T}^{a,10}\,\bone\\
+  &= N^{-1}\,\bone'\!\left[\boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+                            - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N\right]\\
+  &= N^{-1}\left[N\,(\bone'\boldsymbol{\kappa}_1)(\bone'\boldsymbol{\kappa}_1)^{-1}
+               - N\,(\bone'\boldsymbol{\kappa}_0)(\bone'\boldsymbol{\kappa}_0)^{-1}\right]\\
+  &= N^{-1}\left[N - N\right] = 0. \qquad \checkmark
+\end{align*}
+
+\begin{keyresult}[$\that{a,10}$ is normalized (no conditions required)]
+$\displaystyle\sum_{i=1}^N \omega_i^{a,10} = 0$.
+This follows unconditionally from the built-in normalization of $\boldsymbol{\kappa}_1$
+and $\boldsymbol{\kappa}_0$ in \eqref{eq:tau_a10}.
+No smoother condition (C1--C3) or IPW normalization condition (C6) is needed.
+\end{keyresult}
+
+\subsection{Full normalization: treated weights sum to one}
+
+We compute $\sum_i \omega_i^{a,10} D_i$ directly:
+
+\begin{align*}
+  \sum_i \omega_i^{a,10} D_i
+  &= N^{-1}\,\bone'\,\mathbf{T}^{a,10}\,\mathbf{D}\\
+  &= N^{-1}\,\bone'\!\left[\boldsymbol{\kappa}_1(\bone'\boldsymbol{\kappa}_1)^{-1}N
+                            - \boldsymbol{\kappa}_0(\bone'\boldsymbol{\kappa}_0)^{-1}N\right]\circ\mathbf{D}
+  \intertext{where $\circ$ denotes element-wise multiplication.
+  Since $\kappa_{i0}(D_i=1)=0$ for all $i$ (untreated-side kappa is zero for treated units),
+  and $\kappa_{i1}(D_i=1) = \kappa_{i1}$ (treated-side kappa is zero for untreated, so multiplying by $D$ keeps it):}
+  &= N^{-1}\,\left[N\,(\bone'\boldsymbol{\kappa}_1)^{-1}(\bone'\boldsymbol{\kappa}_1)
+                   - 0\right]\\
+  &= N^{-1} \cdot N = 1. \qquad\checkmark
+\end{align*}
+
+\begin{keyresult}[$\that{a,10}$ is fully normalized (no conditions required)]
+$\displaystyle\sum_{i=1}^N \omega_i^{a,10} D_i = 1$.
+Combined with $\sum_i \omega_i^{a,10} = 0$, it follows by subtraction that
+$\displaystyle\sum_{i=1}^N \omega_i^{a,10}(1-D_i) = -1$.
+\textbf{Full normalization holds unconditionally} --- no conditions from Knaus (2024)
+need to be invoked.
+This stands in contrast to PLR, causal forests, and Wald-AIPW,
+which require Conditions~\ref{cond:affine}~and~\ref{cond:same_smoother} to achieve
+the same property.
+\end{keyresult}
+
+% ===============================================================
+\section{Derivation: \texorpdfstring{$\hat\tau_a$}{tau\_a} (Fully Unnormalized)}
+\label{sec:tau_a}
+% ===============================================================
+
+\subsection{PIVE representation}
+
+From \eqref{eq:tau_a}, the estimator in PIVE form is:
+\begin{equation}
+  \that{a}
+  = (\bone'\boldsymbol{\kappa})^{-1}\,\bone'\,
+    \underbrace{\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)}_{=:\mathbf{T}^{a}}\,\mathbf{Y}.
+  \label{eq:ta_pive}
+\end{equation}
+
+Matching to \eqref{eq:pive_sol}:
+\begin{itemize}
+  \item $\tilde{\mathbf{Z}}' = \bone'$,
+  \item $\tilde{\mathbf{D}} = \boldsymbol{\kappa}$,
+  \item $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = \bone'\boldsymbol{\kappa}$,
+  \item $\mathbf{T}^{a} = \mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)$.
+\end{itemize}
+
+By Proposition~\ref{prop:weights}:
+\begin{equation}
+  \boldsymbol{\omega}^{a\prime}
+  = (\bone'\boldsymbol{\kappa})^{-1}\,\bone'\,\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0),
+  \quad\text{i.e.}\quad
+  \omega_i^a = \frac{\kappa_{i1} - \kappa_{i0}}{\sum_j \kappa_j}.
+  \label{eq:w_a}
+\end{equation}
+
+Again, Condition~\ref{cond:smoother} holds trivially since no outcome regression is involved.
+
+\subsection{Checking normalization via Shortcut SC1}
+
+We apply SC1 by checking $\mathbf{T}^a\bone$:
+\begin{align*}
+  \mathbf{T}^a\bone
+  &= \mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\bone
+   = \boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0.
+\end{align*}
+This is \emph{not} the zero vector in general,
+since $\kappa_{i1} - \kappa_{i0} \neq 0$ whenever $Z_i \neq \phat_i$.
+Therefore SC1 fails, and $\sum_i \omega_i^a \neq 0$ in general.
+
+\begin{keyresult}[$\that{a}$ is not normalized]
+$\mathbf{T}^a\bone = \boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0 \neq \bzero$
+in general.
+Hence $\sum_i \omega_i^a \neq 0$, so $\that{a}$ is \textbf{not normalized}.
+No additional conditions can fix this --- it is a structural feature of the estimator.
+\end{keyresult}
+
+\subsection{Checking SC2: treated weights}
+
+We apply SC2 by checking whether $\mathbf{T}^a\mathbf{D} = \tilde{\mathbf{D}} = \boldsymbol{\kappa}$:
+\begin{align*}
+  \mathbf{T}^a\mathbf{D}
+  &= \mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,\mathbf{D}
+   = \boldsymbol{\kappa}_1\circ\mathbf{D} - \boldsymbol{\kappa}_0\circ\mathbf{D}.
+\end{align*}
+Since $\kappa_{i0}D_i = 0$ for all $i$:
+\[
+  \mathbf{T}^a\mathbf{D} = \boldsymbol{\kappa}_1 \neq \boldsymbol{\kappa} = \tilde{\mathbf{D}}^a.
+\]
+SC2 fails. Together with SC1 failing, we check SC3:
+
+\begin{align*}
+  \mathbf{T}^a(\bone - \mathbf{D})
+  &= \mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\,(\bone - \mathbf{D})
+   = (\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)\circ(\bone - \mathbf{D}).
+\end{align*}
+Since $\kappa_{i1}(1-D_i) = 0$ for all $i$:
+\[
+  \mathbf{T}^a(\bone - \mathbf{D}) = -\boldsymbol{\kappa}_0.
+\]
+Is $-\boldsymbol{\kappa}_0 = -\tilde{\mathbf{D}}^a = -\boldsymbol{\kappa}$?
+No, since $\kappa_i \neq \kappa_{i0}$ in general.
+SC3 also fails, confirming that $\that{a}$ is \textbf{fully unnormalized}.
+
+\begin{keyresult}[$\that{a}$ is fully unnormalized]
+All three shortcut checks fail:
+\[
+  \sum_i \omega_i^a \neq 0,\quad
+  \sum_i \omega_i^a D_i \neq 1,\quad
+  \sum_i \omega_i^a (1-D_i) \neq -1 \quad\text{in general}.
+\]
+This confirms the classification in Knaus (2024, Appendix A.4) and SUW (2024).
+The practical implication is that $\that{a}$ is not translation invariant:
+adding a constant $c$ to every $Y_i$ changes the estimate.
+\end{keyresult}
+
+% ===============================================================
+\section{Derivation: \texorpdfstring{$\hat\tau_u$}{tau\_u} (Uysal Normalized)}
+\label{sec:tau_u}
+% ===============================================================
+
+\subsection{Where \texorpdfstring{$\hat\tau_u$}{tau\_u} sits in Knaus (2024)}
+
+Knaus (2024, Appendix~A.4) identifies $\that{u}$ as the Wald-IPW estimator
+\emph{with} Condition~\ref{cond:ipwnorm}(C6b) applied to the instrument-group
+inverse probability weights.
+In Knaus's Table~5, Wald-IPW with C6b is fully normalized.
+Our task here is to make this completely explicit by deriving the transformation
+matrix $\mathbf{T}^u$, the PIVE ingredients, and verifying normalization
+step by step using the same matrix machinery as for $\that{a,10}$.
+
+\subsection{Step 1: Define the normalized instrument IPW weights}
+\label{ssec:u_step1}
+
+The raw instrument inverse probability weights are
+\begin{equation}
+  \lambda_{1,i}^{\mathrm{ipw},z} = \frac{Z_i}{\phat_i},
+  \qquad
+  \lambda_{0,i}^{\mathrm{ipw},z} = \frac{1-Z_i}{1-\phat_i}.
+  \label{eq:raw_ipw_z}
+\end{equation}
+In vector notation: $\boldsymbol{\lambda}_1^z = \mathrm{diag}(Z_i/\phat_i)_{i=1}^N$
+acting on $\bone$, i.e.\ $\boldsymbol{\lambda}_1^z = (\lambda_{1,1}^{\mathrm{ipw},z},\ldots,\lambda_{1,N}^{\mathrm{ipw},z})'$,
+and analogously for $\boldsymbol{\lambda}_0^z$.
+
+\medskip\noindent
+\textbf{Condition 6b} (Knaus 2024, Condition~6) applied to instrument groups requires:
+\begin{equation}
+  \lambda_{1,i}^{\mathrm{norm},z}
+    := \frac{\lambda_{1,i}^{\mathrm{ipw},z}}{\EN[\lambda_1^{\mathrm{ipw},z}]}
+     = \frac{Z_i/\phat_i}{\frac{1}{N}\sum_j Z_j/\phat_j}
+     = \frac{N\,Z_i/\phat_i}{s_1},
+  \quad
+  \lambda_{0,i}^{\mathrm{norm},z}
+    = \frac{N\,(1-Z_i)/(1-\phat_i)}{s_0},
+  \label{eq:norm_ipw_z}
+\end{equation}
+where we define
+\begin{equation}
+  s_1 := \bone'\boldsymbol{\lambda}_1^z = \sum_{i=1}^N \frac{Z_i}{\phat_i},
+  \qquad
+  s_0 := \bone'\boldsymbol{\lambda}_0^z = \sum_{i=1}^N \frac{1-Z_i}{1-\phat_i}.
+  \label{eq:s1s0}
+\end{equation}
+By construction of \eqref{eq:norm_ipw_z}:
+\begin{equation}
+  \bone'\boldsymbol{\lambda}_1^{\mathrm{norm},z}
+  = \sum_i \frac{N\,Z_i/\phat_i}{s_1}
+  = \frac{N}{s_1}\sum_i \frac{Z_i}{\phat_i}
+  = \frac{N \cdot s_1}{s_1} = N,
+  \label{eq:c6b_sum}
+\end{equation}
+and identically $\bone'\boldsymbol{\lambda}_0^{\mathrm{norm},z} = N$.
+This is exactly what Condition~\ref{cond:ipwnorm}(C6b) requires.
+
+\subsection{Step 2: Write \texorpdfstring{$\hat\tau_u$}{tau\_u} in Wald-IPW form}
+\label{ssec:u_step2}
+
+The Uysal estimator is a Wald ratio: the (normalized IPW) reduced form
+divided by the (normalized IPW) first stage.
+Using the normalized weights \eqref{eq:norm_ipw_z}, define:
+\begin{align}
+  \text{Reduced form numerator:}&\quad
+    N^{-1}\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{Y},
+  \label{eq:rf_num}\\[4pt]
+  \text{First stage denominator:}&\quad
+    N^{-1}\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{D}.
+  \label{eq:fs_denom}
+\end{align}
+Substituting the definition \eqref{eq:norm_ipw_z}, the reduced form numerator
+\eqref{eq:rf_num} becomes:
+\begin{align*}
+  N^{-1}\sum_i (\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z})\,Y_i
+  &= N^{-1}\sum_i \left(\frac{N Z_i/\phat_i}{s_1} - \frac{N(1-Z_i)/(1-\phat_i)}{s_0}\right) Y_i\\
+  &= \frac{\sum_i Z_i Y_i/\phat_i}{s_1} - \frac{\sum_i (1-Z_i)Y_i/(1-\phat_i)}{s_0}\\
+  &= \mu_{Y,1}^{\mathrm{norm}} - \mu_{Y,0}^{\mathrm{norm}},
+\end{align*}
+and the first stage denominator \eqref{eq:fs_denom} analogously yields
+$\mu_{D,1}^{\mathrm{norm}} - \mu_{D,0}^{\mathrm{norm}} =: \Delta_D$.
+Hence
+\begin{equation}
+  \that{u}
+  = \frac{\mu_{Y,1}^{\mathrm{norm}} - \mu_{Y,0}^{\mathrm{norm}}}{\mu_{D,1}^{\mathrm{norm}} - \mu_{D,0}^{\mathrm{norm}}}
+  = \frac{N^{-1}\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{Y}}%
+         {N^{-1}\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{D}}.
+  \label{eq:tau_u_matrix}
+\end{equation}
+
+\subsection{Step 3: PIVE identification}
+\label{ssec:u_step3}
+
+Matching \eqref{eq:tau_u_matrix} to the PIVE solution
+$\hat\tau = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\tilde{\mathbf{Y}}$,
+we read off:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{}lll@{}}
+\toprule
+PIVE component & Expression & Dimension \\
+\midrule
+Pseudo-instrument & $\tilde{\mathbf{Z}}' = N^{-1}\bone'$ & $1\times N$ \\
+Pseudo-treatment  & $\tilde{\mathbf{D}} = \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\bone$ & $N\times 1$ \\
+Transformation matrix & $\mathbf{T}^u = \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})$ & $N\times N$ \\
+Normalizing scalar & $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = N^{-1}\bone'\mathbf{T}^u\bone = \Delta_D$ & scalar \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip\noindent
+To see that the normalizing scalar equals $\Delta_D$, note:
+\[
+  N^{-1}\bone'\mathbf{T}^u\bone
+  = N^{-1}\sum_i (\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z})
+  = N^{-1}\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z}-\boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{D}
+  = \Delta_D.
+\]
+(The second equality holds because we define $\Delta_D$ as the first-stage,
+i.e.\ the same expression evaluated with $\mathbf{D}$ instead of $\bone$. Wait ---
+more precisely, $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = N^{-1}\bone'\tilde{\mathbf{D}}$,
+and since $\tilde{D}_i = (\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z})D_i$
+is element $i$ of $\mathbf{T}^u\mathbf{D}$, we have
+$\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = N^{-1}\bone'\mathbf{T}^u\mathbf{D} = \Delta_D$.)
+
+\medskip\noindent
+Since the kappa weights involve no outcome regression, Condition~\ref{cond:smoother}
+(smoother matrix) holds trivially. By Proposition~\ref{prop:weights}, the
+outcome weights are:
+\begin{equation}
+  \boldsymbol{\omega}^{u\prime}
+  = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\,\tilde{\mathbf{Z}}'\,\mathbf{T}^u
+  = \Delta_D^{-1}\,N^{-1}\,\bone'\,
+    \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z}).
+  \label{eq:w_u_matrix}
+\end{equation}
+Per observation:
+\begin{equation}
+  \boxed{
+    \omega_i^u
+    = \frac{\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z}}{N\,\Delta_D}
+    = \frac{1}{\Delta_D}
+      \left(\frac{Z_i}{\phat_i\,s_1} - \frac{1-Z_i}{(1-\phat_i)\,s_0}\right).
+  }
+  \label{eq:w_u_scalar}
+\end{equation}
+
+\subsection{Step 4: SC1 --- do the outcome weights sum to zero?}
+\label{ssec:u_sc1}
+
+The general shortcut SC1 checks $\mathbf{T}^u\bone$.
+In full matrix form:
+\begin{equation}
+  \mathbf{T}^u\bone
+  = \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\bone
+  = \boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z}.
+  \label{eq:tu_1N}
+\end{equation}
+This is not $\bzero$ in general (each element is $\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z} \neq 0$
+unless $Z_i = \phat_i$), so SC1 via the transformation matrix alone does not deliver the result.
+We must therefore work with the \emph{full weight expression}
+$\boldsymbol{\omega}^{u\prime} = \Delta_D^{-1} N^{-1}\bone'\mathbf{T}^u$ directly.
+
+\medskip\noindent
+Compute $\sum_i \omega_i^u = \boldsymbol{\omega}^{u\prime}\bone$:
+\begin{align}
+  \boldsymbol{\omega}^{u\prime}\bone
+  &= \Delta_D^{-1}\,N^{-1}\,\bone'\,\mathbf{T}^u\,\bone
+  \notag\\
+  &= \Delta_D^{-1}\,N^{-1}\,\bone'\,(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})
+  \notag\\
+  &= \Delta_D^{-1}\,N^{-1}\,
+     \left(\bone'\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \bone'\boldsymbol{\lambda}_0^{\mathrm{norm},z}\right).
+  \label{eq:u_sc1_step1}
+\end{align}
+Now apply Condition~\ref{cond:ipwnorm}(C6b) as established in \eqref{eq:c6b_sum}:
+\[
+  \bone'\boldsymbol{\lambda}_1^{\mathrm{norm},z} = N
+  \quad\text{and}\quad
+  \bone'\boldsymbol{\lambda}_0^{\mathrm{norm},z} = N.
+\]
+Substituting into \eqref{eq:u_sc1_step1}:
+\begin{equation}
+  \boldsymbol{\omega}^{u\prime}\bone
+  = \Delta_D^{-1}\,N^{-1}\,(N - N)
+  = \Delta_D^{-1}\cdot 0 = 0. \qquad\checkmark
+  \label{eq:u_norm}
+\end{equation}
+
+\begin{keyresult}[$\that{u}$ is normalized --- and why C6b is the key]
+$\sum_i \omega_i^u = 0$ holds \emph{if and only if}
+$\bone'\boldsymbol{\lambda}_1^{\mathrm{norm},z} = \bone'\boldsymbol{\lambda}_0^{\mathrm{norm},z}$,
+i.e.\ exactly Condition~\ref{cond:ipwnorm}(C6b).
+Without C6b (i.e.\ using raw $\lambda_1^{\mathrm{ipw},z}$ instead of $\lambda_1^{\mathrm{norm},z}$),
+the two sums $\bone'\boldsymbol{\lambda}_1^z = s_1$ and $\bone'\boldsymbol{\lambda}_0^z = s_0$
+need not be equal, so $\boldsymbol{\omega}^{u\prime}\bone = \Delta_D^{-1}N^{-1}(s_1 - s_0) \neq 0$
+in general.
+This is precisely why $\that{a,1} = \that{t}$ (Tan/Frölich, which uses raw IPW weights)
+is \emph{not} normalized, while $\that{u}$ (Uysal, which applies C6b) is.
+\end{keyresult}
+
+\subsection{Step 5: SC2 --- do the treated outcome weights sum to one?}
+\label{ssec:u_sc2}
+
+We compute $\boldsymbol{\omega}^{u\prime}\mathbf{D} = \sum_i \omega_i^u D_i$:
+\begin{align}
+  \boldsymbol{\omega}^{u\prime}\mathbf{D}
+  &= \Delta_D^{-1}\,N^{-1}\,\bone'\,\mathbf{T}^u\,\mathbf{D}
+  \notag\\
+  &= \Delta_D^{-1}\,N^{-1}\,\bone'\,
+     \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{D}.
+  \label{eq:u_sc2_step1}
+\end{align}
+Element-wise, the product inside is
+$(\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z})\,D_i$, so:
+\begin{align}
+  \bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm},z} - \boldsymbol{\lambda}_0^{\mathrm{norm},z})\,\mathbf{D}
+  &= \sum_i (\lambda_{1,i}^{\mathrm{norm},z} - \lambda_{0,i}^{\mathrm{norm},z})\,D_i
+  \notag\\
+  &= \sum_i \left(\frac{N Z_i D_i/\phat_i}{s_1} - \frac{N(1-Z_i)D_i/(1-\phat_i)}{s_0}\right)
+  \notag\\
+  &= N\left(\frac{\sum_i Z_i D_i/\phat_i}{s_1} - \frac{\sum_i (1-Z_i)D_i/(1-\phat_i)}{s_0}\right)
+  \notag\\
+  &= N\left(\mu_{D,1}^{\mathrm{norm}} - \mu_{D,0}^{\mathrm{norm}}\right)
+   = N\,\Delta_D.
+  \label{eq:u_sc2_step2}
+\end{align}
+In the last step we use the definition $\Delta_D = \mu_{D,1}^{\mathrm{norm}} - \mu_{D,0}^{\mathrm{norm}}$.
+Substituting \eqref{eq:u_sc2_step2} back into \eqref{eq:u_sc2_step1}:
+\begin{equation}
+  \boldsymbol{\omega}^{u\prime}\mathbf{D}
+  = \Delta_D^{-1}\,N^{-1}\,N\,\Delta_D
+  = 1. \qquad\checkmark
+  \label{eq:u_treated_sum}
+\end{equation}
+
+\medskip\noindent
+Note what happened here: the same quantity $\Delta_D$ appears in both numerator
+and denominator and cancels exactly.
+This is not a coincidence --- it is a consequence of defining
+$\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = N^{-1}\bone'\mathbf{T}^u\mathbf{D}$
+as the PIVE normalizing scalar.
+In other words, the denominator of $\that{u}$ is precisely built to make the
+treated weights sum to one.
+
+\subsection{Step 6: Untreated weights sum to minus one (by subtraction)}
+\label{ssec:u_untreated}
+
+Since $\sum_i \omega_i^u = 0$ (Step~4) and $\sum_i \omega_i^u D_i = 1$ (Step~5):
+\begin{equation}
+  \boldsymbol{\omega}^{u\prime}(\bone - \mathbf{D})
+  = \boldsymbol{\omega}^{u\prime}\bone - \boldsymbol{\omega}^{u\prime}\mathbf{D}
+  = 0 - 1 = -1. \qquad\checkmark
+  \label{eq:u_untreated_sum}
+\end{equation}
+
+\begin{keyresult}[$\that{u}$ is fully normalized]
+The outcome weights $\omega_i^u$ in \eqref{eq:w_u_scalar} satisfy:
+\[
+  \sum_{i=1}^N \omega_i^u = 0,\qquad
+  \sum_{i=1}^N \omega_i^u D_i = 1,\qquad
+  \sum_{i=1}^N \omega_i^u (1-D_i) = -1.
+\]
+\textbf{Which condition is responsible?}
+Condition~\ref{cond:ipwnorm}(C6b) from Knaus (2024): it forces
+$\bone'\boldsymbol{\lambda}_1^{\mathrm{norm},z} = \bone'\boldsymbol{\lambda}_0^{\mathrm{norm},z} = N$,
+which is the single fact that drives the cancellation in Step~4.
+Step~5 requires no further condition --- it follows automatically because
+$\Delta_D$ is the first-stage denominator of $\that{u}$ and therefore
+appears in both numerator and denominator of $\boldsymbol{\omega}^{u\prime}\mathbf{D}$.
+\end{keyresult}
+
+\subsection{What goes wrong without C6b: contrast with \texorpdfstring{$\hat\tau_{a,1}$}{tau\_a,1}}
+\label{ssec:u_vs_a1}
+
+The estimator $\that{a,1} = \that{t}$ (Tan/Frölich) uses raw IPW weights
+$\lambda_{1,i}^{\mathrm{ipw},z}$ and $\lambda_{0,i}^{\mathrm{ipw},z}$ in place of
+the normalized $\lambda_{1,i}^{\mathrm{norm},z}$ and $\lambda_{0,i}^{\mathrm{norm},z}$.
+Its transformation matrix is therefore
+\[
+  \mathbf{T}^{a,1} = \mathrm{diag}(\boldsymbol{\lambda}_1^z - \boldsymbol{\lambda}_0^z),
+  \quad\text{and}\quad
+  \boldsymbol{\omega}^{a,1\prime}
+  = \Delta_D^{a,1\,-1}\,N^{-1}\,\bone'\,\mathrm{diag}(\boldsymbol{\lambda}_1^z - \boldsymbol{\lambda}_0^z).
+\]
+Repeating Step~4 for $\that{a,1}$:
+\begin{align*}
+  \boldsymbol{\omega}^{a,1\prime}\bone
+  &= \Delta_D^{a,1\,-1}\,N^{-1}\,(\bone'\boldsymbol{\lambda}_1^z - \bone'\boldsymbol{\lambda}_0^z)\\
+  &= \Delta_D^{a,1\,-1}\,N^{-1}\,(s_1 - s_0).
+\end{align*}
+Since $s_1 = \sum_i Z_i/\phat_i$ and $s_0 = \sum_i (1-Z_i)/(1-\phat_i)$
+are in general \emph{not equal}, the sum of weights is
+\[
+  \boldsymbol{\omega}^{a,1\prime}\bone \neq 0 \quad\text{in general},
+\]
+so $\that{a,1}$ is not normalized.
+The failure is exactly that C6b is not applied: without rescaling by $s_1$ and $s_0$,
+the two groups contribute different total weight to the estimator.
+Adding a constant $c$ to every $Y_i$ shifts the estimate by $c\cdot(s_1-s_0)/(\Delta_D^{a,1}\cdot N)$,
+making $\that{a,1}$ not translation invariant.
+
+% ===============================================================
+\section{Summary and Comparison}
+\label{sec:summary}
+% ===============================================================
+
+Table~\ref{tab:summary} collects the results for all three estimators.
+
+\begin{table}[h!]
+\centering
+\caption{Outcome weights: existence, form, and normalization}
+\label{tab:summary}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Estimator & Closed-form & $\sum_i\omega_i$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ \\
+\midrule
+$\that{a}$    & $\checkmark$ (unconditional) & $\neq 0$ & $\neq 1$ & $\neq -1$ \\
+$\that{a,0}$  & $\checkmark$ (unconditional) & $\neq 0$ & $\neq 1$ & $= -1$    \\
+$\that{a,10}$ & $\checkmark$ (unconditional) & $= 0$    & $= 1$    & $= -1$    \\
+$\that{u}$    & $\checkmark$ (unconditional) & $= 0$    & $= 1$    & $= -1$    \\
+\bottomrule
+\end{tabular}\\[4pt]
+\small\textit{Notes:} $\that{a,1}$ (Tan/Frölich estimator) equals $\that{a}$ rescaled and is also fully unnormalized.
+Normalization classification follows Knaus (2024), Table~4.
+\end{table}
+
+\medskip
+\noindent\textbf{Why $\that{a,10}$ and $\that{u}$ achieve full normalization by different routes:}
+\begin{itemize}
+  \item $\that{a,10}$ achieves full normalization by \emph{separately} normalizing the $\kappa_1$
+        and $\kappa_0$ weighted sums.
+        Each half sums to 1 and -1 respectively by construction, and the cancellation is exact.
+        No condition from Knaus (2024) needs to be invoked --- normalization is built in algebraically.
+  \item $\that{u}$ achieves full normalization via Hájek normalization of the IPW weights,
+        corresponding to Condition~\ref{cond:ipwnorm}(C6b).
+        The analogy in Knaus (2024) is Wald-IPW with C6b applied (Table~5, Knaus 2024).
+  \item $\that{a}$ and $\that{a,1}$ use a single shared denominator that does not separately
+        normalize the treated and untreated contributions, so neither the sum-to-zero
+        nor the group-level conditions are met.
+\end{itemize}
+
+% ---------------------------------------------------------------
+\section*{References}
+% ---------------------------------------------------------------
+
+\begin{description}
+  \item[Abadie (2003)] Semiparametric instrumental variable estimation of treatment response models.
+        \textit{Journal of Econometrics}, 113(2), 231--263.
+
+  \item[Knaus (2024)] Treatment effect estimators as weighted outcomes.
+        arXiv:2411.11559v2. University of Tübingen.
+
+  \item[Słoczy\'nski, Uysal \& Wooldridge (2024)] Abadie's kappa and weighting estimators
+        of the local average treatment effect.
+        \textit{Journal of Business \& Economic Statistics}, 43(1), 164--177.
+
+  \item[Uysal (2011)] Three essays on doubly robust estimation methods.
+        PhD Dissertation, University of Konstanz.
+
+  \item[Hájek (1971)] Comment on ``An essay on the logical foundations of survey sampling, part one.''
+        In \textit{Foundations of Statistical Inference}, p.~236. Toronto: Holt, Rinehart and Winston.
+\end{description}
+
+\end{document}

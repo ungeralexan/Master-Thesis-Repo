@@ -1,0 +1,752 @@
+\documentclass[12pt, a4paper]{article}
+
+% ------------------------------------------------------------------
+% Packages
+% ------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black}
+
+% ------------------------------------------------------------------
+% Theorem environments
+% ------------------------------------------------------------------
+\newtheoremstyle{condstyle}{}{}{\itshape}{}{\bfseries}{.}{.5em}{}
+\theoremstyle{condstyle}
+\newtheorem{condition}{Condition}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+% ------------------------------------------------------------------
+% Coloured boxes
+% ------------------------------------------------------------------
+\tcbuselibrary{skins}
+\newtcolorbox{keyresult}[1][]{enhanced, colback=blue!4!white,
+  colframe=blue!40!black, fonttitle=\bfseries, title=#1,
+  left=6pt, right=6pt, top=4pt, bottom=4pt, arc=3pt}
+
+\newtcolorbox{notebox}[1][]{enhanced, colback=orange!5!white,
+  colframe=orange!60!black, fonttitle=\bfseries, title=#1,
+  left=6pt, right=6pt, top=4pt, bottom=4pt, arc=3pt}
+
+\newtcolorbox{warnbox}[1][]{enhanced, colback=red!4!white,
+  colframe=red!50!black, fonttitle=\bfseries, title=#1,
+  left=6pt, right=6pt, top=4pt, bottom=4pt, arc=3pt}
+
+% ------------------------------------------------------------------
+% Notation macros
+% ------------------------------------------------------------------
+\newcommand{\EN}{\mathbb{E}_N}
+\newcommand{\bone}{\mathbf{1}_N}
+\newcommand{\bzero}{\mathbf{0}_N}
+\newcommand{\IN}{\mathbf{I}_N}
+\newcommand{\bD}{\mathbf{D}}
+\newcommand{\bY}{\mathbf{Y}}
+\newcommand{\bZ}{\mathbf{Z}}
+% nuisance vectors
+\newcommand{\Yhz}[1]{\hat{\mathbf{Y}}^{z_{#1}}}   % instrument-group outcome pred vector
+\newcommand{\Dhz}[1]{\hat{\mathbf{D}}^{z_{#1}}}   % instrument-group treatment pred vector
+\newcommand{\Sz}[1]{\mathbf{S}^{z}_{#1}}           % instrument-group smoother matrix
+% IPW
+\newcommand{\lipwz}[1]{\boldsymbol{\lambda}^{\mathrm{ipw},z}_{#1}}
+% pseudo variables
+\newcommand{\tY}{\tilde{\mathbf{Y}}}
+\newcommand{\tD}{\tilde{\mathbf{D}}}
+\newcommand{\tZ}{\tilde{\mathbf{Z}}}
+% transformation matrix
+\newcommand{\Tiw}{\mathbf{T}^{\mathrm{iv}}}
+% estimator
+\newcommand{\tiv}{\hat{\tau}^{\mathrm{iv\text{-}aipw}}}
+% hat p
+\newcommand{\phat}{\hat{p}}
+
+% ------------------------------------------------------------------
+\begin{document}
+% ------------------------------------------------------------------
+
+\begin{titlepage}
+\centering\vspace*{2cm}
+{\LARGE\bfseries Wald-AIPW Outcome Weights}\\[0.5em]
+{\large A Detailed Derivation in the PIVE Framework of Knaus (2024)}\\[2cm]
+{\normalsize Working Notes --- Based on Knaus (2024), Sections 3.2.3 and 4.2.4}
+\vfill
+\begin{abstract}
+\noindent
+These notes work through the Wald-AIPW estimator completely:
+what it is, why it is built the way it is, how it maps onto the
+Pseudo-IV Estimator (PIVE) framework of Knaus (2024), how the
+outcome weights are derived from the transformation matrix, and
+which of Knaus's six conditions are required for the weights to
+exist and to be normalized.
+The main result is that standard implementations are only
+\emph{scale-normalized} (weights sum to zero) but not
+\emph{fully normalized} (treated weights do not sum to one),
+because Condition~5b is not fulfilled in practice.
+Every algebraic step is shown explicitly, including the
+multiplications by $\bone$ and $\bD$ that Knaus (2024) states
+only briefly.
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents\newpage
+
+% ==================================================================
+\section{Background: What is Wald-AIPW and why does it exist?}
+\label{sec:background}
+% ==================================================================
+
+\subsection{The classical Wald estimator in IV settings}
+
+In a binary instrument setting we observe
+$(D_i, Z_i, Y_i, X_i)$ where $D_i\in\{0,1\}$ is a binary treatment,
+$Z_i\in\{0,1\}$ a binary instrument, $Y_i$ the outcome, and $X_i$ covariates.
+The classical Wald (1940) estimator of the Local Average Treatment Effect (LATE) is
+\begin{equation}
+  \hat\tau^{\mathrm{Wald}}
+  = \frac{\EN[Y_i\mid Z_i=1]-\EN[Y_i\mid Z_i=0]}%
+         {\EN[D_i\mid Z_i=1]-\EN[D_i\mid Z_i=0]}
+  = \frac{\text{reduced form}}{\text{first stage}}.
+  \label{eq:wald}
+\end{equation}
+This is consistent when $Z$ is a valid instrument but ignores covariates entirely.
+
+\subsection{Why augment? The role of AIPW}
+
+Augmented inverse probability weighting (AIPW), introduced by
+Robins, Rotnitzky \& Zhao (1994, 1995), improves on simple IPW by
+adding a \emph{regression adjustment} term that corrects for
+finite-sample imbalance and achieves semiparametric efficiency.
+In an unconfoundedness setting (no instrument), the AIPW score for unit $i$ is
+\begin{equation}
+  \tilde{Y}_i^{\mathrm{aipw}}
+  = \hat{Y}^d_{1,i} - \hat{Y}^d_{0,i}
+    + \lambda^{\mathrm{ipw}}_{1,i}(Y_i - \hat{Y}^d_{1,i})
+    - \lambda^{\mathrm{ipw}}_{0,i}(Y_i - \hat{Y}^d_{0,i}),
+  \label{eq:aipw_score}
+\end{equation}
+where $\hat{Y}^d_{d,i}=\widehat{\mathbb{E}}[Y_i\mid D_i=d, X_i]$ are
+treatment-group-specific outcome predictions and
+$\lambda^{\mathrm{ipw}}_{1,i}=D_i/\hat{p}(X_i)$,
+$\lambda^{\mathrm{ipw}}_{0,i}=(1-D_i)/(1-\hat{p}(X_i))$ are inverse propensity weights.
+The score in \eqref{eq:aipw_score} combines the outcome model (first two terms) with
+an IPW correction (last two terms), yielding \emph{double robustness}:
+the estimator is consistent if either the outcome model or the propensity score model is
+correctly specified.
+
+\subsection{Wald-AIPW: applying AIPW to both legs of the Wald ratio}
+
+Tan (2006), building on the Wald structure in \eqref{eq:wald}, applies AIPW
+separately to the reduced form ($Y$ on $Z$) and to the first stage ($D$ on $Z$).
+Instead of a treatment propensity score, we now use the \emph{instrument} propensity
+score $p(X_i)=\mathbb{E}[Z_i\mid X_i]$, estimated as $\phat_i$.
+The instrument-group outcome predictions are
+\begin{equation}
+  \hat{Y}^z_{z,i} = \widehat{\mathbb{E}}[Y_i\mid Z_i=z, X_i], \quad z\in\{0,1\},
+  \label{eq:Yhat_z}
+\end{equation}
+and analogously $\hat{D}^z_{z,i}=\widehat{\mathbb{E}}[D_i\mid Z_i=z,X_i]$.
+The instrument-group inverse probability weights are
+\begin{equation}
+  \lambda^{\mathrm{ipw},z}_{1,i} = \frac{Z_i}{\phat_i},
+  \qquad
+  \lambda^{\mathrm{ipw},z}_{0,i} = \frac{1-Z_i}{1-\phat_i}.
+  \label{eq:ipw_z}
+\end{equation}
+
+The Wald-AIPW \emph{reduced form} and \emph{first stage} AIPW scores are:
+\begin{align}
+  \tilde{Y}^{\mathrm{iv\text{-}aipw}}_i
+  &= \hat{Y}^z_{1,i} - \hat{Y}^z_{0,i}
+     + \lambda^{\mathrm{ipw},z}_{1,i}(Y_i - \hat{Y}^z_{1,i})
+     - \lambda^{\mathrm{ipw},z}_{0,i}(Y_i - \hat{Y}^z_{0,i}),
+  \label{eq:Ytilde_iv}\\[4pt]
+  \tilde{D}^{\mathrm{iv\text{-}aipw}}_i
+  &= \hat{D}^z_{1,i} - \hat{D}^z_{0,i}
+     + \lambda^{\mathrm{ipw},z}_{1,i}(D_i - \hat{D}^z_{1,i})
+     - \lambda^{\mathrm{ipw},z}_{0,i}(D_i - \hat{D}^z_{0,i}).
+  \label{eq:Dtilde_iv}
+\end{align}
+
+\begin{notebox}[Key idea]
+Compare \eqref{eq:Ytilde_iv} with the plain AIPW score \eqref{eq:aipw_score}:
+the structure is \emph{identical}, but treatment group ($d\in\{0,1\}$) is
+replaced everywhere by instrument group ($z\in\{0,1\}$), and
+treatment IPW weights are replaced by instrument IPW weights.
+The two ``legs'' of the Wald ratio in \eqref{eq:wald} are each
+augmented the same way that AIPW augments a simple difference in means.
+\end{notebox}
+
+The estimator then takes the Wald ratio of these two AIPW scores:
+\begin{equation}
+  \tiv
+  = \frac{\EN[\tilde{Y}^{\mathrm{iv\text{-}aipw}}_i]}%
+         {\EN[\tilde{D}^{\mathrm{iv\text{-}aipw}}_i]}.
+  \label{eq:wald_aipw}
+\end{equation}
+
+% ==================================================================
+\section{The PIVE Framework}
+\label{sec:pive}
+% ==================================================================
+
+Knaus (2024, Definition 1) defines the class of \emph{Pseudo-IV Estimators} (PIVEs)
+as those solving an empirical moment condition
+\begin{equation}
+  \EN\!\left[(\tilde{Y}_i - \hat\tau\,\tilde{D}_i)\,\tilde{Z}_i\right] = 0,
+  \label{eq:moment}
+\end{equation}
+with scalar pseudo-outcome $\tilde{Y}_i$, pseudo-treatment $\tilde{D}_i$, and
+pseudo-instrument $\tilde{Z}_i$.
+Solving yields
+\begin{equation}
+  \hat\tau
+  = \frac{\EN[\tilde{Z}_i\tilde{Y}_i]}{\EN[\tilde{Z}_i\tilde{D}_i]}
+  = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\tilde{\mathbf{Y}}.
+  \label{eq:pive_sol}
+\end{equation}
+
+\begin{proposition}[Outcome weights of PIVEs, Knaus 2024 Prop.~1]
+\label{prop:weights}
+If $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}}\neq 0$ and there exists a unique
+$N\times N$ transformation matrix $\mathbf{T}$ such that $\mathbf{T}\bY=\tilde{\mathbf{Y}}$,
+then
+\begin{equation}
+  \boldsymbol{\omega}' = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\mathbf{T},
+  \quad\text{so that}\quad
+  \hat\tau = \boldsymbol{\omega}'\bY = \sum_{i=1}^N \omega_i Y_i.
+  \label{eq:prop1}
+\end{equation}
+\end{proposition}
+
+\noindent
+The strategy to derive outcome weights is therefore:
+\begin{enumerate}[label=\textbf{Step \arabic*.}]
+  \item Write the estimator as a PIVE: identify $\tilde{Y}_i$, $\tilde{D}_i$, $\tilde{Z}_i$.
+  \item Find $\mathbf{T}$ such that $\mathbf{T}\bY = \tilde{\mathbf{Y}}$.
+  \item Apply Proposition~\ref{prop:weights}.
+\end{enumerate}
+
+\medskip\noindent
+\textbf{Normalization shortcuts.}
+To classify whether outcome weights are fully normalized, Knaus (2024, Section~4.1)
+provides three matrix shortcuts that are \emph{sufficient} (not necessary):
+\begin{enumerate}[label=\textbf{SC\arabic*.}]
+  \item $\mathbf{T}\bone = \bzero$ implies $\sum_i\omega_i = 0$ (weights sum to zero).
+  \item $\mathbf{T}\bD = \tilde{\mathbf{D}}$ implies $\sum_i\omega_iD_i = 1$ (treated weights sum to one).
+  \item $\mathbf{T}(\bone-\bD)=-\tilde{\mathbf{D}}$ implies $\sum_i\omega_i(1-D_i)=-1$.
+\end{enumerate}
+When SC1 holds, SC3 follows from SC2 by subtraction.
+
+% ==================================================================
+\section{Conditions from Knaus (2024)}
+\label{sec:conditions}
+% ==================================================================
+
+These are the six conditions Knaus (2024) introduces in Sections~3.1.2 and 4.2.1.
+We state each one precisely and discuss its role for Wald-AIPW specifically.
+
+\begin{condition}[Smoother matrix --- existence of outcome weights]\label{cond:C1}
+A unique smoother matrix exists producing outcome nuisance predictions as
+$\mathbf{S}\bY=\hat{\mathbf{Y}}$. For instrument-group predictions (relevant here):
+\begin{equation}
+  \textbf{(C1c)}\quad \Sz{1}\bY = \Yhz{1} \quad\text{and}\quad \Sz{0}\bY = \Yhz{0},
+  \label{eq:C1c}
+\end{equation}
+where $(\Sz{z})_{ij} = s^z_{i\leftarrow j}$ is the weight unit $j$'s outcome
+receives in predicting unit $i$'s outcome within instrument group $z$.\\[2pt]
+\textit{Role:} This is the \textbf{existence condition}. Without a smoother matrix,
+$\mathbf{T}$ does not exist and $\boldsymbol{\omega}$ has no closed form.
+Methods with non-linear link functions (e.g.\ logistic regression for outcome,
+Lasso) typically do not admit a smoother representation.\\[2pt]
+\textit{For Wald-AIPW:} C1c must hold; it is assumed but not guaranteed.
+In practice, random forests and ridge regression satisfy C1c; Lasso does not.
+\end{condition}
+
+\begin{condition}[Covariate matrix with constant]\label{cond:C2}
+The covariate matrix $X$ contains a column of ones.\\[2pt]
+\textit{Role:} Ensures OLS/TSLS are normalized. Not relevant for Wald-AIPW.
+\end{condition}
+
+\begin{condition}[Affine smoother matrix]\label{cond:C3}
+All rows of the smoother matrices sum to one:
+\begin{equation}
+  \Sz{1}\bone = \Sz{0}\bone = \bone.
+  \label{eq:C3}
+\end{equation}
+\textit{Role:} This guarantees $\mathbf{T}\bone = \bzero$ (shortcut SC1), i.e.\ normalized weights.
+Most regression smoothers satisfy this: kernel regression, $k$-NN, random forests,
+ridge regression, splines. Boosted trees may not.\\[2pt]
+\textit{For Wald-AIPW:} C3 is \textbf{the condition for normalization} ($\sum_i\omega_i=0$).
+It is met whenever a standard random forest or ridge is used for the outcome models.
+\end{condition}
+
+\begin{condition}[No smoothing between treatment groups]\label{cond:C4}
+Treatment-group-specific predictions use only observations from that group:
+$\mathbf{S}^d_1(\bone-\bD)=\bzero$ and $\mathbf{S}^d_0\bD=\bzero$.\\[2pt]
+\textit{Role:} Ensures AIPW is fully normalized. Not directly relevant for Wald-AIPW
+(which conditions on instrument groups $z$, not treatment groups $d$).
+\end{condition}
+
+\begin{condition}[Outcome smoother applied to treatment]\label{cond:C5}
+(C5b, the relevant variant for Wald-AIPW): the instrument-group treatment predictions
+are formed using the \emph{same} smoother matrices as the outcome predictions:
+\begin{equation}
+  \textbf{(C5b)}\quad \Sz{1}\bD = \Dhz{1} \quad\text{and}\quad \Sz{0}\bD = \Dhz{0}.
+  \label{eq:C5b}
+\end{equation}
+\textit{Role:} This guarantees $\mathbf{T}\bD = \tilde{\mathbf{D}}$ (shortcut SC2),
+i.e.\ treated weights sum to one.\\[2pt]
+\textit{For Wald-AIPW:} C5b is the \textbf{condition for full normalization}.
+It requires using the \emph{identical} flexible model (same smoother matrix,
+same hyperparameters) for both the outcome nuisance $\hat{Y}^z_{z,i}$ and the
+treatment nuisance $\hat{D}^z_{z,i}$.
+This is essentially never done in practice --- standard implementations
+run separate models for each nuisance, violating C5b.
+\end{condition}
+
+\begin{condition}[Normalized IPW weights]\label{cond:C6}
+(C6b, the relevant variant): instrument-group IPW weights are Hájek-normalized:
+$\lambda^{\mathrm{norm},z}_{z,i} = \lambda^{\mathrm{ipw},z}_{z,i}/\EN[\lambda^{\mathrm{ipw},z}_z]$,
+ensuring $\bone'\boldsymbol{\lambda}^{\mathrm{norm},z}_1 = \bone'\boldsymbol{\lambda}^{\mathrm{norm},z}_0 = N$.\\[2pt]
+\textit{Role:} Ensures Wald-IPW is fully normalized. For Wald-AIPW, C6b alone
+is not sufficient because the regression adjustment terms also matter.
+\end{condition}
+
+\begin{notebox}[Summary: which conditions matter for Wald-AIPW]
+\begin{tabular}{@{}lll@{}}
+\toprule
+Condition & Required for & Met in practice? \\
+\midrule
+C1c & Closed-form weights to exist & Depends on ML method \\
+C3  & Weights sum to zero (normalized) & Usually yes (random forest, ridge) \\
+C5b & Treated weights sum to one (fully normalized) & Usually \textbf{no} \\
+C2, C4, C6 & Not relevant for Wald-AIPW & --- \\
+\bottomrule
+\end{tabular}
+\end{notebox}
+
+% ==================================================================
+\section{Step 1: Writing Wald-AIPW as a PIVE}
+\label{sec:step1}
+% ==================================================================
+
+\subsection{Scalar moment condition}
+
+Following Chernozhukov et al.\ (2018) and Knaus (2024, eq.~18),
+the Wald-AIPW moment condition in PIVE form is:
+\begin{equation}
+  \EN\!\left[
+    \left(
+      \underbrace{%
+        \hat{Y}^z_{1,i}-\hat{Y}^z_{0,i}
+        +\lambda^{\mathrm{ipw},z}_{1,i}(Y_i-\hat{Y}^z_{1,i})
+        -\lambda^{\mathrm{ipw},z}_{0,i}(Y_i-\hat{Y}^z_{0,i})
+      }_{=:\,\tilde{Y}^{\mathrm{iv}}_i}
+      -\tiv\cdot
+      \underbrace{%
+        \hat{D}^z_{1,i}-\hat{D}^z_{0,i}
+        +\lambda^{\mathrm{ipw},z}_{1,i}(D_i-\hat{D}^z_{1,i})
+        -\lambda^{\mathrm{ipw},z}_{0,i}(D_i-\hat{D}^z_{0,i})
+      }_{=:\,\tilde{D}^{\mathrm{iv}}_i}
+    \right)\cdot
+    \underbrace{1}_{=:\,\tilde{Z}^{\mathrm{iv}}_i}
+  \right] = 0.
+  \label{eq:moment_iv}
+\end{equation}
+
+The PIVE ingredients are therefore:
+\begin{align*}
+  \tilde{Z}^{\mathrm{iv}}_i &= 1 \quad\Rightarrow\quad \tilde{\mathbf{Z}}' = N^{-1}\bone',\\[3pt]
+  \tilde{D}^{\mathrm{iv}}_i &= \hat{D}^z_{1,i}-\hat{D}^z_{0,i}
+    +\lambda^{\mathrm{ipw},z}_{1,i}(D_i-\hat{D}^z_{1,i})
+    -\lambda^{\mathrm{ipw},z}_{0,i}(D_i-\hat{D}^z_{0,i}),\\[3pt]
+  \tilde{Y}^{\mathrm{iv}}_i &= \hat{Y}^z_{1,i}-\hat{Y}^z_{0,i}
+    +\lambda^{\mathrm{ipw},z}_{1,i}(Y_i-\hat{Y}^z_{1,i})
+    -\lambda^{\mathrm{ipw},z}_{0,i}(Y_i-\hat{Y}^z_{0,i}).
+\end{align*}
+
+\subsection{Matrix form of the estimator}
+
+Solving \eqref{eq:moment_iv} and writing in matrix notation (Knaus 2024, eq.~19):
+\begin{equation}
+  \tiv
+  = \underbrace{%
+      \left(\bone'\tilde{\mathbf{D}}^{\mathrm{iv}}\right)^{-1}
+    }_{(\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}}
+    \cdot
+    \bone'\!
+    \underbrace{%
+      \left[\Yhz{1}-\Yhz{0}
+        +\mathrm{diag}(\lipwz{1})(Y-\Yhz{1})
+        -\mathrm{diag}(\lipwz{0})(Y-\Yhz{0})\right]
+    }_{=\,\tilde{\mathbf{Y}}^{\mathrm{iv}}},
+  \label{eq:wald_aipw_matrix}
+\end{equation}
+where
+\begin{equation}
+  \tilde{\mathbf{D}}^{\mathrm{iv}}
+  = \Dhz{1}-\Dhz{0}
+    +\mathrm{diag}(\lipwz{1})(\bD-\Dhz{1})
+    -\mathrm{diag}(\lipwz{0})(\bD-\Dhz{0}).
+  \label{eq:Dtilde_iv_vec}
+\end{equation}
+
+% ==================================================================
+\section{Step 2: Finding the Transformation Matrix $\mathbf{T}^{\mathrm{iv}}$}
+\label{sec:step2}
+% ==================================================================
+
+We need to find $\Tiw$ such that $\Tiw\bY = \tilde{\mathbf{Y}}^{\mathrm{iv}}$.
+This requires Condition~\ref{cond:C1} (C1c): the instrument-group outcome predictions
+must be produced by smoother matrices:
+$\Sz{1}\bY = \Yhz{1}$ and $\Sz{0}\bY = \Yhz{0}$.
+
+Substituting C1c into $\tilde{\mathbf{Y}}^{\mathrm{iv}}$:
+\begin{align}
+  \tilde{\mathbf{Y}}^{\mathrm{iv}}
+  &= \Sz{1}\bY - \Sz{0}\bY
+    + \mathrm{diag}(\lipwz{1})(\bY - \Sz{1}\bY)
+    - \mathrm{diag}(\lipwz{0})(\bY - \Sz{0}\bY) \notag\\
+  &= \Sz{1}\bY - \Sz{0}\bY
+    + \mathrm{diag}(\lipwz{1})\bY - \mathrm{diag}(\lipwz{1})\Sz{1}\bY
+    - \mathrm{diag}(\lipwz{0})\bY + \mathrm{diag}(\lipwz{0})\Sz{0}\bY \notag\\
+  &= \underbrace{%
+      \left[
+        \Sz{1} - \Sz{0}
+        + \mathrm{diag}(\lipwz{1})(\IN - \Sz{1})
+        - \mathrm{diag}(\lipwz{0})(\IN - \Sz{0})
+      \right]
+    }_{=:\,\Tiw}\bY.
+  \label{eq:T_iv}
+\end{align}
+
+\begin{corollary}[Outcome weights of Wald-AIPW, Knaus 2024, Corollary~3]
+\label{cor:weights}
+Under Condition~\ref{cond:C1}(C1c), the outcome weights of Wald-AIPW are:
+\begin{equation}
+  \boldsymbol{\omega}^{\mathrm{iv}\prime}
+  = (\bone'\tilde{\mathbf{D}}^{\mathrm{iv}})^{-1}\cdot
+    \bone'\,\Tiw,
+  \label{eq:weights_iv}
+\end{equation}
+where $\Tiw$ is as defined in \eqref{eq:T_iv}.
+Per observation:
+\begin{equation}
+  \boxed{
+  \omega^{\mathrm{iv}}_i
+  = \frac{1}{\bone'\tilde{\mathbf{D}}^{\mathrm{iv}}}
+    \left[
+      s^z_{i,1} - s^z_{i,0}
+      + \lambda^{\mathrm{ipw},z}_{1,i}(1 - s^z_{i,1})
+      - \lambda^{\mathrm{ipw},z}_{0,i}(1 - s^z_{i,0})
+    \right],
+  }
+  \label{eq:w_iv_scalar}
+\end{equation}
+where $s^z_{i,z}$ is the $i$-th row of $\Sz{z}$ summed (the total weight unit $i$
+receives from the instrument-group $z$ smoother).
+\end{corollary}
+
+\begin{notebox}[Anatomy of the outcome weight]
+Each $\omega^{\mathrm{iv}}_i$ has two parts, divided by the first-stage scalar
+$\bone'\tilde{\mathbf{D}}^{\mathrm{iv}}$:
+\begin{itemize}
+  \item \textbf{Regression part:} $s^z_{i,1} - s^z_{i,0}$ --- how much unit $i$'s
+  outcome contributes to the predicted outcome under $Z=1$ minus under $Z=0$.
+  This is non-zero for all units (smooth prediction uses entire sample).
+  \item \textbf{IPW correction:} $\lambda^{\mathrm{ipw},z}_{1,i}(1-s^z_{i,1})
+  - \lambda^{\mathrm{ipw},z}_{0,i}(1-s^z_{i,0})$ --- the residual-based augmentation.
+  $\lambda^{\mathrm{ipw},z}_{1,i} = Z_i/\phat_i$ is large for $Z_i=1$ units with low
+  propensity score; $\lambda^{\mathrm{ipw},z}_{0,i} = (1-Z_i)/(1-\phat_i)$ is large
+  for $Z_i=0$ units with high propensity score.
+\end{itemize}
+\end{notebox}
+
+% ==================================================================
+\section{Step 3: Checking Normalization --- Does $\sum_i\omega_i^{\mathrm{iv}}=0$?}
+\label{sec:sc1}
+% ==================================================================
+
+We use Shortcut SC1: check whether $\Tiw\bone = \bzero$.
+Expanding using \eqref{eq:T_iv}:
+\begin{align}
+  \Tiw\bone
+  &= \Sz{1}\bone - \Sz{0}\bone
+    + \mathrm{diag}(\lipwz{1})(\IN-\Sz{1})\bone
+    - \mathrm{diag}(\lipwz{0})(\IN-\Sz{0})\bone \notag\\
+  &= \Sz{1}\bone - \Sz{0}\bone
+    + \lipwz{1} - \mathrm{diag}(\lipwz{1})\Sz{1}\bone
+    - \lipwz{0} + \mathrm{diag}(\lipwz{0})\Sz{0}\bone.
+  \label{eq:sc1_expand}
+\end{align}
+
+\textbf{Apply Condition~\ref{cond:C3} (affine smoother, C3):}
+$\Sz{1}\bone = \bone$ and $\Sz{0}\bone = \bone$.
+Substituting into \eqref{eq:sc1_expand}:
+\begin{align}
+  \Tiw\bone
+  &\stackrel{\mathrm{C3}}{=}
+    \bone - \bone + \lipwz{1} - \mathrm{diag}(\lipwz{1})\bone
+    - \lipwz{0} + \mathrm{diag}(\lipwz{0})\bone \notag\\
+  &= \lipwz{1} - \lipwz{1} - \lipwz{0} + \lipwz{0} \notag\\
+  &= \bzero. \qquad\checkmark
+  \label{eq:sc1_result}
+\end{align}
+
+\begin{keyresult}[$\tiv$ is normalized under C3]
+$\Tiw\bone = \bzero$ under Condition~\ref{cond:C3}, which implies
+\[
+  \sum_{i=1}^N \omega^{\mathrm{iv}}_i = 0.
+\]
+\textbf{Why C3?}
+The key cancellation in \eqref{eq:sc1_result} is
+$\Sz{z}\bone = \bone$, i.e.\ the smoother is affine.
+Without C3, $\Sz{1}\bone \neq \bone$ and $\Sz{0}\bone \neq \bone$,
+so the terms $(\Sz{1}-\Sz{0})\bone \neq \bzero$ and the cancellation fails.
+The IPW part ($\lipwz{1}-\lipwz{0}$) self-cancels \emph{regardless} of C3;
+it is the regression part that requires affineness.
+This is the same mechanism that normalizes AIPW (Knaus 2024, Section~4.2.3),
+directly adapted to instrument groups by swapping superscripts.
+\end{keyresult}
+
+% ==================================================================
+\section{Step 4: Checking Full Normalization --- Does $\sum_i\omega_i^{\mathrm{iv}}D_i=1$?}
+\label{sec:sc2}
+% ==================================================================
+
+We use Shortcut SC2: check whether $\Tiw\bD = \tilde{\mathbf{D}}^{\mathrm{iv}}$.
+Expanding $\Tiw\bD$ using \eqref{eq:T_iv}:
+\begin{align}
+  \Tiw\bD
+  &= \Sz{1}\bD - \Sz{0}\bD
+    + \mathrm{diag}(\lipwz{1})(\IN-\Sz{1})\bD
+    - \mathrm{diag}(\lipwz{0})(\IN-\Sz{0})\bD \notag\\
+  &= \Sz{1}\bD - \Sz{0}\bD
+    + \mathrm{diag}(\lipwz{1})(\bD - \Sz{1}\bD)
+    - \mathrm{diag}(\lipwz{0})(\bD - \Sz{0}\bD).
+  \label{eq:sc2_expand}
+\end{align}
+
+For SC2 to hold, we need this to equal $\tilde{\mathbf{D}}^{\mathrm{iv}}$
+as defined in \eqref{eq:Dtilde_iv_vec}:
+\begin{equation}
+  \tilde{\mathbf{D}}^{\mathrm{iv}}
+  = \Dhz{1}-\Dhz{0}
+    +\mathrm{diag}(\lipwz{1})(\bD-\Dhz{1})
+    -\mathrm{diag}(\lipwz{0})(\bD-\Dhz{0}).
+  \label{eq:Dtilde_again}
+\end{equation}
+
+Comparing \eqref{eq:sc2_expand} with \eqref{eq:Dtilde_again} term by term:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Term in $\Tiw\bD$ & Term in $\tilde{\mathbf{D}}^{\mathrm{iv}}$ & Equal when \\
+\midrule
+$\Sz{1}\bD$ & $\Dhz{1}$ & C5b: $\Sz{1}\bD = \Dhz{1}$ \\
+$-\Sz{0}\bD$ & $-\Dhz{0}$ & C5b: $\Sz{0}\bD = \Dhz{0}$ \\
+$\mathrm{diag}(\lipwz{1})(\bD - \Sz{1}\bD)$ & $\mathrm{diag}(\lipwz{1})(\bD-\Dhz{1})$ & C5b \\
+$-\mathrm{diag}(\lipwz{0})(\bD - \Sz{0}\bD)$ & $-\mathrm{diag}(\lipwz{0})(\bD-\Dhz{0})$ & C5b \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+All four terms agree if and only if Condition~\ref{cond:C5}(C5b) holds,
+i.e.\ $\Sz{z}\bD = \Dhz{z}$ for $z\in\{0,1\}$.
+\textbf{If C5b holds:}
+\begin{align}
+  \Tiw\bD
+  &\stackrel{\mathrm{C5b}}{=}
+    \Dhz{1} - \Dhz{0}
+    + \mathrm{diag}(\lipwz{1})(\bD-\Dhz{1})
+    - \mathrm{diag}(\lipwz{0})(\bD-\Dhz{0})
+  = \tilde{\mathbf{D}}^{\mathrm{iv}}. \qquad\checkmark
+  \label{eq:sc2_c5b}
+\end{align}
+
+This establishes SC2: $\Tiw\bD = \tilde{\mathbf{D}}^{\mathrm{iv}}$, and since we already
+showed SC1 holds (under C3), we then have
+\[
+  \boldsymbol{\omega}^{\mathrm{iv}\prime}\bD
+  = (\bone'\tilde{\mathbf{D}}^{\mathrm{iv}})^{-1}\bone'\Tiw\bD
+  = (\bone'\tilde{\mathbf{D}}^{\mathrm{iv}})^{-1}\bone'\tilde{\mathbf{D}}^{\mathrm{iv}}
+  = 1. \qquad\checkmark
+\]
+
+\begin{keyresult}[$\tiv$ is fully normalized under C3 and C5b]
+If both Condition~\ref{cond:C3} and Condition~\ref{cond:C5}(C5b) hold, then
+\[
+  \sum_i\omega^{\mathrm{iv}}_i = 0,\quad
+  \sum_i\omega^{\mathrm{iv}}_iD_i = 1,\quad
+  \sum_i\omega^{\mathrm{iv}}_i(1-D_i) = -1 \quad\text{(by subtraction)}.
+\]
+\end{keyresult}
+
+% ==================================================================
+\section{Step 5: Why C5b Fails in Practice}
+\label{sec:c5b_fail}
+% ==================================================================
+
+Condition~\ref{cond:C5}(C5b) requires that the \emph{same} smoother matrix
+$\Sz{z}$ used to predict outcomes is also used to predict treatments:
+\[
+  \Sz{1}\bY = \Yhz{1} \quad\text{and}\quad \Sz{1}\bD = \Dhz{1},
+\]
+and analogously for $z=0$.
+In concrete terms, this means fitting one model to the $Z=1$ subsample
+and using its predictions for \emph{both} the outcome and the treatment.
+
+This is at odds with standard ML practice, where a separate model is fit for
+each target variable.
+For example, in the DoubleML package (Bach et al.\ 2024) or the grf package,
+the practitioner specifies:
+\begin{itemize}
+  \item A learner for $\hat{Y}^z_{1,i}$: e.g.\ random forest with outcome as target.
+  \item A learner for $\hat{D}^z_{1,i}$: e.g.\ random forest with treatment as target.
+\end{itemize}
+These two learners produce \emph{different} smoother matrices
+${\Sz{1}}^{Y} \neq {\Sz{1}}^{D}$, since the split points in the trees differ.
+Therefore, ${\Sz{1}}^{Y}\bD \neq \hat{\mathbf{D}}^{z_1}$ in general, violating C5b.
+
+\begin{warnbox}[Consequence of C5b failure]
+When C5b does not hold, $\Tiw\bD \neq \tilde{\mathbf{D}}^{\mathrm{iv}}$.
+This means:
+\begin{itemize}
+  \item SC2 fails: $\sum_i\omega^{\mathrm{iv}}_iD_i \neq 1$ in general.
+  \item The Wald-AIPW outcome weights are only \textbf{scale-normalized}
+  (sum to zero, treated and untreated sums equal some constant $c\neq 1$ and $-c$).
+  \item The estimate is not guaranteed to be translation invariant:
+  adding a constant $c$ to all $Y_i$ does not necessarily cancel out.
+\end{itemize}
+This is exactly what Knaus (2024) documents empirically in the EMCS
+(Figure~1): Wald-AIPW with random forests deviates from the true effect of 1
+in a setting where fully-normalized estimators recover it exactly.
+\end{warnbox}
+
+\subsection{What C5b would look like concretely}
+
+Suppose we used ridge regression for both outcome and treatment within
+each instrument group. The ridge smoother for the $Z=1$ subsample is
+$\Sz{1} = \mathbf{X}_1(\mathbf{X}_1'\mathbf{X}_1 + \lambda\mathbf{I})^{-1}\mathbf{X}_1'$,
+where $\mathbf{X}_1$ contains covariates of $Z=1$ units only.
+Using the same matrix for both:
+\[
+  \Yhz{1} = \Sz{1}\bY, \qquad \Dhz{1} = \Sz{1}\bD.
+\]
+This satisfies C5b and makes Wald-AIPW fully normalized.
+However, this forces identical functional form and regularization for
+outcome and treatment --- an unrealistic constraint when their
+distributions differ substantially (e.g.\ continuous outcome vs.\ binary treatment).
+
+% ==================================================================
+\section{Step 6: Untreated Weights and Summary}
+\label{sec:summary}
+% ==================================================================
+
+\subsection{Untreated weights sum to minus one (under C3 and C5b)}
+
+Under C3 and C5b, we have $\sum_i\omega^{\mathrm{iv}}_i = 0$ and
+$\sum_i\omega^{\mathrm{iv}}_iD_i = 1$, so by subtraction:
+\[
+  \sum_i\omega^{\mathrm{iv}}_i(1-D_i)
+  = \sum_i\omega^{\mathrm{iv}}_i - \sum_i\omega^{\mathrm{iv}}_iD_i
+  = 0 - 1 = -1. \qquad\checkmark
+\]
+
+\subsection{Contrast with AIPW}
+
+It is instructive to compare why \emph{AIPW} (treatment-based) achieves full normalization
+in standard implementations while \emph{Wald-AIPW} (instrument-based) does not.
+
+For AIPW, the treatment predictions $\hat{D}$ do not enter the moment condition at all ---
+the pseudo-treatment is just $\tilde{D}_i^{\mathrm{aipw}} = 1$.
+Full normalization of AIPW requires only C3 and C4 (no between-group smoothing):
+the estimator is \emph{self-normalizing} because fitting separate outcome models within
+each treatment group (C4) automatically produces the right structure.
+There is no analogue of C5 to worry about.
+
+For Wald-AIPW, however, the first stage (pseudo-treatment $\tilde{D}^{\mathrm{iv}}_i$)
+contains its own nuisance predictions $\hat{D}^z_{z,i}$.
+These sit inside the denominator of the weight expression, and for SC2 to hold
+they must be generated by the same smoother as $\hat{Y}^z_{z,i}$ in the numerator.
+This creates the C5b requirement that AIPW simply does not face.
+
+\subsection{Overall classification table}
+
+\begin{table}[h!]
+\centering
+\caption{Conditions and normalization properties for Wald-AIPW and related estimators}
+\label{tab:summary}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Estimator & Closed-form & $\sum\omega_i=0$ & $\sum\omega_iD_i=1$ & $\sum\omega_i(1-D_i)=-1$ \\
+\midrule
+Wald-AIPW & C1c & C3 & C3 \& C5b & C3 \& C5b \\
+Wald-RA   & C1c & C3 & C3 \& C5b & C3 \& C5b \\
+Wald-IPW  & always & C6b & C6b & C6b \\
+AIPW      & C1b & C3 & C3 \& C4 & C3 \& C4 \\
+\midrule
+\multicolumn{5}{@{}l@{}}{\small\textit{In practice:} C3 usually holds; C5b does \textbf{not}; hence standard Wald-AIPW is only scale-normalized.}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ==================================================================
+\section{Why Does This Matter? Connection to the EMCS}
+\label{sec:emcs}
+% ==================================================================
+
+Knaus (2024, Section~4.4) runs an Empirical Monte Carlo Study with a synthetic
+outcome $Y^*_i = 1 + D_i$, where the true treatment effect is exactly 1.
+For any fully-normalized estimator, $\boldsymbol{\omega}'\mathbf{Y}^* = \boldsymbol{\omega}'(\bone + \bD) = 1$,
+since $\boldsymbol{\omega}'\bone = 0$ and $\boldsymbol{\omega}'\bD = 1$.
+Non-normalized estimators will deviate from 1 because:
+\begin{align*}
+  \boldsymbol{\omega}^{\mathrm{iv}\prime}\mathbf{Y}^*
+  &= \boldsymbol{\omega}^{\mathrm{iv}\prime}(\bone + \bD)
+   = \underbrace{\boldsymbol{\omega}^{\mathrm{iv}\prime}\bone}_{=0\text{ (C3)}}
+   + \underbrace{\boldsymbol{\omega}^{\mathrm{iv}\prime}\bD}_{\neq 1\text{ (C5b fails)}}.
+\end{align*}
+The deviation from 1 is entirely due to $\boldsymbol{\omega}^{\mathrm{iv}\prime}\bD \neq 1$,
+which is the direct algebraic consequence of C5b failing.
+When XGBoost (a non-affine smoother) is used, even C3 fails, so
+$\boldsymbol{\omega}^{\mathrm{iv}\prime}\bone \neq 0$ as well --- explaining the
+extreme outliers (estimates between $-16$ and $55$) seen in the EMCS figure
+for Wald-AIPW with XGBoost.
+
+% ==================================================================
+\section*{References}
+% ==================================================================
+
+\begin{description}
+  \item[Bach et al.\ (2024)] DoubleML: An object-oriented implementation of double
+  machine learning in R. \textit{Journal of Statistical Software}, 108(3), 1--56.
+  \item[Chernozhukov et al.\ (2018)] Double/Debiased machine learning for treatment
+  and structural parameters. \textit{The Econometrics Journal}, 21(1), C1--C68.
+  \item[Knaus (2024)] Treatment effect estimators as weighted outcomes.
+  arXiv:2411.11559v2. University of Tübingen.
+  \item[Robins, Rotnitzky \& Zhao (1994, 1995)] Estimation of regression coefficients
+  when some regressors are not always observed / Analysis of semiparametric regression
+  models for repeated outcomes in the presence of missing data.
+  \textit{Journal of the American Statistical Association}, 89/90.
+  \item[Tan (2006)] Regression and weighting methods for causal inference using
+  instrumental variables. \textit{JASA}, 101(476), 1607--1618.
+\end{description}
+
+\end{document}
