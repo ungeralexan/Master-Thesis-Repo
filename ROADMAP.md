@@ -1,7 +1,7 @@
 # Thesis Roadmap
 
 **Last updated:** May 2026  
-**Phase:** Replication complete → Writing active
+**Phase:** Vietnam application fully coded → Writing active
 
 ---
 
@@ -17,7 +17,7 @@
 | Słoczyński, Uysal & Wooldridge (2025) | ✅ Read | All sections. Five estimators, Prop 3.2 (TI + SE), Prop 3.3–3.4 (one-sided noncompliance), three applications |
 | Knaus (2024) | ✅ Read | PIVE framework (Sec 2), concrete outcome weights (Sec 3), normalization properties (Sec 4), **Appendix A.4** (kappa in PIVE — directly feeds Chapter 3) |
 
-### 🔲 Tier 1 — Foundational (NOT-DONE)
+### ✅ Tier 1 — Foundational (DONE)
 
 | Paper | Status | Key takeaways |
 |---|---|---|
@@ -57,7 +57,7 @@ To what extent do machine learning-based and classical kappa weighting estimator
 
 ---
 
-## Thesis structure
+## Thesis structure (Gliederung)
 
 ### Chapter 1 — Introduction (3–4 pages)
 
@@ -74,7 +74,7 @@ Knaus (2024) introduces the PIVE framework and derives outcome weights ωᵢ suc
 1. Derive closed-form outcome weights for τ̂ᵤ and τ̂ₐ,₁₀ in the Knaus PIVE framework; show analytically why Σωᵢ = 0 iff translation invariant.
 2. Clarify the distinction between Abadie's kappa weights (identification objects) and outcome weights in the PIVE sense (ωᵢ such that τ̂ = ΣωᵢYᵢ).
 3. Apply Love plots and ESS diagnostics to kappa estimators for the first time, using the same pipeline as Knaus (2024).
-4. Compare kappa estimators (τ̂ᵤᵐˡ, τ̂ᵤᶜᵇ, τ̂ₐ,₁₀) with DML Wald-AIPW across three empirical applications.
+4. Compare kappa estimators (τ̂ᵤᵐˡ, τ̂ᵤᶜᵇ, τ̂ₐ,₁₀) with DML Wald-AIPW across three empirical applications, using multiple ML learners for the nuisance parameters.
 5. Discuss implications for the OutcomeWeights package: show how kappa outcome weights can be computed in the same format as `get_outcome_weights()`, enabling unified Love-plot diagnostics.
 
 **Section 1.5 — Road map**
@@ -99,120 +99,182 @@ Brief chapter-by-chapter overview.
 **Section 2.3 — Kappa-based LATE estimators**
 - The five estimators: τ̂ᵤ (Uysal 2011), τ̂ₐ,₁₀ (Abadie & Cattaneo 2018), unnormalized τ̂ₐ, τ̂ₜ (= τ̂ₐ,₁, Frölich/Tan), τ̂ₐ,₀
 - Normalized vs. unnormalized: what the distinction means mechanically
+- Propensity score estimation: MLE logit (τ̂ᵤᵐˡ) vs. CBPS (τ̂ᵤᶜᵇ); Proposition 3.5: with CBPS all normalized estimators coincide
 
 **Section 2.4 — Why normalization matters**
 - Definition TI (translation invariance): τ̂(Y, W) = τ̂(Y+k, W) for all k
 - Proposition 3.2 (SUW 2025): τ̂ᵤ and τ̂ₐ,₁₀ pass; τ̂ₐ, τ̂ₜ, τ̂ₐ,₀ fail
 - Definition SE (scale equivariance): brief statement, linked to log-unit sensitivity
 - Concrete example: cents vs. dollars failure from Table 2 of SUW 2025
+- One-sided noncompliance (Propositions 3.3, 3.4 of SUW 2025): near-zero denominators; why τ̂ᵤ is safe but τ̂ₐ,₁₀ is not in the κ₁-only case
 
-**Section 2.5 — One-sided noncompliance**
-- Definition and examples (401k, draft lottery, twin births)
-- Table 1 cell-by-cell signs of κ₁ and κ₀ under no-always-takers / no-never-takers
-- Proposition 3.3 (SUW 2025): positive denominators guaranteed under one-sided noncompliance
-- Proposition 3.4: τ̂ᵤ denominator positive in both one-sided cases; τ̂ₐ,₁₀ fails one case
+**Section 2.5 — DML and Wald-AIPW**
+- DML framework (Chernozhukov et al. 2018): PLR-IV and Wald-AIPW estimator
+- Two nuisance parameters: E[Y|Z, X] and E[D|Z, X], estimated via K-fold cross-fitting
+- Brief description of cross-fitting: why it matters for valid inference
 
-**Section 2.6 — Estimation of the instrument propensity score**
-- ML logit (τ̂ᵤᵐˡ) vs. covariate balancing CBPS (τ̂ᵤᶜᵇ)
-- Proposition 3.5 (SUW 2025): with CBPS all normalized estimators coincide
-- Why CBPS pushes weights away from extremes (Heiler 2022 argument, one paragraph)
+**Section 2.6 — PIVE framework and outcome weights (Knaus 2024)**
+- Any estimator fitting the pseudo-IV structure: τ̂ = Σᵢ ωᵢYᵢ
+- The two-step: (i) form pseudo-instrument Z̃ and transformation matrix T; (ii) ω' = (Z̃'D̃)⁻¹Z̃'T
+- "Fully normalized" in Knaus (2024): Σ_{D=1} ωᵢ = +1, Σ_{D=0} ωᵢ = −1 (Table 5)
+- ML learners for DML: Wald-AIPW via grf (OutcomeWeights::dml_with_smoother) and DoubleMLIIVM (ranger, XGBoost, linear+logistic)
 
-**Section 2.7 — Double Machine Learning and Wald-AIPW**
-- DML framework (Chernozhukov et al. 2018): PLR-IV model, nuisance parameters Ê[Y|Z,X] and Ê[D|Z,X], cross-fitting (K-fold), why it matters for valid inference
-- The Wald-AIPW estimator: DML analogue of the Wald ratio, augmented with outcome and treatment regressions for efficiency and double robustness
-- This is the ML benchmark against which kappa estimators are compared in Chapter 4
-- Brief note on the OutcomeWeights R package (Knaus 2024): `dml_with_smoother()`, `get_outcome_weights()`, and the GitHub dev version's new DoubleML compatibility
+**Section 2.7 — Covariate balance diagnostics**
+- Standardized Mean Difference (SMD): |X̄ₜᵣₑₐₜₑ_ₖ − X̄_cₒₙₜᵣₒₗ_ₖ| / SD(Xₖ), computed with outcome weights ωᵢ
+- Love plots: one dot per covariate, unadjusted vs. weighted SMD; threshold at |SMD| ≤ 0.1
+- Effective Sample Size (ESS): ESS = 1 / Σᵢ ωᵢ², measures how many observations effectively contribute
+- Negative weight share: % of observations with ωᵢ < 0
+- Connection to translation invariance: Σᵢ ωᵢ = 0 ⟺ translation invariant (the sum-to-zero condition)
 
 ---
 
 ### Chapter 3 — Connecting the Frameworks (5–7 pages)
 
-*This is the thesis's unique theoretical contribution.*
+*This is the thesis's unique theoretical contribution. Knaus (2024) Appendix A.4 derives the PIVE representation for τ̂ₐ, τ̂ₐ,₀, τ̂ₐ,₁₀ but does not explicitly derive ωᵢ for τ̂ᵤ, nor does it apply Love plots or ESS diagnostics to kappa estimators empirically. This chapter bridges that gap.*
 
 **Section 3.1 — Kappa weights vs. outcome weights: clarifying the distinction**
-- Kappa weights κᵢ: identification weights from Abadie (2003). They turn population expectations into complier expectations. They are not the same as outcome weights.
-- Outcome weights ωᵢ (Knaus 2024): the scalar weights such that τ̂ = ΣᵢωᵢYᵢ exactly. Derived from kappa weights but a different object.
-- The PIVE framework (Definition 1 of Knaus 2024): estimators solving Eₙ[(Ỹᵢ − τ̂D̃ᵢ)Z̃ᵢ] = 0. The two-step to outcome weights: (i) identify pseudo-instrument Z̃ and transformation matrix T; (ii) ω' = (Z̃'D̃)⁻¹Z̃'T.
+- Kappa weights κᵢ: identification weights from Abadie (2003). Population objects that turn expectations into complier expectations. Not directly τ̂ = ΣωᵢYᵢ.
+- Outcome weights ωᵢ (Knaus 2024): sample-level weights such that τ̂ = Σᵢ ωᵢYᵢ. Derived from κ but not the same object.
+- This distinction matters practically: Love plots use ωᵢ, not κᵢ.
 
 **Section 3.2 — Analytical derivation of outcome weights for τ̂ᵤ and τ̂ₐ,₁₀**
-- Express τ̂ᵤ (Equation 3 of SUW 2025) as Σᵢωᵢᵘ Yᵢ. Closed form:
-  ωᵢᵘ = (1/D̂) · [Zᵢ/(Ŝ₁ p(Xᵢ)) − (1−Zᵢ)/(Ŝ₀(1−p(Xᵢ)))]
-  where Ŝ₁ = (1/N)Σⱼ Zⱼ/p(Xⱼ), Ŝ₀ = (1/N)Σⱼ (1−Zⱼ)/(1−p(Xⱼ)), D̂ = estimated complier share
-- Similarly for τ̂ₐ,₁₀: ωᵢᵃ'¹⁰ = κᵢ₁/Σⱼκⱼ₁ − κᵢ₀/Σⱼκⱼ₀
-- Algebraic proof: Σᵢωᵢᵘ = 0 and Σᵢωᵢᵃ'¹⁰ = 0 ⟺ translation invariant
-- Contrast: for unnormalized τ̂ₐ, Σᵢωᵢᵃ ≠ 0 in general (finite sample)
+- Express τ̂ᵤ as weighted sum Σᵢ ωᵢᵘ Yᵢ; closed-form ωᵢᵘ in terms of p(Xᵢ), Zᵢ, and sample normalizations Ŝ₁, Ŝ₀, D̂
+- Similarly for τ̂ₐ,₁₀: weights ωᵢᵃ'¹⁰ = κᵢ₁/Σκⱼ₁ − κᵢ₀/Σκⱼ₀
+- Algebraic proof: Σᵢ ωᵢᵘ = 0 and Σᵢ ωᵢᵃ'¹⁰ = 0 (translation invariant); for unnormalized τ̂ₐ, Σᵢ ωᵢᵃ ≠ 0 in general
 - Place in PIVE framework following Knaus (2024) Appendix A.4: identify Z̃, D̃, T for each kappa estimator
+- `kappa_outcome_weights()` function implements this; verified τ̂ = Σωᵢ Yᵢ up to machine precision for all five estimators
 
-**Section 3.3 — Weight diagnostics: comparison across estimators**
-- Sum-to-zero check (Σωᵢ) as empirical translation invariance diagnostic
-- ESS = 1/Σωᵢ² comparison: τ̂ᵤ vs. τ̂ₐ,₁₀ vs. Wald-AIPW
-- Negative weight share: always-takers and never-takers receive negative κ weights by construction (Table 1 of SUW 2025); does Wald-AIPW also assign negative ωᵢ, and to whom?
-- Maximum absolute weight: which observations are most leveraged?
-- Summary table of theoretical properties (to appear before any empirical application):
+**Section 3.3 — Theoretical weight properties: a summary table**
 
-| Estimator | Σωᵢ = 0? | ESS | Neg. weights | Near-zero denom |
+| Estimator | Σωᵢ = 0? | ESS | Negative weights | Near-zero denom. risk |
 |---|---|---|---|---|
-| τ̂ᵤ | ✓ exact | high | yes (AT + NT) | safe (one-sided) |
-| τ̂ₐ,₁₀ | ✓ exact | high | yes | risk (one-sided) |
-| τ̂ₐ, τ̂ₜ, τ̂ₐ,₀ | ✗ finite sample | moderate | yes | risk |
-| Wald-AIPW (DML) | ✓ approx. | moderate | yes | safe |
-
-- Connection to Knaus (2024) Table 5 normalization classification: kappa normalized estimators are fully-normalized (Σωᵢ=0, Σωᵢ Dᵢ=1) by construction; Wald-AIPW is only scale-normalized in standard grf implementation unless C5b holds
-
----
-
-### Chapter 4 — Empirical Applications (12–15 pages)
-
-*For each application the structure is: (1) data and instrument; (2) replication of SUW 2025 table; (3) translation invariance check (cents/dollars/thousands); (4) outcome weight diagnostics (Σωᵢ, ESS, % negative, max weight); (5) Love plots for kappa estimators and Wald-AIPW; (6) interpretation.*
-
-**Section 4.1 — Military service and wages (Angrist 1990)**
-- Z = draft lottery eligibility, D = veteran status, Y = log wages. N = 3,027 (SIPP 1984)
-- Covariate specs: linear age, cubic age, saturated age (three specifications)
-- Replication: Table 2 of SUW 2025 — normalized estimators stable across cents/dollars; unnormalized flip sign
-- New analysis: Love plots and ESS for the three age specifications. Does the saturated spec (where unnormalized = normalized) produce better covariate balance? How does Wald-AIPW compare?
-- Note on one-sided noncompliance: no always-takers → Proposition 3.3 applies for τ̂ᵤ
-
-**Section 4.2 — College education and wages (Card 1995)**
-- Z = proximity to 4-year college, D = some college (educ > 12) and completion (educ ≥ 16), Y = log wages
-- Two covariate specs: Card (1995) full controls; Kitagawa (2015) parsimonious
-- Replication: Table 3 of SUW 2025 — large divergence of unnormalized estimates between specs; normalized more consistent
-- New analysis: Love plots for both specs and both treatment definitions. Do weight diagnostics explain why estimates diverge between Card and Kitagawa? Does τ̂ᵤᶜᵇ outperform τ̂ᵤᵐˡ in covariate balance?
-
-**Section 4.3 — Childbearing and labor supply (Angrist & Evans 1998)**
-- Z = same-sex siblings, D = third child, Y = LFP and log income
-- Near one-sided noncompliance (no always-takers) → Proposition 3.3 in practice
-- Replication: Table 4 of SUW 2025 — most dramatic translation invariance failure; income estimates flip sign across cents/dollars/thousands
-- New analysis: demonstrate Σκᵢ₁ > 0 by construction under no-always-takers; Wald-AIPW comparison; Love plots for both outcomes (LFP and log income)
-
-**Section 4.4 — Cross-application comparison of outcome weight diagnostics**
-*This section is the thesis's empirical synthesis — it does not appear in SUW 2025.*
-- Tabulate ESS, % negative weights, Σωᵢ, and max weight across all three applications and all estimators
-- Compare Love plots: which estimator achieves |SMD| ≤ 0.1 most reliably across covariates and applications?
-- Do τ̂ᵤ and Wald-AIPW target the same subpopulation, or do their weight distributions look structurally different?
-- Where do weight diagnostics reveal problems that point estimates alone do not?
+| τ̂ᵤᶜᵇ (CBPS, normalized) | ✓ exact | high | yes (AT+NT) | safe (one-sided) |
+| τ̂ᵤᵐˡ (MLE, normalized) | ✓ exact | high | yes (AT+NT) | safe (one-sided) |
+| τ̂ₐ,₁₀ (normalized) | ✓ exact | high | yes | risk (one-sided) |
+| τ̂ₐ, τ̂ₜ, τ̂ₐ,₀ (unnormalized) | ✗ finite sample | moderate | yes | risk |
+| Wald-AIPW (DML, grf) | ✓ approx. | moderate | yes | safe |
+| Wald-AIPW (DoubleML) | ✓ approx. | moderate | yes | safe |
 
 ---
 
-### Chapter 5 — Discussion (3–4 pages)
+### Chapter 4 — Empirical Application: Military Service and Wages (12–15 pages)
 
-**Section 5.1 — What outcome weights add**
-- Point estimates alone do not reveal why estimators differ
-- Outcome weights show which observations drive the estimate and whether the estimator targets the intended subpopulation
-- Love plots make IV balance properties visible for the first time for kappa estimators
+*For each estimator group and specification, the structure is: (1) data and setup; (2) point estimates and replication; (3) translation invariance check; (4) outcome weight diagnostics (Σωᵢ, ESS, % negative, max |ω|); (5) Love plots; (6) interpretation.*
 
-**Section 5.2 — DML vs. kappa: do they target the same compliers?**
-- Weight distribution comparison: τ̂ᵤ vs. Wald-AIPW
-- ESS comparison: kappa estimators typically have higher ESS (more observations contribute) vs. Wald-AIPW which concentrates weight more
-- Sensitivity to covariate specification: Wald-AIPW adapts flexibly (RF); kappa estimators depend on propensity score specification (ML logit vs. CBPS)
-- Practical guidance: when to prefer τ̂ᵤᶜᵇ vs. Wald-AIPW vs. 2SLS
+**Section 4.1 — Data and design (Angrist 1990)**
+- Setting: SIPP 1984, N = 3,027 white men born 1950–1953
+- Instrument Z: Vietnam-era draft lottery eligibility (rsncode, binary)
+- Treatment D: veteran status (nvstat, binary)
+- Outcome Y: log wages (dollars and cents — both coded to demonstrate translation invariance)
+- Key feature: no always-takers (one-sided noncompliance) → Proposition 3.3 of SUW 2025 applies; τ̂ₐ,₁₀ has near-zero denominator risk
+- Only covariate: age (the one variable needed for conditional independence of the lottery)
 
-**Section 5.3 — Implications for the OutcomeWeights package**
-- The thesis shows that kappa outcome weights can be computed in the same format as `get_outcome_weights()` returns, enabling unified Love-plot diagnostics
-- Concretely: the `kappa_outcome_weights()` function developed here returns a weight vector ωᵢ with the same structure as the `omega` matrix rows in OutcomeWeights — it can therefore be passed directly to `cobalt::love.plot()` using the same wrapper
-- With Knaus's GitHub dev version now compatible with DoubleML, a natural next step would be a PR or companion vignette adding kappa estimators to the package workflow — this is flagged as an extension, not part of the thesis itself
-- The translation invariance check (Σωᵢ = 0) and normalization classification from Knaus (2024) Table 5 are useful diagnostics that could be added as a `check_normalization()` utility
+**Section 4.2 — Kappa estimators: replication and covariate specifications**
 
-**Section 5.4 — Limitations**
+Three covariate specifications are compared:
+- **Spec 1 — Linear age:** logit p-score on age (one-dimensional linear control). Replicates SUW 2025 Table 2, columns 1–2. *Note: dropped from DML comparison — a single continuous predictor is uninformative for flexible ML smoothers and showed unstable behavior with grf; kappa estimates still reported.*
+- **Spec 2 — Cubic age:** logit p-score on age + age² + age³. Replicates SUW 2025 Table 2, columns 3–4. **Main specification for DML comparison.**
+- **Spec 3 — Saturated age:** full set of age dummies (one per age value). Replicates SUW 2025 Table 2, columns 5–6. Also used in DML comparison.
+
+*Key finding:* Normalized estimators (τ̂ᵤ, τ̂ₐ,₁₀) are stable across cents/dollars in all specs. Unnormalized estimators (τ̂ₐ, τ̂ₜ, τ̂ₐ,₀) flip sign dramatically: ~+0.5 in cents vs. ~+0.3 in dollars for cubic spec, and large negative values in linear spec. Saturated spec is special: all estimators — including unnormalized — agree, because the fully nonparametric propensity score forces Σωᵢ ≈ 0 even for unnormalized estimators (Table showing identical estimates confirms this).
+
+*Estimates (cubic spec, dollars):*
+- 2SLS: 0.243; τ̂ᵤᶜᵇ: 0.210; τ̂ᵤᵐˡ: 0.202; τ̂ₐ,₁₀: 0.204
+- All normalized estimators cluster around 0.20–0.24; unnormalized range from 0.30–0.32 (dollars) to 0.52–0.54 (cents)
+
+**Section 4.3 — DML Wald-AIPW: grf (OutcomeWeights) vs. DoubleMLIIVM**
+
+Two DML frameworks are compared on cubic and saturated specs:
+
+*Framework 1 — grf via OutcomeWeights::dml_with_smoother() (5-fold cross-fitting):*
+- PLR-IV (cubic): 0.243; Wald-AIPW (cubic): 0.229
+- PLR-IV (saturated): 0.242; Wald-AIPW (saturated): 0.244
+- Translation invariance: verified exactly (Σωᵢ = 0 for both)
+
+*Framework 2 — DoubleMLIIVM with three learners (cubic spec):*
+- Linear + logistic (parametric baseline): Wald-AIPW ≈ 0.218
+- Ranger (random forest): Wald-AIPW ≈ 0.246
+- XGBoost: Wald-AIPW ≈ 0.246
+- *Key result:* point estimates converge (0.218–0.246) across all learners; ESS and % negative weights are identical (ESS = 5, 54.4% negative) — learner choice is immaterial in this low-dimensional near-random-assignment design
+- *XGBoost flag:* algebraic identity Σωᵢ Yᵢ = τ̂ fails marginally (Sum_w = −3.73e−06), consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother); documented for completeness, does not affect point estimate meaningfully
+
+**Section 4.4 — Weight diagnostics and comparison**
+
+Summary table across all estimators (cubic spec, dollar outcome):
+
+| Estimator | Estimate | Σωᵢ | ESS | % neg. | max|ω| |
+|---|---|---|---|---|---|
+| τ̂ᵤᶜᵇ (kappa, CBPS) | 0.210 | 0 | 5 | 54.4 | 0.025 |
+| τ̂ᵤᵐˡ (kappa, MLE) | 0.202 | 0 | 5 | 54.4 | 0.028 |
+| τ̂ₐ,₁₀ (kappa, MLE) | 0.204 | 0 | 5 | 54.4 | 0.029 |
+| τ̂ₐ (kappa, unnorm.) | 0.314 | 0.048 | 5 | 54.4 | 0.029 |
+| Wald-AIPW (grf, cubic) | 0.229 | 0 | 5 | 54.4 | 0.018 |
+| Wald-AIPW (DoubleML, ranger) | 0.246 | 0 | 5 | 54.4 | 0.022 |
+| Wald-AIPW (DoubleML, XGBoost) | 0.246 | ~0 | 5 | 54.4 | 0.022 |
+
+*Interpretation:* ESS and % negative weights are nearly identical across all estimators — in this near-random-assignment low-dimensional setting, all estimators weight the data similarly. The divergence is entirely driven by the normalization choice, not by covariate adjustment. Love plots confirm near-perfect covariate balance for all estimators.
+
+**Section 4.5 — Love plots**
+- Cubic and saturated specs: Love plots for kappa estimators and DML Wald-AIPW side-by-side
+- All estimators achieve good balance (age is the only covariate; draft lottery is near-random)
+- Balance is excellent by construction — the diagnostic value here is to confirm the framework works before applying it to richer designs (Card 1995, Angrist & Evans 1998)
+
+**Section 4.6 — What remains to be done for this application**
+- ✅ Point estimates: full replication (kappa all specs, DML cubic + saturated, DoubleML three learners)
+- ✅ Translation invariance: verified for kappa and DML (cents vs. dollars)
+- ✅ Weight diagnostics table: Σωᵢ, ESS, % negative, max|ω| for all estimators
+- ✅ Love plots: kappa + DML (cubic + saturated)
+- 🟡 Write-up of tuning sensitivity: compare dml_with_smoother() default vs. tune.parameters="all" (coded, not yet written up)
+- 🟡 XGBoost non-affine issue: flag and cite Knaus (2024) Table 6 formally in text
+
+---
+
+### Chapter 5 — Empirical Applications: Card (1995) and Angrist & Evans (1998) (planned, not yet coded)
+
+*This chapter will follow the same structure as Chapter 4 once coding is complete for the remaining two applications.*
+
+**Section 5.1 — Card (1995): College education and wages**
+- Z = proximity to four-year college; D = some college (educ>12) or completion (educ≥16); Y = log wages
+- Two covariate specs: Card (1995) full controls vs. Kitagawa (2015) parsimonious
+- Key finding to replicate: large divergence in unnormalized estimates across specs; normalized more consistent
+- DML comparison: DoubleML with three learners (linear+logistic, ranger, XGBoost) — richer covariate structure than Angrist (1990)
+- Love plots: does Card spec achieve better complier balance than Kitagawa?
+- **Status:** kappa replication done; DML comparison pending
+
+**Section 5.2 — Angrist & Evans (1998): Childbearing and labor supply**
+- Z = same-sex siblings; D = third child; Y = LFP and log income
+- Near one-sided noncompliance (no always-takers) → Proposition 3.3 applies
+- Key finding to replicate: most dramatic translation invariance failure; income estimates flip sign across units
+- DML comparison: Wald-AIPW only (AIPW-ATE gives NaN under near one-sided noncompliance — documented as expected)
+- **Status:** kappa done; DML Wald-AIPW in progress; Love plots pending
+
+---
+
+### Chapter 6 — Discussion (3–4 pages)
+
+**Section 6.1 — Cross-application summary**
+- Comparative table: ESS, % negative, Σωᵢ, Love plot quality across all three applications and all estimators
+- Which estimators achieve best covariate balance consistently?
+- Does τ̂ᵤᶜᵇ (CBPS) consistently outperform τ̂ᵤᵐˡ (MLE)?
+
+**Section 6.2 — The outcome weights lens: what it adds**
+- What do Love plots reveal beyond point estimates alone?
+- When do weight diagnostics signal problems the estimates don't?
+- DML vs. kappa: are Wald-AIPW and τ̂ᵤ targeting the same complier subpopulation? Do ω distributions look similar?
+- Learner invariance result: in the Angrist (1990) design, ESS and % negative weights are identical across learners — the outcome weights lens confirms that learner choice doesn't matter here
+
+**Section 6.3 — DML learner comparison: implications**
+- Point estimates from ranger, XGBoost, and linear+logistic converge for Angrist (1990)
+- Weight diagnostics (ESS, % negative) are identical — consistent with Knaus (2024): in low-dimensional near-random-assignment settings, learner flexibility doesn't buy you anything
+- XGBoost's non-affine smoother issue: practical implication for algebraic verification; recommend always checking Σωᵢ Yᵢ = τ̂ numerically when using XGBoost
+
+**Section 6.4 — Practical guidance for practitioners**
+- Decision framework: when to use τ̂ᵤ vs. τ̂ᵤᶜᵇ vs. Wald-AIPW; when is 2SLS still defensible (saturated covariate spec)
+- Always use normalized estimators; run the sum-to-zero check
+- For DML: use ranger or grf; XGBoost needs additional algebraic verification
+- Package note: kappa_to_outcome_weights_format() wrapper enables unified Love-plot pipeline
+
+**Section 6.5 — Limitations**
 - Bootstrap inference is computationally expensive
 - Analytical standard errors not implemented for all estimators
 - Love plots are descriptive, not inferential
@@ -221,11 +283,11 @@ Brief chapter-by-chapter overview.
 
 ---
 
-### Chapter 6 — Conclusion (1–2 pages)
+### Chapter 7 — Conclusion (1–2 pages)
 
 - Summary of findings: which estimators are translation invariant, which achieve covariate balance, what the outcome-weights lens adds
 - Recommendation: τ̂ᵤᶜᵇ preferred for robustness; Wald-AIPW for flexibility when large N and rich X; 2SLS defensible only with saturated covariate specification
-- Extensions: doubly robust kappa estimators; formal tests of covariate balance; heterogeneous effects (translation invariance of causal forest estimates)
+- Extensions: doubly robust kappa estimators; formal tests of covariate balance; heterogeneous effects (translation invariance of causal forest estimates); kappa_to_outcome_weights_format() as package contribution
 
 ---
 
@@ -236,49 +298,55 @@ Brief chapter-by-chapter overview.
 - [x] Read Angrist (1990): 2SLS + all five kappa estimators, cents vs. dollars — replicated Table 2 of SUW 2025
 - [x] Replicate Card (1995): two treatments (somecol, educ16), two covariate specs (Card, Kitagawa), two outcomes — replicated Table 3 of SUW 2025
 - [x] Replicate Angrist & Evans (1998): LFP + log income, all unit transformations — replicated Table 4 of SUW 2025
-- [x] Bootstrap standard errors for all kappa estimators (R = 500 with set.seed(42))
 - [x] `kappa_weights()` function: κ, κ₁, κ₀ from Abadie (2003) Lemma 2.1
 - [x] `logit_mle()` propensity score estimation
 - [x] `cbps()` covariate balancing propensity score (Newton step with backtracking)
 - [x] `tau_u()`, `tau_a10()`, `tau_unnorm()`: all five kappa estimators
 - [x] `kappa_outcome_weights()`: closed-form ωᵢ for all five kappa estimators with `stopifnot` verification that τ̂ = Σωᵢ Yᵢ
+- [x] **Chapter 3 (theory):** write the analytical proof that Σωᵢᵘ = 0; write the PIVE representation for τ̂ᵤ following Knaus (2024) Appendix A.4
 - [x] `weight_diag_table()`: Σωᵢ, ESS, % negative, max absolute weight
-- [x] DML via `OutcomeWeights::dml_with_smoother()` (grf) with 5-fold cross-fitting for Angrist (1990) cubic + saturated specs
-- [x] `get_outcome_weights()` extraction and verification (ω'Y = point estimates, TRUE) for grf and DoubleML objects
-- [x] Love plots via `cobalt::love.plot()` for DML estimators (Angrist, Card)
-- [x] Translation invariance check: Y → Y + constant, verified normalized estimators stable and unnormalized estimators not — for all three covariate specs and both kappa and DML estimators
-- [x] Comparison tables: kappa weight diagnostics vs. DML Wald-AIPW side by side
-- [x] Read the Vietnam War Paper and summarized findings of the original design in the military draft paper
-- [x] **DoubleML learner comparison — Angrist (1990), cubic spec:** installed OutcomeWeights GitHub dev version; ran `DoubleMLIIVM` with three learners (linear+logistic, ranger, XGBoost); extracted omega weights; verified algebraic identity; compared ESS, % negative weights, Sum_w, and Love plots across all learners vs kappa estimators
-  - Key result: point estimates converge (0.218–0.246), ESS and % negative weights identical across all learners (ESS=5, 54.4% negative), confirming learner choice immaterial in this low-dimensional near-random-assignment design
-  - XGBoost algebraic check = FALSE (Sum_w = −3.73e−06): consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother), documented in Section 4.4 of the paper with EMCS showing outliers ranging −16 to 55
+- [x] Analytical M-estimation standard errors for all kappa estimators (following SUW 2025 online appendix)
+- [x] DML via `OutcomeWeights::dml_with_smoother()` (grf) with 5-fold cross-fitting for Angrist (1990) **cubic + saturated specs** (linear spec deliberately excluded: uninformative for ML smoothers, unstable behavior with grf)
+- [x] `get_outcome_weights()` extraction and verification (ω'Y = point estimates, TRUE) for grf objects
+- [x] Love plots via `cobalt::love.plot()` for grf DML estimators — Angrist (1990) cubic + saturated specs
+- [x] Translation invariance check: Y → Y + constant, verified normalized estimators stable and unnormalized not — for all three covariate specs and both kappa and DML estimators; saturated spec special case (all estimators agree) documented
+- [x] Comparison tables: kappa weight diagnostics vs. DML Wald-AIPW side by side (Σωᵢ, ESS, % negative, max|ω|)
+- [x] **DoubleML learner comparison — Angrist (1990), cubic spec:**
+  - Installed OutcomeWeights GitHub dev version (CRAN version does not support DoubleML objects)
+  - Ran `DoubleMLIIVM` with three learners: (1) linear regression + logistic (parametric baseline), (2) ranger (random forest), (3) XGBoost
+  - Extracted ωᵢ via `get_outcome_weights()` for each learner; verified algebraic identity τ̂ = Σωᵢ Yᵢ
+  - Weight diagnostics table: Σωᵢ, ESS, % negative, max|ω| across all learners vs. kappa estimators
+  - Love plots: learner comparison for cubic spec
+  - **Key results:**
+    - Point estimates converge: 0.218–0.246 across all learners
+    - ESS and % negative weights identical across learners (ESS = 5, 54.4% negative) → learner choice immaterial in this low-dimensional near-random-assignment design
+    - XGBoost algebraic check = FALSE (Sum_w = −3.73e−06): consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother); flagged in code and documented
+  - Comprehensive summary table: all estimators in one view (kappa × 6 + grf × 2 + DoubleML × 3)
 
 ### 🟡 In progress
 
 - [ ] Angrist & Evans (1998): DML Wald-AIPW with `dml_with_smoother()` — AIPW-ATE NaN confirmed expected under near one-sided noncompliance; only Wald-AIPW reported
 - [ ] Love plots for kappa estimators in Angrist & Evans (1998) application
 - [ ] Modularize code: split the single Rmd into one script per application + shared functions file
-- [ ] **DoubleML learner comparison for Card (1995) and Angrist & Evans (1998):** same three-learner comparison (linear+logistic, ranger, XGBoost) as done for Angrist (1990) — pending; results likely similar but worth verifying given richer covariate structure in Card
+- [ ] **DoubleML learner comparison for Card (1995):** same three-learner comparison (linear+logistic, ranger, XGBoost) as done for Angrist (1990) — pending; richer covariate structure may show more divergence
 
 ### 🔲 TODO
 
-- [ ] **Chapter 3 (theory):** write the analytical proof that Σωᵢᵘ = 0; write the PIVE representation for τ̂ᵤ following Knaus (2024) Appendix A.4
-- [ ] **Section 4.4:** cross-application comparison table and discussion — tabulate ESS, % negative, Σωᵢ across all applications and estimators; now include DoubleML learner columns for Angrist (1990)
-- [ ] **DoubleML learner comparison write-up (Section 4.1):** document convergence of estimates across learners, identical ESS and % negative weights, XGBoost non-affine smoother issue; cite Knaus (2024) Table 6 + Figure 1 for the theoretical prediction
-- [ ] **Love plots for kappa in Card (1995):** add cobalt love.plot calls using `kappa_outcome_weights()` output — currently only DML love plots exist for Card
-- [ ] **Tuning sensitivity check (Section 4, inspired by Knaus 2024 Fig. 3):** compare `dml_with_smoother()` with default vs. `tune.parameters = "all"` — already coded for Angrist (1990) but not yet written up
-- [ ] **Translation invariance for Wald-AIPW (all learners):** Y → Y+c check already implemented for grf; extend to DoubleML ranger (should hold exactly) and document XGBoost violation analytically
-- [ ] **Section 5.3 code:** write a minimal `kappa_to_outcome_weights_format()` wrapper that returns output in the same `$omega` matrix structure as `get_outcome_weights()` — unifies the pipeline; basis for package discussion
+- [ ] **Section 5.1 (Card):** DoubleML learner comparison coding + write-up
+- [ ] **Section 5.2 (Angrist & Evans):** complete DML coding; Love plots for kappa estimators
+- [ ] **Cross-application comparison table (Section 6.1):** ESS, % negative, Σωᵢ across all applications and estimators; include DoubleML learner columns
+- [ ] **DML learner write-up (Section 4.3 / 6.3):** document convergence of estimates across learners; identical ESS and % negative weights; XGBoost non-affine smoother issue; cite Knaus (2024) Table 6 + Figure 1
+- [ ] **Tuning sensitivity check (Section 4.2):** compare `dml_with_smoother()` default vs. `tune.parameters = "all"` — already coded, not yet written up
+- [ ] **Section 6.4 code:** write a minimal `kappa_to_outcome_weights_format()` wrapper that returns output in the same `$omega` matrix structure as `get_outcome_weights()` — unifies the pipeline; basis for package discussion
 - [ ] **Write-up:** Chapter 2 draft (framework sections — most reading is done)
 - [ ] **Write-up:** Chapter 3 draft (theoretical derivations — `kappa_outcome_weights()` already implements this, needs to be written up formally)
-- [ ] **Write-up:** Chapter 4 draft (empirical sections — replication done, narrative needed)
+- [ ] **Write-up:** Chapter 4 draft (Angrist 1990 — replication + diagnostics + DML learner comparison; this application is fully coded)
 
 ### 💡 Later / extension ideas (not part of thesis scope, but worth noting)
 
-- [ ] **Additional DoubleML learners to consider:** beyond linear+logistic, ranger, XGBoost — could add Lasso (note: Lasso is NOT a smoother per Knaus Appendix A.2 and therefore has no closed-form omega), or neural networks (also excluded). The three learners already implemented cover the full range of what `get_outcome_weights()` supports with DoubleML (confirmed in Knaus & Rakov notebook)
-- [ ] **Package contribution — concrete minimal version:** the `kappa_to_outcome_weights_format()` wrapper (already in TODO above) is the most natural contribution. It would make kappa outcome weights directly passable to `cobalt::love.plot()` and any other OutcomeWeights-compatible downstream function, without requiring users to understand the internal omega structure. Could be proposed to Knaus as a PR or companion vignette
-- [ ] **Package contribution — `check_normalization()` utility:** a small function that takes any omega vector and classifies it as fully-normalized / scale-normalized / unnormalized following Knaus (2024) Table 4. Straightforward to implement; useful diagnostic for practitioners comparing different estimators
-- [ ] **Package contribution — kappa vignette:** a worked example showing how to compute kappa outcome weights and pass them alongside DML weights into the same Love plot and weight diagnostics pipeline. Would document the Angrist (1990) analysis from this thesis as a reproducible vignette. Most feasible package contribution given it requires no new code, only documentation
+- [ ] **Package contribution — `kappa_to_outcome_weights_format()` wrapper:** makes kappa outcome weights directly passable to `cobalt::love.plot()` and OutcomeWeights-compatible functions. Could be proposed to Knaus as a PR or companion vignette
+- [ ] **Package contribution — `check_normalization()` utility:** takes any ω vector and classifies it as fully-normalized / scale-normalized / unnormalized following Knaus (2024) Table 4
+- [ ] **Package contribution — kappa vignette:** worked example showing how to compute kappa outcome weights and pass them alongside DML weights into the same Love plot pipeline; documents the Angrist (1990) analysis as a reproducible vignette
 
 ---
 
@@ -310,8 +378,9 @@ Brief chapter-by-chapter overview.
 | 1. Introduction | 3–4 |
 | 2. Econometric Framework | 8–10 |
 | 3. Connecting the Frameworks | 5–7 |
-| 4. Empirical Applications | 12–15 |
-| 5. Discussion | 3–4 |
-| 6. Conclusion | 1–2 |
+| 4. Empirical Application: Angrist (1990) | 7–9 |
+| 5. Empirical Applications: Card + Angrist & Evans | 6–8 |
+| 6. Discussion | 3–4 |
+| 7. Conclusion | 1–2 |
 | References | 2–3 |
-| **Total** | **34–45** |
+| **Total** | **35–47** |
