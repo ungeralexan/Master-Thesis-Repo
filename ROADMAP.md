@@ -283,6 +283,71 @@ Summary table across all estimators (cubic spec, dollar outcome):
 
 ---
 
+
+### Extension — Heterogeneous Treatment Effects via Instrumental Forest
+
+**Condition:** only pursued if ATE results motivate it (professor's gate).
+Motivation exists if Wald-AIPW and κ-based estimators diverge meaningfully
+in point estimates or weight diagnostics across covariate subgroups —
+signalling they implicitly target different complier subpopulations.
+
+**Why this goes beyond the average effect**
+
+The ATE analysis asks: does τ̂ = Σᵢ ωᵢ Yᵢ change when Y → Y + k?
+The CATE extension asks: does τ̂(x) = Σⱼ Ωᵢⱼ Yⱼ change for each
+prediction point xᵢ? This is the natural generalization of the
+sum-to-zero condition from a single vector ω ∈ ℝⁿ to a weight
+matrix Ω ∈ ℝⁿˣⁿ, where row i gives the weights used to form the
+prediction at xᵢ. Translation invariance at the CATE level requires
+each row to sum to zero: Σⱼ Ωᵢⱼ = 0 for all i.
+`get_outcome_weights()` already returns this matrix for instrumental
+forest objects (Knaus 2024), so the diagnostic pipeline is the same
+as for the ATE — Love plots and ESS can be computed per-prediction-point.
+
+**Why Card (1995), not Angrist (1990)**
+
+Angrist (1990) has a single covariate (age). Heterogeneous effects
+by age are estimable but narratively thin, and the ATE results already
+show tight convergence across all estimators (0.20–0.25) — weak
+motivation for a CATE extension. Card (1995) has a richer covariate
+structure (family background, region, race, experience) where
+heterogeneity by, e.g., family income or distance-to-college is
+substantively interesting. If the Card ATE results show divergence
+between the Kitagawa and Card specs — or between κ-based and
+Wald-AIPW estimates — this is a signal that different estimators
+weight different parts of the covariate distribution, which the
+instrumental forest can make explicit.
+
+**What the analysis would look like**
+
+1. Fit an instrumental forest on the Card (1995) data using `grf::instrumental_forest()`
+2. Extract Ω via `OutcomeWeights::get_outcome_weights()`
+3. Check translation invariance: Y → Y + k, verify τ̂(xᵢ) stable for all i
+   (i.e., each row of Ω sums to zero — approximate, since forests are
+   not exact affine smoothers)
+4. Compare CATE estimates τ̂(xᵢ) across covariate subgroups (e.g.,
+   low vs. high family income, near vs. far from college) — does the
+   subpopulation targeted by the instrumental forest differ from what
+   the κ-based ATE implicitly weights?
+5. Love plots at the CATE level: per-prediction-point SMDs to check
+   whether local covariate balance holds, not just globally
+
+**Difficulty assessment**
+
+Moderate. No new theoretical derivations needed — Knaus (2024)
+already covers the PIVE representation for causal/instrumental forests.
+The implementation is mostly applied: fit the forest, extract Ω,
+run the same diagnostic pipeline. The main added complexity is
+interpreting a matrix of weights rather than a vector, and the
+narrative of connecting CATE heterogeneity back to the ATE
+estimator comparison. Not a core chapter — fits naturally as
+Section 5.X or a Discussion subsection, conditional on Card results.
+
+**Status:** 🔲 Conditional on Card (1995) ATE results
+
+---
+
+
 ### Chapter 7 — Conclusion (1–2 pages)
 
 - Summary of findings: which estimators are translation invariant, which achieve covariate balance, what the outcome-weights lens adds
