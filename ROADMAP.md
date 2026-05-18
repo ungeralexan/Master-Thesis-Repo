@@ -387,12 +387,11 @@ Section 5.X or a Discussion subsection, conditional on Card results.
     - ESS and % negative weights identical across learners (ESS = 5, 54.4% negative) → learner choice immaterial in this low-dimensional near-random-assignment design
     - XGBoost algebraic check = FALSE (Sum_w = −3.73e−06): consistent with Knaus (2024) Table 6 — XGBoost violates Condition 3 (non-affine smoother); flagged in code and documented
   - Comprehensive summary table: all estimators in one view (kappa × 6 + grf × 2 + DoubleML × 3)
-
+- [x] Created a file that shows all functions used and on which I can come back too
+- [x] Love plots for kappa estimators in Angrist & Evans (1998) application
 ### 🟡 In progress
 
 - [ ] Angrist & Evans (1998): DML Wald-AIPW with `dml_with_smoother()` — AIPW-ATE NaN confirmed expected under near one-sided noncompliance; only Wald-AIPW reported
-- [ ] Love plots for kappa estimators in Angrist & Evans (1998) application
-- [ ] Modularize code: split the single Rmd into one script per application + shared functions file
 - [ ] **DoubleML learner comparison for Card (1995):** same three-learner comparison (linear+logistic, ranger, XGBoost) as done for Angrist (1990) — pending; richer covariate structure may show more divergence
 
 ### 🔲 TODO
