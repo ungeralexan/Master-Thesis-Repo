@@ -1,0 +1,306 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{threeparttable}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+\setlist[itemize]{leftmargin=1.3em, itemsep=0.2em}
+\renewcommand{\arraystretch}{1.18}
+
+\title{Card College-Proximity Design: Starting Point from Table 2}
+\author{Working note for thesis replication}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{1. What Table 2 is doing}
+
+Before Card turns to the college-proximity instrument, Table 2 estimates ordinary least squares earnings regressions of the form
+\[
+\log(wage_i)=\alpha + \beta\,educ_i + X_i'\gamma + u_i,
+\]
+where \(educ_i\) is completed years of schooling and the dependent variable is log hourly wages measured in 1976. The coefficient \(\beta\) is the conventional OLS return to one additional year of schooling.
+
+The table should be read as a baseline or starting point, not yet as the IV/LATE design. It asks: if we simply regress wages on years of schooling and increasingly rich controls, how large is the schooling--wage association?
+
+\section*{2. Sample and timing}
+
+\begin{itemize}
+    \item Dataset: National Longitudinal Survey of Young Men (NLSYM).
+    \item Baseline information: respondents were first observed in 1966, when they were young men aged roughly 14--24.
+    \item Geographic/instrument information: the key college-proximity variable refers to whether the respondent lived in a local labor market with a nearby four-year college in 1966.
+    \item Outcome and schooling information for Table 2: log hourly wages and completed education are measured in the 1976 follow-up.
+    \item Estimation sample in Table 2: \(N=3{,}010\), the subsample with valid wage and education information.
+    \item Important correction: the relevant wage interview year here is 1976, not 1975.
+\end{itemize}
+
+\section*{3. Column-by-column specification map}
+
+\begin{table}[h!]
+\centering
+\caption{How the five OLS specifications in Card's Table 2 differ}
+\begin{threeparttable}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.0cm}XXXXX}
+\toprule
+ & (1) & (2) & (3) & (4) & (5) \\
+\midrule
+Core controls & \multicolumn{5}{c}{Education, experience, experience squared, Black indicator, live in South, live in SMSA} \\
+Region in 1966, 8 indicators & No & Yes & Yes & Yes & Yes \\
+Lived in SMSA in 1966 & No & Yes & Yes & Yes & Yes \\
+Parental education, main effects & No & No & Yes & Yes & Yes \\
+Interacted parental education classes & No & No & No & Yes & Yes \\
+Family structure indicators & No & No & No & No & Yes \\
+\midrule
+Interpretation & Basic Mincer-style model & Adds geography in 1966 & Adds parental education & Allows parental education interaction cells & Adds family structure at age 14 \\
+\bottomrule
+\end{tabularx}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Notes: ``Parental education'' means years of education of the mother and father plus indicators for missing parental education. ``Interacted parental education classes'' means eight classes based on mother's and father's education. ``Family structure'' means indicators for father and mother present at age 14 and single mother at age 14.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\section*{4. Table 2 coefficients and direct reading}
+
+\begin{table}[h!]
+\centering
+\caption{Card Table 2: Estimated regression models for log hourly earnings}
+\begin{threeparttable}
+\small
+\begin{tabular}{lccccc}
+\toprule
+ & (1) & (2) & (3) & (4) & (5) \\
+\midrule
+Education & 0.074 & 0.075 & 0.073 & 0.074 & 0.073 \\
+ & (0.004) & (0.003) & (0.004) & (0.004) & (0.004) \\
+Experience & 0.084 & 0.085 & 0.085 & 0.085 & 0.085 \\
+ & (0.007) & (0.007) & (0.007) & (0.007) & (0.007) \\
+Experience squared / 100 & -0.224 & -0.229 & -0.230 & -0.226 & -0.229 \\
+ & (0.032) & (0.032) & (0.032) & (0.032) & (0.032) \\
+Black indicator & -0.190 & -0.199 & -0.194 & -0.194 & -0.189 \\
+ & (0.017) & (0.018) & (0.019) & (0.019) & (0.019) \\
+Live in South & -0.125 & -0.148 & -0.146 & -0.145 & -0.146 \\
+ & (0.015) & (0.026) & (0.026) & (0.026) & (0.026) \\
+Live in SMSA & 0.161 & 0.136 & 0.136 & 0.137 & 0.138 \\
+ & (0.015) & (0.020) & (0.020) & (0.020) & (0.020) \\
+\midrule
+Region in 1966, 8 indicators & No & Yes & Yes & Yes & Yes \\
+Lived in SMSA in 1966 & No & Yes & Yes & Yes & Yes \\
+Parental education main effects & No & No & Yes & Yes & Yes \\
+Interacted parental education classes & No & No & No & Yes & Yes \\
+Family structure indicators & No & No & No & No & Yes \\
+\midrule
+\(R^2\) & 0.291 & 0.300 & 0.301 & 0.303 & 0.304 \\
+P-value for family background effects & -- & -- & 0.235 & 0.462 & 0.165 \\
+Observations & \multicolumn{5}{c}{3,010} \\
+Dependent variable & \multicolumn{5}{c}{Log hourly wage in 1976; mean 6.262, standard deviation 0.444} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Notes: Standard errors are in parentheses. Source: Card's Table 2, ``Estimated Regression Models for Log Hourly Earnings.''
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\section*{5. How to interpret the rows}
+
+\paragraph{Education.} The education coefficient is very stable across all five OLS specifications, between 0.073 and 0.075. Since the dependent variable is log wages, this means that one additional year of schooling is associated with roughly 7.3--7.5 percent higher hourly wages. The stability is important: adding geography, parental background, interactions, and family structure barely changes the conventional OLS return.
+
+\paragraph{Experience and experience squared.} Experience has a positive coefficient of about 0.085, while experience squared is negative. This is the standard concave experience--earnings profile: wages rise with labor-market experience, but at a decreasing rate.
+
+\paragraph{Black indicator.} The coefficient is around \(-0.19\) to \(-0.20\). Conditional on the included controls, Black respondents have substantially lower log hourly wages. Interpreted approximately, \(-0.19\) corresponds to about 19 percent lower wages, though the exact log-point conversion is \(100\{\exp(-0.19)-1\}\).
+
+\paragraph{Live in South.} The coefficient is negative, around \(-0.13\) to \(-0.15\). Conditional on the other controls, living in the South is associated with lower hourly wages.
+
+\paragraph{Live in SMSA.} The coefficient is positive, around 0.14--0.16. Living in a metropolitan area is associated with higher hourly wages.
+
+\paragraph{Controls added across columns.} The purpose of columns (1)--(5) is to show that the estimated OLS return to schooling is not very sensitive to increasingly rich observed controls. This does not prove that OLS is causal. It only says that within this dataset the raw schooling coefficient is stable after controlling for observed geography and family background.
+
+\section*{6. Why this table is the starting point for the IV design}
+
+Table 2 gives the conventional comparison: more schooling is associated with higher wages. Card then argues that this OLS association may still be biased because schooling is chosen. Unobserved ability, motivation, family investments, and measurement error can make \(educ_i\) correlated with \(u_i\). The college-proximity design therefore uses
+\[
+Z_i = \mathbf{1}\{\text{near four-year college in 1966}\}
+\]
+as an instrument for schooling. The later IV tables ask whether the component of schooling shifted by college proximity has a different return than the conventional OLS association in Table 2.
+
+\section*{7. Thesis-oriented takeaway}
+
+For the thesis, Table 2 should be introduced as the baseline OLS wage equation. The important result is not only that the education coefficient is about 7.4 percent, but also that this coefficient is highly stable across observed-control specifications. The later IV/kappa/DML analysis starts from the concern that even this stable OLS coefficient may not identify the causal return to schooling. The IV estimand instead targets the marginal group whose schooling is shifted by college proximity, which is exactly where LATE, kappa weights, and outcome-weight diagnostics become relevant.
+
+
+\section*{1. What changes from Table 2 to Table 3?}
+
+Table 2 estimates ordinary wage regressions of the form
+\[
+    y_i = \alpha + \beta S_i + X_i'\gamma + u_i,
+\]
+where \(y_i\) is log hourly wage in 1976 and \(S_i\) is completed years of schooling. 
+The coefficient \(\beta\) is interpreted as the return to one additional year of schooling. 
+However, this OLS interpretation is problematic if schooling is endogenous. For example, schooling may be correlated with unobserved ability, motivation, family background, measurement error, or individual discount rates.
+
+Table 3 is therefore the first table where the instrumental variable logic becomes explicit. Card uses whether the respondent lived near a four-year college in 1966 as an instrument for schooling:
+\[
+    Z_i = \mathbf{1}\{\text{near a four-year college in 1966}\}.
+\]
+The outcome and education variables are observed in the 1976 follow-up, while the instrument is measured using the respondent's local labor market in 1966, roughly ten years earlier. The key idea is that proximity to college lowers the cost of obtaining more schooling, but should affect wages only through schooling, conditional on controls.
+
+\section*{2. The three equations behind Table 3}
+
+Table 3 can be read as three linked regressions.
+
+\subsection*{Reduced form for education: first-stage idea}
+\[
+    S_i = \pi_0 + \pi_1 Z_i + X_i'\pi_2 + \nu_i.
+\]
+Here \(\pi_1\) measures whether living near a college in 1966 predicts more completed schooling in 1976. This is the first-stage relevance condition.
+
+\subsection*{Reduced form for earnings}
+\[
+    y_i = \rho_0 + \rho_1 Z_i + X_i'\rho_2 + \varepsilon_i.
+\]
+Here \(\rho_1\) measures whether living near a college predicts higher wages. This is not yet the return to schooling; it is the total reduced-form effect of the instrument on wages.
+
+\subsection*{Structural IV wage equation}
+\[
+    y_i = \alpha + \beta S_i + X_i'\gamma + u_i,
+    \qquad S_i \text{ instrumented by } Z_i.
+\]
+Here \(\beta\) is the IV estimate of the return to schooling. In the simple one-instrument case, the intuition is
+\[
+    \widehat{\beta}_{IV}
+    \approx
+    \frac{\widehat{\rho}_1}{\widehat{\pi}_1}
+    =
+    \frac{\text{effect of college proximity on log wages}}
+         {\text{effect of college proximity on schooling}}.
+\]
+So the IV estimate asks: among the schooling variation shifted by college proximity, how much do wages rise per additional year of schooling?
+
+\section*{3. Column structure of Table 3}
+
+\begin{table}[h!]
+\centering
+\begin{threeparttable}
+\caption{How to read the six columns in Card's Table 3}
+\begin{tabular}{>{\raggedright\arraybackslash}p{1.5cm}
+                >{\raggedright\arraybackslash}p{3.6cm}
+                >{\raggedright\arraybackslash}p{3.5cm}
+                >{\raggedright\arraybackslash}p{4.0cm}}
+\toprule
+Column & Regression type & Dependent variable & Main interpretation \\
+\midrule
+(1) & Reduced form / first stage & Completed years of education & Effect of college proximity on schooling, without full family-background controls. \\
+(2) & Reduced form / first stage & Completed years of education & Same as (1), but with family-background controls. \\
+(3) & Reduced form & Log hourly wage & Effect of college proximity on wages, without full family-background controls. \\
+(4) & Reduced form & Log hourly wage & Same as (3), but with family-background controls. \\
+(5) & Structural IV earnings model & Log hourly wage & IV return to education, using college proximity as instrument, without full family-background controls. \\
+(6) & Structural IV earnings model & Log hourly wage & IV return to education, using college proximity as instrument, with family-background controls. \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item All columns use the 1976 wage/education sample with \(N=3010\). The instrument is whether the respondent lived near a four-year college in 1966. The family-background controls include parental education variables, missing-parental-education indicators, interactions of mother's and father's education, and family-structure dummies at age 14.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\section*{4. Panel A vs. Panel B}
+
+Table 3 has two panels because Card treats labor-market experience differently.
+
+\begin{table}[h!]
+\centering
+\caption{Difference between Panel A and Panel B}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.0cm}
+                >{\raggedright\arraybackslash}p{5.3cm}
+                >{\raggedright\arraybackslash}p{5.3cm}}
+\toprule
+Panel & Treatment of experience & Interpretation \\
+\midrule
+Panel A & Experience and experience squared are treated as exogenous controls. & Baseline IV specification. Schooling is instrumented by college proximity; experience enters as an ordinary control. \\
+Panel B & Experience and experience squared are treated as endogenous. They are instrumented by age and age squared. & Robustness specification. Because experience is mechanically related to schooling, Card checks whether the IV return changes if experience is also instrumented. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{5. Main estimates from Table 3}
+
+\begin{table}[h!]
+\centering
+\begin{threeparttable}
+\caption{Key coefficients in Card's Table 3}
+\begin{tabular}{llcc}
+\toprule
+Panel & Coefficient & No family background controls & With family background controls \\
+\midrule
+A & \(Z_i\) in education equation & \(0.320\;(0.088)\) & \(0.322\;(0.083)\) \\
+A & \(Z_i\) in wage equation & \(0.042\;(0.018)\) & \(0.045\;(0.018)\) \\
+A & IV return to education & \(0.132\;(0.055)\) & \(0.140\;(0.055)\) \\
+\midrule
+B & \(Z_i\) in education equation & \(0.382\;(0.114)\) & \(0.365\;(0.105)\) \\
+B & \(Z_i\) in wage equation & \(0.047\;(0.019)\) & \(0.048\;(0.019)\) \\
+B & IV return to education & \(0.122\;(0.046)\) & \(0.132\;(0.049)\) \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Standard errors are in parentheses. The IV return to education is the coefficient on education in the structural earnings model.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\section*{6. Row-by-row interpretation}
+
+\subsection*{Live near college in 1966: education reduced form}
+
+The coefficient on living near a college is around \(0.32\) to \(0.38\) in the education reduced form. This means that men who grew up near a four-year college completed about one-third of a year more schooling, conditional on the included controls. This is the key relevance result: college proximity predicts schooling.
+
+\subsection*{Live near college in 1966: earnings reduced form}
+
+The coefficient on living near a college is around \(0.042\) to \(0.048\) in the log-wage reduced form. Since the dependent variable is log hourly wage, this means that college proximity is associated with roughly \(4\%\) to \(5\%\) higher hourly wages, conditional on controls. This is not yet the return to schooling; it is the total effect of the instrument on the wage outcome.
+
+\subsection*{Education: structural IV coefficient}
+
+The IV coefficient on education is around \(0.12\) to \(0.14\). This means that one additional year of schooling induced by college proximity is associated with about \(12\%\) to \(14\%\) higher hourly wages. This is much larger than the OLS education coefficients in Table 2, which are around \(0.073\) to \(0.075\).
+
+\subsection*{Family-background controls}
+
+Adding family-background controls barely changes the main pattern. In Panel A, the first stage changes from \(0.320\) to \(0.322\), the reduced-form wage coefficient from \(0.042\) to \(0.045\), and the IV return from \(0.132\) to \(0.140\). This is important for Card's argument: the proximity result does not disappear once family background is controlled for.
+
+\section*{7. Why this table matters for the research design}
+
+Table 3 introduces the actual IV research design. The logic is:
+
+\[
+    \text{college proximity in 1966}
+    \longrightarrow
+    \text{more schooling by 1976}
+    \longrightarrow
+    \text{higher log wages in 1976}.
+\]
+
+The relevant causal interpretation is not simply ``college proximity raises wages.'' Rather, college proximity is used to isolate variation in schooling that is plausibly less contaminated by the usual endogeneity problems of schooling.
+
+In modern LATE language, the IV estimate is a return to schooling for the group whose schooling decisions are shifted by college proximity. These are the compliers: individuals who obtain more education because they grew up close to a college, but would have obtained less education otherwise.
+
+\section*{8. Compact thesis wording}
+
+A concise paragraph for the empirical-design section could be:
+
+\begin{quote}
+Card's college-proximity design uses geographic access to higher education as an instrument for schooling. The instrument is an indicator for whether the respondent lived in a local labor market with a nearby four-year college in 1966, while schooling and wages are measured in the 1976 NLSYM follow-up. Table 3 first documents instrument relevance: college proximity increases completed schooling by roughly one-third of a year. It also predicts log hourly wages by about four to five percent. Dividing the reduced-form wage effect by the reduced-form schooling effect yields IV estimates of the return to schooling between approximately \(0.12\) and \(0.14\), which are substantially larger than the corresponding OLS estimates in Table 2. The table therefore motivates the interpretation that OLS may understate the return to schooling for individuals whose education decisions are shifted by college proximity.
+\end{quote}
+\end{document}
