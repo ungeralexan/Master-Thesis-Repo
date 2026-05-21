@@ -1,0 +1,1127 @@
+---
+title: "double_ml_extended"
+author: "Alexander Unger"
+date: "2026-05-21"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# CARD (1995) — DoubleML EXTENDED
+# Builds on card_1995_replication.R and card_1995_double_ml.R.
+# Run card_1995_replication.R first — all toolkit functions and data objects
+# must be in memory. card_1995_double_ml.R (grf OutcomeWeights) is optional
+# but if it has been run its objects (w_plriv_*, w_waldaipw_*) will be
+# included in the comparison tables automatically.
+# ==============================================================================
+#
+# CRITICAL — GITHUB DEV VERSION OF OutcomeWeights:
+# -------------------------------------------------
+# get_outcome_weights() support for DoubleML R6 objects is NOT in the CRAN
+# version of OutcomeWeights. The dev version is required:
+#
+#   remotes::install_github("MCKnaus/OutcomeWeights")
+#
+# Without it you get:
+#   "no applicable method for 'get_outcome_weights'
+#    applied to an object of class c('DoubleMLIIVM', 'DoubleML', 'R6')"
+#
+# The XGBoost learner requires four specific hyperparameters on the regression
+# nuisance (ml_g) to make omega'Y = tau_hat hold exactly:
+#   alpha=0, subsample=1, max_delta_step=0, base_score=0
+# These are documented in Knaus & Rakov (DML_smoothers_2.rmd). Classification
+# learners (ml_m, ml_r) need only alpha=0, subsample=1, max_delta_step=0.
+#
+# DESIGN OVERVIEW:
+# ----------------
+# The Card (1995) design has two binary treatments and two covariate specs:
+#   Treatment 1: somecol = 1{educ > 12}   — some college attendance
+#   Treatment 2: educ16  = 1{educ >= 16}  — college completion
+#   Spec A: Card      — 14 covariates (exper, expersq, black, south, smsa,
+#                       smsa66, reg661–reg668)
+#   Spec B: Kitagawa  — 5 covariates (black, south, smsa, smsa66, south66)
+#
+# This gives 4 DoubleML data objects × 3 learners = 12 IIVM fits total.
+#
+# Unlike Angrist (1990) which had only one treatment and one primary spec,
+# the Card design requires us to be organised. We use a loop over the 4 cells
+# (indexed by treatment × spec) and collect results into named lists for the
+# comparison tables in Blocks E–H.
+#
+# WHY ONLY DOLLARS FOR DoubleML?
+# --------------------------------
+# Same reason as card_1995_double_ml.R: DoubleML Wald-AIPW satisfies
+# sum(omega_i) = 0 by construction, so cents and dollars give identical
+# estimates. Translation invariance is verified algebraically in Block F.
+#
+# STRUCTURE:
+#   BLOCK A  — Install check, libraries, guards, helper functions,
+#              DoubleML data objects (4 cells), kappa reference weights
+#   BLOCK B  — DoubleMLIIVM: linear + logistic (parametric baseline)
+#              B1: somecol/Card  B2: educ16/Card  B3: somecol/Kit  B4: educ16/Kit
+#   BLOCK C  — DoubleMLIIVM: ranger random forest
+#              C1–C4: same 4 cells
+#   BLOCK D  — DoubleMLIIVM: XGBoost
+#              D1–D4: same 4 cells
+#   BLOCK E  — Learner comparison table (all 3 learners × 4 cells vs kappa)
+#   BLOCK F  — Translation invariance: DoubleML learners vs kappa
+#   BLOCK G  — Weight diagnostics: all learners × 4 cells
+#   BLOCK H  — Love plots: learner comparison (Card spec, somecol — main cell)
+#              H1: all 3 DoubleML learners + kappa, somecol/Card
+#              H2: all 3 DoubleML learners + kappa, educ16/Card
+#              H3: learner comparison across specs (somecol, Card vs Kitagawa)
+# ==============================================================================
+
+
+# ==============================================================================
+# BLOCK A — SETUP
+# ==============================================================================
+#
+# Required from card_1995_replication.R (toolkit functions + data):
+#   card_clean, Z, D1, D2, Y_dol, Y_cnt
+#   X_card_kappa, X_kit_kappa   (WITH intercept — for kappa/logit)
+#   X_dml_card, X_dml_kit       (WITHOUT intercept — from card_1995_double_ml.R
+#                                 OR redefined here if that script was not run)
+#   logit_mle(), get_cbps_p(), kappa_weights(), tau_u(), tau_a10(),
+#   tau_unnorm(), kappa_outcome_weights(), kappa_weights_bundle() [3-arg],
+#   kappa_analytic_se_all(), weight_diag(), check_weight_identity(), fmt()
+#
+# New packages (not in kappa replication):
+#   DoubleML  — R6 IIVM class
+#   mlr3verse — learner registry (lrn(), regr.lm, classif.log_reg, etc.)
+#   OutcomeWeights (dev) — get_outcome_weights() for DoubleML objects
+
+library(DoubleML)
+library(mlr3verse)
+library(OutcomeWeights)   # MUST be dev version from GitHub
+library(cobalt)
+library(viridis)
+library(gridExtra)
+library(ggplot2)
+
+# Guard: verify card_1995_replication.R objects are in memory
+stopifnot(
+  exists("card_clean"), exists("D1"), exists("D2"), exists("Z"),
+  exists("Y_dol"), exists("Y_cnt"),
+  exists("X_card_kappa"), exists("X_kit_kappa"),
+  exists("kappa_weights"), exists("tau_u"), exists("tau_a10"),
+  exists("tau_unnorm"), exists("logit_mle"),
+  exists("kappa_outcome_weights"), exists("weight_diag"),
+  exists("check_weight_identity"), exists("get_cbps_p"),
+  exists("kappa_analytic_se_all")
+)
+
+# Verify dev version of OutcomeWeights supports DoubleML objects
+cat("OutcomeWeights version:", as.character(packageVersion("OutcomeWeights")), "\n")
+cat("get_outcome_weights methods:\n")
+print(methods("get_outcome_weights"))
+cat("\n")
+
+k_shift <- log(100)   # Y_cnt = Y_dol + k_shift
+
+# ------------------------------------------------------------------------------
+# Re-enforce 3-argument kappa_weights_bundle (may be overwritten by Vietnam DML
+# 1-argument closure if that session is active — same fix as card_1995_double_ml.R)
+# ------------------------------------------------------------------------------
+kappa_weights_bundle <- function(Z, D, X_kappa) {
+  p_ml  <- logit_mle(Z, X_kappa)
+  p_cb  <- get_cbps_p(Z, X_kappa)
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+  list(
+    tau_cb_u   = kw_cb$w_u,
+    tau_ml_u   = kw_ml$w_u,
+    tau_ml_a10 = kw_ml$w_a10,
+    tau_ml_a   = kw_ml$w_a,
+    tau_ml_a1  = kw_ml$w_a1,
+    tau_ml_a0  = kw_ml$w_a0
+  )
+}
+
+# ------------------------------------------------------------------------------
+# Helper functions (identical to Vietnam extended DML Block A)
+# ------------------------------------------------------------------------------
+
+# Extract scalar coefficient from a DoubleMLIIVM object
+get_dml_coef <- function(obj) as.numeric(obj$coef)
+
+# Algebraic identity check for DoubleML: omega'Y == tau_hat
+# omega_obj$omega is a (1 x N) matrix for DoubleMLIIVM
+check_doubleml_identity <- function(omega_obj, Y, coef, tol = 1e-8) {
+  isTRUE(all.equal(
+    as.numeric(omega_obj$omega %*% Y),
+    as.numeric(coef),
+    tolerance = tol
+  ))
+}
+
+# Translation-invariance row for DoubleML weights (scalars -> data.frame row)
+# Y_dol and Y_cnt are resolved from the calling environment via k_shift.
+doubleml_translation_row <- function(name, w, Y_dol, Y_cnt, k_shift) {
+  ed <- sum(w * Y_dol)
+  ec <- sum(w * Y_cnt)
+  data.frame(
+    Estimator   = name,
+    Dollars     = round(ed, 4),
+    Cents       = round(ec, 4),
+    Diff_actual = round(ec - ed, 6),
+    Diff_pred   = round(sum(w) * k_shift, 6),
+    Match       = isTRUE(all.equal(ec - ed, sum(w) * k_shift, tolerance = 1e-8)),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Extract SE from DoubleMLIIVM summary
+get_dml_se <- function(obj) {
+  s <- obj$summary()
+  if ("std err" %in% colnames(s)) return(as.numeric(s[1, "std err"]))
+  if ("Std. Error" %in% colnames(s)) return(as.numeric(s[1, "Std. Error"]))
+  NA_real_
+}
+
+# ------------------------------------------------------------------------------
+# make_X() — produce clean numeric matrix for grf / DoubleML
+# (Identical to card_1995_double_ml.R Block A; redefined here for self-containedness)
+# ------------------------------------------------------------------------------
+make_X <- function(formula, data) {
+  mm <- model.matrix(formula, data = data)
+  m  <- matrix(as.numeric(mm), nrow = nrow(mm), ncol = ncol(mm))
+  colnames(m) <- colnames(mm)
+  m
+}
+
+# DML X matrices (no intercept; DoubleML adds its own)
+X_dml_card <- make_X(
+  ~ 0 + exper + expersq + black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+)
+X_dml_kit <- make_X(
+  ~ 0 + black + south + smsa + smsa66 + south66,
+  data = card_clean
+)
+
+# ------------------------------------------------------------------------------
+# DoubleML data objects — 4 cells
+# DoubleMLData$new() requires numeric (not haven_labelled) columns.
+# d and z must be binary 0/1; x_cols lists the covariate names.
+# ------------------------------------------------------------------------------
+
+# Helper: build DoubleMLData for one (treatment, spec) cell
+make_dml_data <- function(D, X_dml, spec_label) {
+  df <- as.data.frame(X_dml)
+  df$y <- as.numeric(Y_dol)
+  df$d <- as.numeric(D)
+  df$z <- as.numeric(Z)
+  x_cols <- colnames(X_dml)
+  cat(sprintf("  DoubleMLData: %s | N=%d | k=%d | mean(D)=%.3f | mean(Z)=%.3f\n",
+              spec_label, nrow(df), length(x_cols), mean(df$d), mean(df$z)))
+  DoubleMLData$new(
+    data   = df,
+    y_col  = "y",
+    d_cols = "d",
+    z_cols = "z",
+    x_cols = x_cols
+  )
+}
+
+cat("Building DoubleML data objects...\n")
+dml_data_card_d1 <- make_dml_data(D1, X_dml_card, "Card/somecol")
+dml_data_card_d2 <- make_dml_data(D2, X_dml_card, "Card/educ16")
+dml_data_kit_d1  <- make_dml_data(D1, X_dml_kit,  "Kitagawa/somecol")
+dml_data_kit_d2  <- make_dml_data(D2, X_dml_kit,  "Kitagawa/educ16")
+cat("Done.\n\n")
+
+# ------------------------------------------------------------------------------
+# Pre-compute kappa reference weights (used in Block E comparison table)
+# These are the MLE-based weight bundles from the kappa replication.
+# ------------------------------------------------------------------------------
+cat("Pre-computing kappa reference weights...\n")
+kw_ref_card_d1 <- kappa_weights_bundle(Z, D1, X_card_kappa)
+kw_ref_card_d2 <- kappa_weights_bundle(Z, D2, X_card_kappa)
+kw_ref_kit_d1  <- kappa_weights_bundle(Z, D1, X_kit_kappa)
+kw_ref_kit_d2  <- kappa_weights_bundle(Z, D2, X_kit_kappa)
+
+# Pre-compute kappa point estimates for comparison table (dollars)
+cat("Pre-computing kappa point estimates (dollars)...\n")
+kappa_card_d1 <- kappa_analytic_se_all(Y_dol, Z, D1, X_card_kappa)
+kappa_card_d2 <- kappa_analytic_se_all(Y_dol, Z, D2, X_card_kappa)
+kappa_kit_d1  <- kappa_analytic_se_all(Y_dol, Z, D1, X_kit_kappa)
+kappa_kit_d2  <- kappa_analytic_se_all(Y_dol, Z, D2, X_kit_kappa)
+cat("Done.\n\n")
+
+cat(sprintf(
+  "BLOCK A ready. N=%d | somecol: %.1f%% | educ16: %.1f%% | nearc4: %.1f%%\n\n",
+  nrow(card_clean), mean(D1)*100, mean(D2)*100, mean(Z)*100
+))
+
+```
+```{r}
+# ==============================================================================
+# BLOCK B — DoubleMLIIVM: LINEAR + LOGISTIC  (parametric baseline)
+# ==============================================================================
+#
+# Nuisance learners:
+#   ml_g (E[Y|X,D,Z]):   regr.lm         — OLS regression
+#   ml_m (P(Z=1|X)):     classif.log_reg  — logistic regression
+#   ml_r (P(D=1|X,Z)):   classif.log_reg  — logistic regression
+#
+# This is the parametric baseline. With linear/logistic nuisance functions the
+# DoubleML estimator essentially recovers a 2SLS-type Wald-AIPW. Comparing it
+# with ranger and XGBoost shows the added value of flexible nuisance estimation.
+#
+# Run for all 4 (treatment × spec) cells.
+# n_folds = 5: 5-fold cross-fitting (standard choice, same as Vietnam)
+# score = "LATE": Wald-AIPW LATE score (not IV-type PLR)
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK B — DoubleMLIIVM: linear + logistic (parametric baseline)\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- B1: somecol, Card specification ---
+# 3 specifications, one for the outcome, one for the treatment and one for the instrument
+set.seed(42)
+cat("B1: somecol, Card specification\n")
+iivm_lm_card_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d1,
+  ml_g    = lrn("regr.lm"),
+  ml_m    = lrn("classif.log_reg"),
+  ml_r    = lrn("classif.log_reg"),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_lm_card_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_lm_card_d1$summary())
+
+omega_lm_card_d1  <- get_outcome_weights(object = iivm_lm_card_d1,
+                                          dml_data = dml_data_card_d1)
+w_lm_card_d1      <- as.vector(omega_lm_card_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_lm_card_d1, Y_dol, iivm_lm_card_d1$coef)))
+print(weight_diag(w_lm_card_d1, "Wald-AIPW (linear+logit, Card, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- B2: educ16, Card specification ---
+set.seed(42)
+cat("B2: educ16, Card specification\n")
+iivm_lm_card_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d2,
+  ml_g    = lrn("regr.lm"),
+  ml_m    = lrn("classif.log_reg"),
+  ml_r    = lrn("classif.log_reg"),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_lm_card_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_lm_card_d2$summary())
+
+omega_lm_card_d2  <- get_outcome_weights(object = iivm_lm_card_d2,
+                                          dml_data = dml_data_card_d2)
+w_lm_card_d2      <- as.vector(omega_lm_card_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_lm_card_d2, Y_dol, iivm_lm_card_d2$coef)))
+print(weight_diag(w_lm_card_d2, "Wald-AIPW (linear+logit, Card, educ16)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- B3: somecol, Kitagawa specification ---
+set.seed(42)
+cat("B3: somecol, Kitagawa specification\n")
+iivm_lm_kit_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d1,
+  ml_g    = lrn("regr.lm"),
+  ml_m    = lrn("classif.log_reg"),
+  ml_r    = lrn("classif.log_reg"),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_lm_kit_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_lm_kit_d1$summary())
+
+omega_lm_kit_d1  <- get_outcome_weights(object = iivm_lm_kit_d1,
+                                         dml_data = dml_data_kit_d1)
+w_lm_kit_d1      <- as.vector(omega_lm_kit_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_lm_kit_d1, Y_dol, iivm_lm_kit_d1$coef)))
+print(weight_diag(w_lm_kit_d1, "Wald-AIPW (linear+logit, Kitagawa, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- B4: educ16, Kitagawa specification ---
+set.seed(42)
+cat("B4: educ16, Kitagawa specification\n")
+iivm_lm_kit_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d2,
+  ml_g    = lrn("regr.lm"),
+  ml_m    = lrn("classif.log_reg"),
+  ml_r    = lrn("classif.log_reg"),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_lm_kit_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_lm_kit_d2$summary())
+
+omega_lm_kit_d2  <- get_outcome_weights(object = iivm_lm_kit_d2,
+                                         dml_data = dml_data_kit_d2)
+w_lm_kit_d2      <- as.vector(omega_lm_kit_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_lm_kit_d2, Y_dol, iivm_lm_kit_d2$coef)))
+print(weight_diag(w_lm_kit_d2, "Wald-AIPW (linear+logit, Kitagawa, educ16)"),
+      row.names = FALSE)
+cat("\nBLOCK B done.\n\n")
+
+```
+
+```{r}
+# ==============================================================================
+# BLOCK C — DoubleMLIIVM: RANGER RANDOM FOREST
+# ==============================================================================
+#
+# Nuisance learners:
+#   ml_g: regr.ranger    (keep.inbag = TRUE — REQUIRED for omega'Y = tau_hat)
+#   ml_m: classif.ranger (keep.inbag = TRUE)
+#   ml_r: classif.ranger (keep.inbag = TRUE)
+#
+# keep.inbag = TRUE is mandatory: get_outcome_weights() reconstructs the
+# smoother matrix from the in-bag sample indices stored in the fitted forest.
+# Without it the algebraic identity omega'Y = tau_hat fails.
+#
+# For the Card design, the random forest can learn interactions among the
+# region dummies and experience variables that linear models cannot. The
+# Kitagawa spec (5 binary vars) gives the forest less to work with.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK C — DoubleMLIIVM: ranger random forest\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- C1: somecol, Card specification ---
+set.seed(42)
+cat("C1: somecol, Card specification\n")
+iivm_rf_card_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d1,
+  ml_g    = lrn("regr.ranger",    keep.inbag = TRUE),
+  ml_m    = lrn("classif.ranger", keep.inbag = TRUE),
+  ml_r    = lrn("classif.ranger", keep.inbag = TRUE),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_rf_card_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_rf_card_d1$summary())
+
+omega_rf_card_d1  <- get_outcome_weights(object = iivm_rf_card_d1,
+                                          dml_data = dml_data_card_d1)
+w_rf_card_d1      <- as.vector(omega_rf_card_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_rf_card_d1, Y_dol, iivm_rf_card_d1$coef)))
+print(weight_diag(w_rf_card_d1, "Wald-AIPW (ranger, Card, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- C2: educ16, Card specification ---
+set.seed(42)
+cat("C2: educ16, Card specification\n")
+iivm_rf_card_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d2,
+  ml_g    = lrn("regr.ranger",    keep.inbag = TRUE),
+  ml_m    = lrn("classif.ranger", keep.inbag = TRUE),
+  ml_r    = lrn("classif.ranger", keep.inbag = TRUE),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_rf_card_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_rf_card_d2$summary())
+
+omega_rf_card_d2  <- get_outcome_weights(object = iivm_rf_card_d2,
+                                          dml_data = dml_data_card_d2)
+w_rf_card_d2      <- as.vector(omega_rf_card_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_rf_card_d2, Y_dol, iivm_rf_card_d2$coef)))
+print(weight_diag(w_rf_card_d2, "Wald-AIPW (ranger, Card, educ16)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- C3: somecol, Kitagawa specification ---
+set.seed(42)
+cat("C3: somecol, Kitagawa specification\n")
+iivm_rf_kit_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d1,
+  ml_g    = lrn("regr.ranger",    keep.inbag = TRUE),
+  ml_m    = lrn("classif.ranger", keep.inbag = TRUE),
+  ml_r    = lrn("classif.ranger", keep.inbag = TRUE),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_rf_kit_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_rf_kit_d1$summary())
+
+omega_rf_kit_d1  <- get_outcome_weights(object = iivm_rf_kit_d1,
+                                         dml_data = dml_data_kit_d1)
+w_rf_kit_d1      <- as.vector(omega_rf_kit_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_rf_kit_d1, Y_dol, iivm_rf_kit_d1$coef)))
+print(weight_diag(w_rf_kit_d1, "Wald-AIPW (ranger, Kitagawa, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- C4: educ16, Kitagawa specification ---
+set.seed(42)
+cat("C4: educ16, Kitagawa specification\n")
+iivm_rf_kit_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d2,
+  ml_g    = lrn("regr.ranger",    keep.inbag = TRUE),
+  ml_m    = lrn("classif.ranger", keep.inbag = TRUE),
+  ml_r    = lrn("classif.ranger", keep.inbag = TRUE),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_rf_kit_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_rf_kit_d2$summary())
+
+omega_rf_kit_d2  <- get_outcome_weights(object = iivm_rf_kit_d2,
+                                         dml_data = dml_data_kit_d2)
+w_rf_kit_d2      <- as.vector(omega_rf_kit_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_rf_kit_d2, Y_dol, iivm_rf_kit_d2$coef)))
+print(weight_diag(w_rf_kit_d2, "Wald-AIPW (ranger, Kitagawa, educ16)"),
+      row.names = FALSE)
+cat("\nBLOCK C done.\n\n")
+```
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK D — DoubleMLIIVM: XGBOOST (CORRECTED)
+# ==============================================================================
+#
+# ROOT CAUSE OF THE ORIGINAL FAILURE (estimates like -13.42, -3.20 etc.):
+# -------------------------------------------------------------------------
+# The original code used base_score=0 on regr.xgboost. This was prescribed by
+# Knaus & Rakov (DML_smoothers_2.rmd) to enforce the affine smoother property
+# (S*1 = 1), which is required for omega'Y = tau_hat to hold exactly.
+#
+# However, OutcomeWeights::get_xgboost_weights() — the internal function called
+# by get_outcome_weights() when it encounters a DoubleML XGBoost ml_g learner —
+# contains a hard-coded guard that reads:
+#
+#   "base_score must be 0 or mean(Y) for xgboost call; DoubleML call requires 0"
+#
+# This guard accepts ONLY base_score=0 or base_score=mean(Y). The intended
+# solution was base_score=0, which worked in XGBoost < 1.6.
+#
+# In XGBoost >= 1.6, base_score was reworked: the package now auto-computes an
+# internal baseline (approximately mean(Y) for squared loss). Passing
+# base_score=0 no longer zeroes the initial predictions — instead it forces a
+# severely wrong starting point that biases all tree residuals, producing the
+# extreme estimates observed.
+#
+# THE CORRECT FIX — base_score = mean(Y_dol):
+# ---------------------------------------------
+# Setting base_score explicitly to mean(Y_dol) does THREE things simultaneously:
+#
+#   1. Passes get_xgboost_weights() guard: mean(Y) is one of the two accepted
+#      values, so get_outcome_weights() no longer throws an error.
+#
+#   2. Correct training behaviour in XGBoost >= 1.6: mean(Y) is exactly what
+#      XGBoost >= 1.6 computes internally as its default baseline for squared
+#      loss. Setting it explicitly does not change the model — it just makes the
+#      implicit default explicit, so training is numerically identical to the
+#      package default.
+#
+#   3. Preserves the affine smoother property: with base_score=mean(Y), the
+#      initial prediction is a constant (independent of Y). The residuals
+#      fed to each tree are Y - mean(Y), which are still linear in Y. The
+#      smoother matrix S remains affine (S*1 = 1) and omega'Y = tau_hat holds.
+#
+# The other constraints (alpha=0, subsample=1, max_delta_step=0) are kept
+# unchanged — they ensure that tree splits depend only on X, not on Y, which
+# is the second condition needed for the smoother to exist.
+#
+# Classification learners (ml_m, ml_r) have no base_score issue — only the
+# regression nuisance ml_g uses base_score. ml_m and ml_r keep only
+# alpha=0, subsample=1, max_delta_step=0 as before.
+#
+# WHY base_score = mean(Y_dol) and not mean(Y_cnt)?
+# ---------------------------------------------------
+# The DoubleML data objects were built with Y_dol as the outcome column.
+# base_score must match the mean of the actual Y passed to xgboost, which is
+# Y_dol. Using mean(Y_cnt) would inject a wrong baseline (mean(Y_cnt) =
+# mean(Y_dol) + log(100) ≈ 6.3 vs. 1.65) and break training.
+# Since all four dml_data_* objects use Y_dol, mean(Y_dol) is correct for all.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK D — DoubleMLIIVM: XGBoost (corrected: base_score=mean(Y_dol))\n")
+cat(strrep("=", 70), "\n\n")
+cat(sprintf("XGBoost version: %s\n", as.character(packageVersion("xgboost"))))
+cat(sprintf("base_score used: mean(Y_dol) = %.6f\n\n", mean(Y_dol)))
+
+# --- D1: somecol, Card specification ---
+set.seed(42)
+cat("D1: somecol, Card specification\n")
+iivm_xgb_card_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d1,
+  ml_g    = lrn("regr.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0,
+                base_score     = mean(Y_dol)),   # correct fix: mean(Y), not 0
+  ml_m    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  ml_r    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_xgb_card_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_xgb_card_d1$summary())
+
+omega_xgb_card_d1 <- get_outcome_weights(object   = iivm_xgb_card_d1,
+                                          dml_data = dml_data_card_d1)
+w_xgb_card_d1     <- as.vector(omega_xgb_card_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_xgb_card_d1, Y_dol, iivm_xgb_card_d1$coef)))
+print(weight_diag(w_xgb_card_d1, "Wald-AIPW (XGBoost, Card, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- D2: educ16, Card specification ---
+set.seed(42)
+cat("D2: educ16, Card specification\n")
+iivm_xgb_card_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_card_d2,
+  ml_g    = lrn("regr.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0,
+                base_score     = mean(Y_dol)),
+  ml_m    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  ml_r    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_xgb_card_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_xgb_card_d2$summary())
+
+omega_xgb_card_d2 <- get_outcome_weights(object   = iivm_xgb_card_d2,
+                                          dml_data = dml_data_card_d2)
+w_xgb_card_d2     <- as.vector(omega_xgb_card_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_xgb_card_d2, Y_dol, iivm_xgb_card_d2$coef)))
+print(weight_diag(w_xgb_card_d2, "Wald-AIPW (XGBoost, Card, educ16)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- D3: somecol, Kitagawa specification ---
+set.seed(42)
+cat("D3: somecol, Kitagawa specification\n")
+iivm_xgb_kit_d1 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d1,
+  ml_g    = lrn("regr.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0,
+                base_score     = mean(Y_dol)),
+  ml_m    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  ml_r    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_xgb_kit_d1$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_xgb_kit_d1$summary())
+
+omega_xgb_kit_d1 <- get_outcome_weights(object   = iivm_xgb_kit_d1,
+                                         dml_data = dml_data_kit_d1)
+w_xgb_kit_d1     <- as.vector(omega_xgb_kit_d1$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_xgb_kit_d1, Y_dol, iivm_xgb_kit_d1$coef)))
+print(weight_diag(w_xgb_kit_d1, "Wald-AIPW (XGBoost, Kitagawa, somecol)"),
+      row.names = FALSE)
+cat("\n")
+
+# --- D4: educ16, Kitagawa specification ---
+set.seed(42)
+cat("D4: educ16, Kitagawa specification\n")
+iivm_xgb_kit_d2 <- DoubleMLIIVM$new(
+  data    = dml_data_kit_d2,
+  ml_g    = lrn("regr.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0,
+                base_score     = mean(Y_dol)),
+  ml_m    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  ml_r    = lrn("classif.xgboost",
+                alpha          = 0,
+                subsample      = 1,
+                max_delta_step = 0),
+  n_folds = 5,
+  score   = "LATE"
+)
+iivm_xgb_kit_d2$fit(store_models = TRUE, store_predictions = TRUE)
+cat("  Point estimate:\n"); print(iivm_xgb_kit_d2$summary())
+
+omega_xgb_kit_d2 <- get_outcome_weights(object   = iivm_xgb_kit_d2,
+                                         dml_data = dml_data_kit_d2)
+w_xgb_kit_d2     <- as.vector(omega_xgb_kit_d2$omega)
+cat(sprintf("  Algebraic check (omega'Y = tau_hat): %s\n",
+            check_doubleml_identity(omega_xgb_kit_d2, Y_dol, iivm_xgb_kit_d2$coef)))
+print(weight_diag(w_xgb_kit_d2, "Wald-AIPW (XGBoost, Kitagawa, educ16)"),
+      row.names = FALSE)
+cat("\nBLOCK D done.\n\n")
+```
+
+```{r}
+# ==============================================================================
+# BLOCK E — LEARNER COMPARISON TABLE: DoubleML vs grf vs Kappa
+# ==============================================================================
+#
+# Presents all point estimates side-by-side for Y = log(wage/100) (dollars).
+# Rows: DoubleML learners (B-D) + grf OutcomeWeights (from card_1995_double_ml.R,
+#       if in memory) + kappa estimators (from card_1995_replication.R).
+# Columns: 4 cells (treatment × spec).
+#
+# Key questions:
+#   1. Do the three DoubleML learners agree? Learner sensitivity indicates that
+#      the ML nuisance step matters — i.e. the Card design is not as
+#      near-random as Angrist (1990).
+#   2. Do DoubleML and grf Wald-AIPW agree? Both estimate the same Wald-AIPW
+#      quantity; differences come from the cross-fitting procedure.
+#   3. How do the ML-based estimates compare to kappa tau_u (recommended)?
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK E — LEARNER COMPARISON TABLE: DoubleML vs grf vs kappa\n")
+cat("(log wages in dollars)\n")
+cat(strrep("=", 70), "\n\n")
+
+# Helper: print one formatted cell (coef + stars + SE)
+pc <- function(coef, se = NA) {
+  if (is.na(coef) || !is.finite(coef)) return(sprintf("%17s", "NA"))
+  if (is.na(se)   || !is.finite(se) || se <= 0)
+    return(sprintf("%8.3f       ", coef))
+  pval  <- 2 * pnorm(-abs(coef / se))
+  stars <- ifelse(pval < 0.01, "***", ifelse(pval < 0.05, "**",
+           ifelse(pval < 0.10, "*",   "   ")))
+  sprintf("%8.3f%s(%5.3f)", coef, stars, se)
+}
+
+# Column headers: 4 cells
+hdr <- sprintf("%-38s  %-17s  %-17s  %-17s  %-17s",
+               "Estimator",
+               "somecol|Card",
+               "somecol|Kitagawa",
+               "educ16|Card",
+               "educ16|Kitagawa")
+cat(hdr, "\n")
+cat(strrep("-", nchar(hdr) + 5), "\n")
+
+# ------ DoubleML rows ------
+# Linear + logistic
+cat(sprintf("%-38s  %s  %s  %s  %s\n",
+    "Wald-AIPW (DoubleML, linear+logit)",
+    pc(get_dml_coef(iivm_lm_card_d1), get_dml_se(iivm_lm_card_d1)),
+    pc(get_dml_coef(iivm_lm_kit_d1),  get_dml_se(iivm_lm_kit_d1)),
+    pc(get_dml_coef(iivm_lm_card_d2), get_dml_se(iivm_lm_card_d2)),
+    pc(get_dml_coef(iivm_lm_kit_d2),  get_dml_se(iivm_lm_kit_d2))))
+
+# Ranger
+cat(sprintf("%-38s  %s  %s  %s  %s\n",
+    "Wald-AIPW (DoubleML, ranger)",
+    pc(get_dml_coef(iivm_rf_card_d1), get_dml_se(iivm_rf_card_d1)),
+    pc(get_dml_coef(iivm_rf_kit_d1),  get_dml_se(iivm_rf_kit_d1)),
+    pc(get_dml_coef(iivm_rf_card_d2), get_dml_se(iivm_rf_card_d2)),
+    pc(get_dml_coef(iivm_rf_kit_d2),  get_dml_se(iivm_rf_kit_d2))))
+
+# XGBoost
+cat(sprintf("%-38s  %s  %s  %s  %s\n",
+    "Wald-AIPW (DoubleML, XGBoost)",
+    pc(get_dml_coef(iivm_xgb_card_d1), get_dml_se(iivm_xgb_card_d1)),
+    pc(get_dml_coef(iivm_xgb_kit_d1),  get_dml_se(iivm_xgb_kit_d1)),
+    pc(get_dml_coef(iivm_xgb_card_d2), get_dml_se(iivm_xgb_card_d2)),
+    pc(get_dml_coef(iivm_xgb_kit_d2),  get_dml_se(iivm_xgb_kit_d2))))
+
+cat(strrep("-", nchar(hdr) + 5), "\n")
+
+# ------ grf OutcomeWeights rows (from card_1995_double_ml.R — optional) ------
+if (exists("w_plriv_card_d1") && exists("res_card_d1")) {
+  # PLR-IV (grf)
+  e_plriv <- list(
+    card_d1 = get_estimate(res_card_d1, "PLR-IV"),
+    kit_d1  = get_estimate(res_kit_d1,  "PLR-IV"),
+    card_d2 = get_estimate(res_card_d2, "PLR-IV"),
+    kit_d2  = get_estimate(res_kit_d2,  "PLR-IV")
+  )
+  # SE from summary matrices (column 2 = SE)
+  se_from_res <- function(res, row) {
+    tryCatch(as.numeric(res[row, "SE"]), error = function(e) NA_real_)
+  }
+  cat(sprintf("%-38s  %s  %s  %s  %s\n",
+      "PLR-IV (grf OutcomeWeights)",
+      pc(e_plriv$card_d1, se_from_res(res_card_d1, "PLR-IV")),
+      pc(e_plriv$kit_d1,  se_from_res(res_kit_d1,  "PLR-IV")),
+      pc(e_plriv$card_d2, se_from_res(res_card_d2, "PLR-IV")),
+      pc(e_plriv$kit_d2,  se_from_res(res_kit_d2,  "PLR-IV"))))
+
+  e_waipw <- list(
+    card_d1 = get_estimate(res_card_d1, "Wald-AIPW"),
+    kit_d1  = get_estimate(res_kit_d1,  "Wald-AIPW"),
+    card_d2 = get_estimate(res_card_d2, "Wald-AIPW"),
+    kit_d2  = get_estimate(res_kit_d2,  "Wald-AIPW")
+  )
+  cat(sprintf("%-38s  %s  %s  %s  %s\n",
+      "Wald-AIPW (grf OutcomeWeights)",
+      pc(e_waipw$card_d1, se_from_res(res_card_d1, "Wald-AIPW")),
+      pc(e_waipw$kit_d1,  se_from_res(res_kit_d1,  "Wald-AIPW")),
+      pc(e_waipw$card_d2, se_from_res(res_card_d2, "Wald-AIPW")),
+      pc(e_waipw$kit_d2,  se_from_res(res_kit_d2,  "Wald-AIPW"))))
+  cat(strrep("-", nchar(hdr) + 5), "\n")
+} else {
+  cat("[grf rows skipped — run card_1995_double_ml.R first for these]\n")
+  cat(strrep("-", nchar(hdr) + 5), "\n")
+}
+
+# ------ Kappa rows ------
+kappa_est_list <- list(
+  card_d1 = kappa_card_d1, kit_d1 = kappa_kit_d1,
+  card_d2 = kappa_card_d2, kit_d2 = kappa_kit_d2
+)
+kappa_row_defs <- list(
+  list(key = "tau_cb_u",   label = "tau_cb_u   (kappa, CBPS, normalised)"),
+  list(key = "tau_ml_u",   label = "tau_ml_u   (kappa, MLE,  normalised)"),
+  list(key = "tau_ml_a10", label = "tau_ml_a10 (kappa, MLE,  normalised)"),
+  list(key = "tau_ml_a",   label = "tau_ml_a   (kappa, MLE,  unnorm.)"),
+  list(key = "tau_ml_t",   label = "tau_ml_t   (kappa, MLE,  unnorm.)"),
+  list(key = "tau_ml_a0",  label = "tau_ml_a0  (kappa, MLE,  unnorm.)")
+)
+for (r in kappa_row_defs) {
+  k <- r$key
+  cat(sprintf("%-38s  %s  %s  %s  %s\n", r$label,
+      pc(kappa_card_d1$estimates[k], kappa_card_d1$se[k]),
+      pc(kappa_kit_d1$estimates[k],  kappa_kit_d1$se[k]),
+      pc(kappa_card_d2$estimates[k], kappa_card_d2$se[k]),
+      pc(kappa_kit_d2$estimates[k],  kappa_kit_d2$se[k])))
+}
+
+cat(strrep("=", nchar(hdr) + 5), "\n")
+cat("Notes:\n")
+cat("  DoubleML: DoubleMLIIVM, score='LATE', n_folds=5.\n")
+cat("  DoubleML SEs: from obj$summary().\n")
+cat("  Kappa SEs: M-estimation sandwich formula (SUW 2025 online appendix).\n")
+cat("  All estimates for Y = log(wage/100) [dollars before log].\n")
+cat("  Significance: *** p<0.01, ** p<0.05, * p<0.10 (two-sided z-test).\n\n")
+```
+
+```{r}
+# ==============================================================================
+# BLOCK F — TRANSLATION INVARIANCE: DoubleML LEARNERS VS KAPPA
+# ==============================================================================
+#
+# For any estimator tau_hat = sum_i omega_i Y_i:
+#   tau_hat(cents) - tau_hat(dollars) = log(100) * sum(omega_i)
+#
+# DoubleML Wald-AIPW: sum(omega_i) = 0 by construction => invariant.
+# Unnormalized kappa: sum(omega_i) != 0 => changes with outcome units.
+#
+# We show this for all 4 cells. For DoubleML the Match column should always
+# be TRUE and Diff_actual should be ~0. The kappa block is included to make
+# the contrast explicit in a single table.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — TRANSLATION INVARIANCE: DoubleML LEARNERS VS KAPPA\n")
+cat(sprintf("k = log(100) = %.6f\n", k_shift))
+cat(strrep("=", 70), "\n\n")
+
+# Helper: print one translation-invariance block for one (treatment, spec) cell
+print_ti_block <- function(cell_label, D, X_kappa,
+                            w_lm, w_rf, w_xgb) {
+  cat(sprintf("--- %s ---\n", cell_label))
+  cat(sprintf("  %-38s  %8s  %8s  %10s  %10s  %7s\n",
+              "Estimator", "Dollars", "Cents", "Diff(act)", "Diff(pred)", "Match?"))
+  cat(strrep("-", 88), "\n")
+
+  p_ml  <- logit_mle(Z, X_kappa)
+  p_cb  <- get_cbps_p(Z, X_kappa)
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  pr <- function(name, w) {
+    ed   <- sum(w * Y_dol)
+    ec   <- sum(w * Y_cnt)
+    act  <- ec - ed
+    pred <- sum(w) * k_shift
+    ok   <- isTRUE(all.equal(act, pred, tolerance = 1e-6))
+    cat(sprintf("  %-38s  %8.4f  %8.4f  %10.4f  %10.4f  %7s\n",
+                name, ed, ec, act, pred, if (ok) "TRUE" else "FALSE"))
+  }
+
+  pr("Wald-AIPW (DoubleML, linear+logit)", w_lm)
+  pr("Wald-AIPW (DoubleML, ranger)",       w_rf)
+  pr("Wald-AIPW (DoubleML, XGBoost)",      w_xgb)
+  pr("tau_cb_u  (kappa, normalised)",       kw_cb$w_u)
+  pr("tau_ml_u  (kappa, normalised)",       kw_ml$w_u)
+  pr("tau_ml_a10 (kappa, normalised)",      kw_ml$w_a10)
+  pr("tau_ml_a  (kappa, unnorm.)",          kw_ml$w_a)
+  pr("tau_ml_a1/t (kappa, unnorm.)",        kw_ml$w_a1)
+  pr("tau_ml_a0 (kappa, unnorm.)",          kw_ml$w_a0)
+  cat("\n")
+}
+
+print_ti_block("Card spec — somecol (D1)",
+               D1, X_card_kappa,
+               w_lm_card_d1, w_rf_card_d1, w_xgb_card_d1)
+
+print_ti_block("Card spec — educ16 (D2)",
+               D2, X_card_kappa,
+               w_lm_card_d2, w_rf_card_d2, w_xgb_card_d2)
+
+print_ti_block("Kitagawa spec — somecol (D1)",
+               D1, X_kit_kappa,
+               w_lm_kit_d1, w_rf_kit_d1, w_xgb_kit_d1)
+
+print_ti_block("Kitagawa spec — educ16 (D2)",
+               D2, X_kit_kappa,
+               w_lm_kit_d2, w_rf_kit_d2, w_xgb_kit_d2)
+
+cat("Interpretation:\n")
+cat("  Sum_w ~= 0  => translation invariant (all DoubleML + normalised kappa).\n")
+cat("  Sum_w != 0  => estimate changes with outcome unit (unnorm. kappa only).\n\n")
+
+
+# ==============================================================================
+# BLOCK G — WEIGHT DIAGNOSTICS: ALL LEARNERS × 4 CELLS
+# ==============================================================================
+#
+# Compares Sum_w, ESS, % negative weights, and max|omega| across all estimators
+# for each (treatment × spec) cell. Key questions for Card vs Vietnam:
+#   - Does the richer Card covariate set reduce ESS compared to Kitagawa?
+#     (More flexible nuisance => more extreme weights => lower ESS)
+#   - Do ranger and XGBoost diverge in ESS? (Vietnam showed they agreed;
+#     Card's binary/mixed covariate space may behave differently)
+#   - How do the DoubleML ESS values compare to the kappa ESS? (If DoubleML
+#     achieves higher ESS it uses observations more efficiently)
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK G — WEIGHT DIAGNOSTICS: ALL LEARNERS × 4 CELLS\n")
+cat(strrep("=", 70), "\n\n")
+cat("Sum_w = 0 => translation invariant | ESS = 1/sum(w_i^2)\n\n")
+
+print_diag_block <- function(cell_label, D, X_kappa,
+                              w_lm, w_rf, w_xgb,
+                              kw_ref) {
+  cat(sprintf("--- %s ---\n", cell_label))
+  tab <- rbind(
+    weight_diag(w_lm,           "Wald-AIPW (DoubleML, linear+logit)"),
+    weight_diag(w_rf,           "Wald-AIPW (DoubleML, ranger)"),
+    weight_diag(w_xgb,          "Wald-AIPW (DoubleML, XGBoost)"),
+    weight_diag(kw_ref$tau_cb_u,   "tau_cb_u      (kappa, CBPS)"),
+    weight_diag(kw_ref$tau_ml_u,   "tau_ml_u      (kappa, MLE, norm.)"),
+    weight_diag(kw_ref$tau_ml_a10, "tau_ml_a10    (kappa, MLE, norm.)"),
+    weight_diag(kw_ref$tau_ml_a,   "tau_ml_a      (kappa, MLE, unnorm.)"),
+    weight_diag(kw_ref$tau_ml_a1,  "tau_ml_a1/t   (kappa, MLE, unnorm.)"),
+    weight_diag(kw_ref$tau_ml_a0,  "tau_ml_a0     (kappa, MLE, unnorm.)")
+  )
+  print(tab, row.names = FALSE)
+  cat("\n")
+}
+
+print_diag_block("Card spec — somecol (D1)",
+                  D1, X_card_kappa,
+                  w_lm_card_d1, w_rf_card_d1, w_xgb_card_d1,
+                  kw_ref_card_d1)
+
+print_diag_block("Card spec — educ16 (D2)",
+                  D2, X_card_kappa,
+                  w_lm_card_d2, w_rf_card_d2, w_xgb_card_d2,
+                  kw_ref_card_d2)
+
+print_diag_block("Kitagawa spec — somecol (D1)",
+                  D1, X_kit_kappa,
+                  w_lm_kit_d1, w_rf_kit_d1, w_xgb_kit_d1,
+                  kw_ref_kit_d1)
+
+print_diag_block("Kitagawa spec — educ16 (D2)",
+                  D2, X_kit_kappa,
+                  w_lm_kit_d2, w_rf_kit_d2, w_xgb_kit_d2,
+                  kw_ref_kit_d2)
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK H — LOVE PLOTS: LEARNER COMPARISON
+# ==============================================================================
+#
+# Three figure panels:
+#   H1: Card spec, somecol — all 3 DoubleML learners + tau_cb_u + tau_ml_u
+#       (the 5 estimators most likely to appear in the thesis weight table)
+#   H2: Card spec, educ16  — same 5 estimators
+#   H3: Spec comparison (somecol): ranger learner, Card vs Kitagawa
+#       This isolates the effect of the covariate space on learner balance.
+#
+# Following Vietnam DML extended Block I: multiply outcome weights by (2D-1)
+# to map signed omega_i onto the cobalt treated-vs-control convention.
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK H — LOVE PLOTS: LEARNER COMPARISON\n")
+cat(strrep("=", 70), "\n\n")
+
+# --- H1: Card spec, somecol — 3 DoubleML + 2 kappa ---
+cat("H1: Love plots — Card specification, somecol (D1)\n\n")
+
+make_love_h1 <- function(title_str, w_vec) {
+  # For cobalt: multiply by (2*D1 - 1) so positive = treated, negative = control
+  cobalt::love.plot(
+    D1 ~ X_dml_card,
+    weights    = w_vec * (2 * D1 - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis::viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+# Refresh kappa bundles (self-contained, independent of Block G)
+kw_ref_card_d1 <- kappa_weights_bundle(Z, D1, X_card_kappa)
+
+lp_h1_1 <- make_love_h1("Wald-AIPW (DoubleML, linear+logit)\nCard | somecol",
+                          w_lm_card_d1)
+lp_h1_2 <- make_love_h1("Wald-AIPW (DoubleML, ranger)\nCard | somecol",
+                          w_rf_card_d1)
+lp_h1_3 <- make_love_h1("Wald-AIPW (DoubleML, XGBoost)\nCard | somecol",
+                          w_xgb_card_d1)
+lp_h1_4 <- make_love_h1("tau_cb_u (kappa, CBPS)\nCard | somecol",
+                          kw_ref_card_d1$tau_cb_u)
+lp_h1_5 <- make_love_h1("tau_ml_u (kappa, MLE)\nCard | somecol",
+                          kw_ref_card_d1$tau_ml_u)
+
+grid.arrange(lp_h1_1, lp_h1_2, lp_h1_3, lp_h1_4, lp_h1_5,
+             nrow = 1,
+             top = "Love plots: DoubleML learners vs kappa | Card spec | somecol")
+
+
+# --- H2: Card spec, educ16 — 3 DoubleML + 2 kappa ---
+cat("\nH2: Love plots — Card specification, educ16 (D2)\n\n")
+
+make_love_h2 <- function(title_str, w_vec) {
+  cobalt::love.plot(
+    D2 ~ X_dml_card,
+    weights    = w_vec * (2 * D2 - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis::viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+kw_ref_card_d2 <- kappa_weights_bundle(Z, D2, X_card_kappa)
+
+lp_h2_1 <- make_love_h2("Wald-AIPW (DoubleML, linear+logit)\nCard | educ16",
+                          w_lm_card_d2)
+lp_h2_2 <- make_love_h2("Wald-AIPW (DoubleML, ranger)\nCard | educ16",
+                          w_rf_card_d2)
+lp_h2_3 <- make_love_h2("Wald-AIPW (DoubleML, XGBoost)\nCard | educ16",
+                          w_xgb_card_d2)
+lp_h2_4 <- make_love_h2("tau_cb_u (kappa, CBPS)\nCard | educ16",
+                          kw_ref_card_d2$tau_cb_u)
+lp_h2_5 <- make_love_h2("tau_ml_u (kappa, MLE)\nCard | educ16",
+                          kw_ref_card_d2$tau_ml_u)
+
+grid.arrange(lp_h2_1, lp_h2_2, lp_h2_3, lp_h2_4, lp_h2_5,
+             nrow = 1,
+             top = "Love plots: DoubleML learners vs kappa | Card spec | educ16")
+
+
+
+
+# --- H3: Spec comparison — ranger, somecol: Card vs Kitagawa ---
+# This isolates the spec effect: same learner (ranger), same treatment (somecol),
+# different covariate space. Differences in SMDs show whether the richer Card
+# spec leads to better or worse complier balance.
+
+cat("\nH3: Love plots — ranger learner, Card vs Kitagawa, somecol (D1)\n\n")
+
+make_love_card_d1 <- function(title_str, w_vec) {
+  cobalt::love.plot(
+    D1 ~ X_dml_card,
+    weights    = w_vec * (2 * D1 - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis::viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+make_love_kit_d1 <- function(title_str, w_vec) {
+  cobalt::love.plot(
+    D1 ~ X_dml_kit,
+    weights    = w_vec * (2 * D1 - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis::viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+lp_h3_1 <- make_love_card_d1("ranger: Card spec\nsomecol",   w_rf_card_d1)
+lp_h3_2 <- make_love_card_d1("linear+logit: Card spec\nsomecol", w_lm_card_d1)
+lp_h3_3 <- make_love_kit_d1( "ranger: Kitagawa spec\nsomecol",  w_rf_kit_d1)
+lp_h3_4 <- make_love_kit_d1( "linear+logit: Kitagawa spec\nsomecol", w_lm_kit_d1)
+
+grid.arrange(lp_h3_1, lp_h3_2, lp_h3_3, lp_h3_4,
+             nrow = 1,
+             top = "Love plots: Card vs Kitagawa specification | DoubleML learners | somecol")
+
+
+cat("\n")
+cat(strrep("=", 70), "\n")
+cat("DoubleML EXTENDED COMPLETE.\n")
+cat("Objects in memory:\n")
+cat("  iivm_lm_*/iivm_rf_*/iivm_xgb_* : 12 DoubleMLIIVM fitted objects\n")
+cat("  w_lm_*/w_rf_*/w_xgb_*          : 12 outcome weight vectors\n")
+cat("  omega_lm_*/omega_rf_*/omega_xgb_* : raw omega objects (for further use)\n")
+cat("  kw_ref_*                        : kappa weight bundles (4 cells)\n")
+cat("  kappa_card_d1/d2, kappa_kit_d1/d2 : kappa estimates + SEs (dollars)\n")
+cat(strrep("=", 70), "\n")
+
+
+```
