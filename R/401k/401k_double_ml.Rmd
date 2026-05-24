@@ -1,0 +1,238 @@
+---
+title: "401_k_double_ml"
+author: "Alexander Unger"
+date: "2026-05-22"
+output: html_document
+---
+```{r}
+
+library(OutcomeWeights)  # dml_with_smoother(), get_outcome_weights()
+library(cobalt)          # love.plot()
+library(viridis)         # colour palette for Love plots
+library(gridExtra)       # grid.arrange()
+library(ggplot2)         # required by OutcomeWeights
+
+
+cat(sprintf("BLOCK A ready. N=%d | mean(D)=%.3f | mean(Z)=%.3f\n\n",
+            nrow(pension), mean(D), mean(Z)))
+
+
+# ==============================================================================
+# BLOCK A: X matrices for DML
+# ==============================================================================
+# DML requires a CLEAN numeric matrix without factor attributes.
+# grf::validate_X() rejects matrices with lingering factor-level attributes.
+# make_X() strips all attributes while preserving column names.
+# ncol >= 2 required — single-column matrices fail grf in R 4.5.x.
+#
+# Card specification for DML (same variables as X_card_kappa, minus intercept):
+#   exper, expersq, black, south, smsa, smsa66, reg661–reg668
+#   This is a 14-column matrix.
+#
+# Kitagawa specification for DML (same variables as X_kit_kappa, minus intercept):
+#   black, south, smsa, smsa66, south66
+#   This is a 5-column matrix.
+#
+# IMPORTANT: DML X matrices have NO intercept (grf adds it internally).
+#            Kappa X matrices (X_card_kappa, X_kit_kappa) retain the intercept
+#            column because logit_mle() and cbps() need it.
+# ==============================================================================
+# BLOCK A — DML SETUP FOR 401(k)
+# ==============================================================================
+# Design:
+#   Instrument Z  = e401  (eligibility)
+#   Treatment  D  = p401  (participation)
+#   Outcome    Y  = net_tfa (net total financial assets)
+#   Covariates X  = age, db, educ, fsize, hown, inc, male, marr, pira, twoearn
+#
+# One covariate spec (unlike Card which had Card + Kitagawa).
+# No intercept in DML matrices — grf and DoubleML handle intercepts internally.
+# ==============================================================================
+
+make_X <- function(formula, data) {
+  # Strips all attributes from model.matrix output to produce a plain numeric
+  # matrix safe for grf::validate_X().
+  mm <- model.matrix(formula, data = data)
+  m  <- matrix(as.numeric(mm), nrow = nrow(mm), ncol = ncol(mm))
+  colnames(m) <- colnames(mm)
+  m
+}
+
+# 401k DML matrix (10 covariates, no intercept)
+X_dml_401 <- make_X(
+  ~ 0 + age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+  data = pension
+)
+
+cat("DML X matrix:\n")
+cat(sprintf("  X_dml_401: %dx%d | numeric=%s\n",
+            nrow(X_dml_401), ncol(X_dml_401), is.numeric(X_dml_401)))
+
+# ------------------------------------------------------------------------------
+# Helper functions for DML extraction
+# (identical in purpose to Card DML Block A)
+# ------------------------------------------------------------------------------
+
+get_estimate <- function(res, row_name) {
+  # Extract point estimate from OutcomeWeights summary() output.
+  if ("Estimate" %in% colnames(res)) return(as.numeric(res[row_name, "Estimate"]))
+  as.numeric(res[row_name, 1])
+}
+
+check_omega_rows <- function(omega_obj, rows = c("PLR-IV", "Wald-AIPW")) {
+  # Verify that the expected outcome-weight rows exist in the omega object.
+  missing_rows <- setdiff(rows, rownames(omega_obj$omega))
+  if (length(missing_rows) > 0)
+    stop("Missing expected outcome-weight rows: ", paste(missing_rows, collapse = ", "))
+}
+
+cat("\nBLOCK A complete. Ready for BLOCKS B and C.\n\n")
+
+```
+```{r}
+# ==============================================================================
+# BLOCK B — RUN DOUBLE ML (2-fold and 5-fold cross-fitting)
+# ==============================================================================
+# dml_with_smoother() from OutcomeWeights runs PLR, PLR-IV, AIPW, Wald-AIPW
+# simultaneously and stores the NxN smoother matrices needed for outcome weights.
+# Memory note: each dml object stores several NxN matrices.
+# With N=9915 this is manageable but remove objects after extracting weights.
+# ==============================================================================
+
+set.seed(1234)
+
+cat("Running DML — 2-fold cross-fitting...\n")
+dml_2f_401 <- dml_with_smoother(Y, D, X_dml_401, Z, n_cf_folds = 2)
+results_dml_2f_401 <- summary(dml_2f_401)
+cat("  2-fold results:\n")
+print(results_dml_2f_401)
+
+cat("\nExtracting outcome weights (2-fold)...\n")
+omega_dml_2f_401 <- get_outcome_weights(dml_2f_401)
+check_omega_rows(omega_dml_2f_401, rows = c("PLR-IV", "Wald-AIPW"))
+
+# Algebraic identity check: omega'Y should reproduce point estimates exactly
+cat("omega'Y replicates point estimates (2-fold)?",
+    all.equal(
+      as.numeric(omega_dml_2f_401$omega %*% Y),
+      as.numeric(results_dml_2f_401[, 1])
+    ), "\n")
+
+# Free memory before running 5-fold
+rm(dml_2f_401); gc()
+
+cat("\nRunning DML — 5-fold cross-fitting...\n")
+dml_5f_401 <- dml_with_smoother(Y, D, X_dml_401, Z, n_cf_folds = 5)
+results_dml_5f_401 <- summary(dml_5f_401)
+cat("  5-fold results:\n")
+print(results_dml_5f_401)
+
+cat("\nExtracting outcome weights (5-fold)...\n")
+omega_dml_5f_401 <- get_outcome_weights(dml_5f_401)
+check_omega_rows(omega_dml_5f_401, rows = c("PLR-IV", "Wald-AIPW"))
+
+cat("omega'Y replicates point estimates (5-fold)?",
+    all.equal(
+      as.numeric(omega_dml_5f_401$omega %*% Y),
+      as.numeric(results_dml_5f_401[, 1])
+    ), "\n")
+
+rm(dml_5f_401); gc()
+
+cat("\nBLOCK B complete.\n\n")
+```
+
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK C — COVARIATE BALANCING (love plots)
+# ==============================================================================
+# Uses cobalt::love.plot() with DML outcome weights.
+# Flip sign of untreated weights: multiply by (2*D - 1) to make cobalt-compatible
+# (cobalt expects positive treated weights, negative untreated weights flipped).
+# ==============================================================================
+
+threshold <- 0.1
+
+create_love_plot_401 <- function(title, index) {
+  love.plot(
+    D ~ X_dml_401,
+    weights = list(
+      "2-fold" = omega_dml_2f_401$omega[index, ] * (2 * D - 1),
+      "5-fold" = omega_dml_5f_401$omega[index, ] * (2 * D - 1)
+    ),
+    position   = "bottom",
+    title      = title,
+    thresholds = c(m = threshold),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(3),
+    shapes     = c("circle", "triangle", "diamond")
+  )
+}
+
+# Row indices in omega matrix correspond to estimator order from dml_with_smoother:
+# 1 = PLR, 2 = PLR-IV, 3 = AIPW, 4 = Wald-AIPW
+love_plot_plr_401    <- create_love_plot_401("PLR",       1)
+love_plot_plriv_401  <- create_love_plot_401("PLR-IV",    2)
+love_plot_aipw_401   <- create_love_plot_401("AIPW",      3)
+love_plot_waipw_401  <- create_love_plot_401("Wald-AIPW", 4)
+
+love_plot_plr_401
+love_plot_plriv_401
+love_plot_aipw_401
+love_plot_waipw_401
+
+# Combined plot (mirrors Knaus 2024 Figure 2 structure)
+figure_dml_401 <- grid.arrange(
+  love_plot_plr_401,   love_plot_aipw_401,
+  love_plot_plriv_401, love_plot_waipw_401,
+  nrow = 2
+)
+
+cat("\nBLOCK C complete.\n\n")
+
+
+
+
+
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK D — WEIGHT DIAGNOSTICS FOR DML WEIGHTS
+# ==============================================================================
+# Complements the kappa weight diagnostics from the earlier section.
+# Compares DML outcome weights against kappa weights on the same diagnostics:
+# Sum_w, ESS, Pct_neg, Max_abs_w.
+# ==============================================================================
+
+cat("==============================================================================\n")
+cat("DML OUTCOME WEIGHT DIAGNOSTICS\n")
+cat("==============================================================================\n")
+
+estimator_names <- rownames(omega_dml_2f_401$omega)
+
+cat("\n--- 2-fold cross-fitting ---\n")
+tab_2f <- do.call(rbind, lapply(seq_along(estimator_names), function(i) {
+  weight_diag(omega_dml_2f_401$omega[i, ], estimator_names[i])
+}))
+print(tab_2f, row.names = FALSE)
+
+cat("\n--- 5-fold cross-fitting ---\n")
+tab_5f <- do.call(rbind, lapply(seq_along(estimator_names), function(i) {
+  weight_diag(omega_dml_5f_401$omega[i, ], estimator_names[i])
+}))
+print(tab_5f, row.names = FALSE)
+
+cat("\nBLOCK D complete.\n\n")
+
+
+```

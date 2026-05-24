@@ -1,0 +1,284 @@
+---
+title: "401_k_est"
+author: "Alexander Unger"
+date: "2026-05-22"
+output: html_document
+---
+```{r, message = FALSE, warning=FALSE}
+if (!require("OutcomeWeights")) install.packages("OutcomeWeights", dependencies = TRUE); library(OutcomeWeights)
+if (!require("hdm")) install.packages("hdm", dependencies = TRUE); library(hdm)
+if (!require("grf")) install.packages("grf", dependencies = TRUE); library(grf)
+if (!require("cobalt")) install.packages("cobalt", dependencies = TRUE); library(cobalt)
+if (!require("tidyverse")) install.packages("tidyverse", dependencies = TRUE); library(tidyverse)
+if (!require("viridis")) install.packages("viridis", dependencies = TRUE); library(viridis)
+if (!require("gridExtra")) install.packages("gridExtra", dependencies = TRUE); library(gridExtra)
+if (!require("AER")) install.packages("AER", dependencies = TRUE); library(AER)
+if (!require("sandwich")) install.packages("sandwich", dependencies = TRUE); library(sandwich)
+if (!require("lmtest")) install.packages("lmtest", dependencies = TRUE); library(lmtest)
+
+
+data(pension) # Find variable description if you type ?pension in console
+cat(sprintf("Sample size: N = %d\n", nrow(pension)))
+# Treatment
+D <- pension$p401
+Z <- pension$e401
+Y <- pension$net_tfa
+
+# Design matrix WITH intercept (for kappa/propensity score functions)
+X_401_kappa <- model.matrix(
+  ~ age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+  data = pension
+)
+
+colnames(X_401_kappa) <- c("(Intercept)", "age", "db", "educ", "fsize", 
+                            "hown", "inc", "male", "marr", "pira", "twoearn")
+
+# Design matrix WITHOUT intercept (for ivreg)
+X_401_df <- as.data.frame(X_401_kappa[, -1, drop = FALSE])
+
+# Pretty labels kept separately — for plots/tables only
+var_nm <- c("Age", "Benefit pension", "Education", "Family size", 
+            "Home owner", "Income", "Male", "Married", "IRA", "Two earners")
+# Design matrix WITHOUT intercept (for ivreg)
+X_401_df <- as.data.frame(X_401_kappa[, -1, drop = FALSE])
+
+# for the next step alreading reading in all functions I need 
+source("/Users/alexung/Desktop/master_thesis/showing/functions_card.R")
+
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# estimating the kappa estimators 
+# ==============================================================================
+
+cat("\n")
+cat("==============================================================================\n")
+cat("Replicating the Kappa Estimators ")
+cat("==============================================================================\n")
+
+
+# this is to run every column
+run_column <- function(Y, Z, D, X_kappa, X_df, label) {
+  cat(sprintf("  Computing column: %s\n", label))
+
+  # 2SLS
+  tsls      <- run_2sls(Y, D, Z, X_df, endog_name = "D")
+
+  # Kappa estimators (point estimates + M-estimation SEs)
+  kappa_res <- kappa_analytic_se_all(Y, Z, D, X_kappa)
+
+  list(tsls = tsls, kappa = kappa_res)
+}
+
+
+
+# compuing propensity score and maximum likelihood
+cat("\nEstimating propensity scores...\n")
+p_ml_401 <- logit_mle(Z, X_401_kappa)
+p_cb_401 <- get_cbps_p(Z, X_401_kappa)
+cat("  Done.\n")
+
+
+
+# for some collega attendance parted in Card and Kitagawa
+cat("\n--- Treatment assigned ---\n")
+
+# Col 1: somecol, cents, Card spec
+col1 <- run_column(Y, Z, D, X_401_kappa, X_401_df, "col1: Treatment")
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# TABLE: Kappa estimators for 401(k) — participation on net total financial assets
+# ==============================================================================
+
+print_table_401k <- function(col1) {
+  cat("\n")
+  cat("==============================================================================\n")
+  cat("Kappa Estimators: Effect of 401(k) Participation on Net Financial Assets\n")
+  cat("Instrument: 401(k) eligibility (e401)\n")
+  cat("Treatment:  401(k) participation (p401)\n")
+  cat("Outcome:    Net total financial assets (net_tfa, in USD)\n")
+  cat("==============================================================================\n")
+  cat(sprintf("%-18s  %10s\n", "", "(1)"))
+  cat(sprintf("%-18s  %10s\n", "Treatment:", "p401"))
+  cat(sprintf("%-18s  %10s\n", "Outcome:",   "net_tfa"))
+  cat(sprintf("%-18s  %10s\n", "Spec:",      "pension covariates"))
+  cat(strrep("-", 35), "\n")
+
+  # Panel A: 2SLS
+  cat("\nPanel A: 2SLS\n")
+  cat(sprintf("%-18s  %10.3f\n", "2SLS",     col1$tsls$coef))
+  cat(sprintf("%-18s  %10.3f\n", "",          col1$tsls$se))
+  cat(sprintf("%-18s  %10s\n",   "",          "[SE]"))
+
+  # Panel B: Normalized kappa estimators
+  cat("\nPanel B: Normalized kappa estimators\n")
+  for (est in c("tau_cb_u", "tau_ml_u", "tau_ml_a10")) {
+    cat(sprintf("%-18s  %10.3f\n", est, col1$kappa$estimates[est]))
+    cat(sprintf("%-18s  %10.3f\n", "",  col1$kappa$se[est]))
+    cat(sprintf("%-18s  %10s\n",   "",  "[SE]"))
+  }
+
+  # Panel C: Unnormalized kappa estimators
+  cat("\nPanel C: Unnormalized kappa estimators\n")
+  for (est in c("tau_ml_a", "tau_ml_t", "tau_ml_a0")) {
+    cat(sprintf("%-18s  %10.3f\n", est, col1$kappa$estimates[est]))
+    cat(sprintf("%-18s  %10.3f\n", "",  col1$kappa$se[est]))
+    cat(sprintf("%-18s  %10s\n",   "",  "[SE]"))
+  }
+
+  cat(strrep("-", 35), "\n")
+  cat("Notes: SE = M-estimation sandwich standard errors.\n")
+  cat("       Panel B estimators are translation invariant (sum of weights ~ 0).\n")
+  cat("       Panel C estimators are NOT translation invariant.\n")
+}
+
+print_table_401k(col1)
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# SCALE-EQUIVARIANCE CHECK (401k analogue of the Card translation-invariance check)
+# ==============================================================================
+# In Card: Y_cents = Y_dollars + log(100)  →  additive shift  →  tests sum(w) = 0
+# In 401k: Y_thousands = Y_dollars / 1000  →  scale shift     →  tests tau_hat
+#          scales proportionally: tau_thousands = tau_dollars / 1000
+#
+# All estimators SHOULD pass this — it is a basic sanity check.
+# If an estimator fails, something is numerically wrong with that implementation.
+# This also gives you a clean first look at the weight sums for your design.
+# ==============================================================================
+
+k_scale <- 1000   # dollars -> thousands
+
+cat("\n\n")
+cat("==============================================================================\n")
+cat("SCALE-EQUIVARIANCE CHECK\n")
+cat("Demonstrates: all estimators scale correctly when Y switches from\n")
+cat("dollars to thousands of dollars (net_tfa / 1000).\n")
+cat("tau_thousands should equal tau_dollars / 1000 for all estimators.\n")
+cat("==============================================================================\n")
+
+Y_dol  <- Y                 # net_tfa in dollars (original)
+Y_thou <- Y / k_scale       # net_tfa in thousands of dollars
+
+scale_check <- function(X_kappa, spec_label) {
+  p_ml  <- logit_mle(Z, X_kappa)
+  p_cb  <- get_cbps_p(Z, X_kappa)
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  cat(sprintf("\n=== %s ===\n", spec_label))
+  cat(sprintf("%-18s  %12s  %12s  %12s  %10s\n",
+              "Estimator", "Dollars", "Thousands", "Ratio(act)", "Match?"))
+  cat(strrep("-", 72), "\n")
+
+  # w removed from signature — ratio check doesn't need it
+  pr <- function(name, est_dol, est_thou) {
+    ratio_act <- est_dol / est_thou        # should equal k_scale = 1000
+    ok <- isTRUE(all.equal(ratio_act, k_scale, tolerance = 1e-4))
+    cat(sprintf("%-18s  %12.2f  %12.4f  %12.4f  %10s\n",
+                name, est_dol, est_thou, ratio_act,
+                if (ok) "TRUE" else "FALSE"))
+  }
+
+  # Normalized
+  pr("tau_cb_u",
+     tau_u(Y_dol, Z, D, p_cb),    tau_u(Y_thou, Z, D, p_cb))
+  pr("tau_ml_u",
+     tau_u(Y_dol, Z, D, p_ml),    tau_u(Y_thou, Z, D, p_ml))
+  pr("tau_ml_a10",
+     tau_a10(Y_dol, Z, D, p_ml),  tau_a10(Y_thou, Z, D, p_ml))
+
+  # Unnormalized
+  pr("tau_ml_a",
+     tau_unnorm(Y_dol, Z, D, p_ml, "a"),  tau_unnorm(Y_thou, Z, D, p_ml, "a"))
+  pr("tau_ml_t",
+     tau_unnorm(Y_dol, Z, D, p_ml, "a1"), tau_unnorm(Y_thou, Z, D, p_ml, "a1"))
+  pr("tau_ml_a0",
+     tau_unnorm(Y_dol, Z, D, p_ml, "a0"), tau_unnorm(Y_thou, Z, D, p_ml, "a0"))
+
+  # Sum of weights — printed separately, doesn't belong inside pr()
+  cat(sprintf("\n  Sum of weights (should be ~0 for normalized estimators):\n"))
+  cat(sprintf("  %-14s  sum(w) = %10.6f\n", "tau_cb_u",   sum(kw_cb$w_u)))
+  cat(sprintf("  %-14s  sum(w) = %10.6f\n", "tau_ml_u",   sum(kw_ml$w_u)))
+  cat(sprintf("  %-14s  sum(w) = %10.6f\n", "tau_ml_a10", sum(kw_ml$w_a10)))
+  cat(sprintf("  %-14s  sum(w) = %10.6f  [NOT ~0]\n", "tau_ml_a",  sum(kw_ml$w_a)))
+  cat(sprintf("  %-14s  sum(w) = %10.6f  [NOT ~0]\n", "tau_ml_t",  sum(kw_ml$w_a1)))
+  cat(sprintf("  %-14s  sum(w) = %10.6f  [NOT ~0]\n", "tau_ml_a0", sum(kw_ml$w_a0)))
+}
+
+scale_check(X_401_kappa, "p401 — pension covariates")
+
+
+```
+
+
+```{r}
+
+
+
+cat("\n\n")
+cat("==============================================================================\n")
+cat("WEIGHT DIAGNOSTICS TABLE\n")
+cat("401(k): instrument = e401, treatment = p401, outcome = net_tfa\n")
+cat("==============================================================================\n")
+
+diag_block_401k <- function(X_kappa, label) {
+  p_ml  <- logit_mle(Z, X_kappa)
+  p_cb  <- get_cbps_p(Z, X_kappa)
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+  cat(sprintf("\n--- %s ---\n", label))
+  tab <- rbind(
+    weight_diag(kw_cb$w_u,   "tau_cb_u"),
+    weight_diag(kw_ml$w_u,   "tau_ml_u"),
+    weight_diag(kw_ml$w_a10, "tau_ml_a10"),
+    weight_diag(kw_ml$w_a,   "tau_ml_a"),
+    weight_diag(kw_ml$w_a1,  "tau_ml_t"),
+    weight_diag(kw_ml$w_a0,  "tau_ml_a0")
+  )
+  print(tab, row.names = FALSE)
+
+  # additionally: algebraic identity check (sum(w*Y) == tau_hat)
+  cat("\n  Algebraic identity check: sum(w * Y) == tau_hat\n")
+  checks <- c(
+    tau_cb_u   = check_weight_identity(kw_cb$w_u,   Y, tau_u(Y, Z, D, p_cb)),
+    tau_ml_u   = check_weight_identity(kw_ml$w_u,   Y, tau_u(Y, Z, D, p_ml)),
+    tau_ml_a10 = check_weight_identity(kw_ml$w_a10, Y, tau_a10(Y, Z, D, p_ml)),
+    tau_ml_a   = check_weight_identity(kw_ml$w_a,   Y, tau_unnorm(Y, Z, D, p_ml, "a")),
+    tau_ml_t   = check_weight_identity(kw_ml$w_a1,  Y, tau_unnorm(Y, Z, D, p_ml, "a1")),
+    tau_ml_a0  = check_weight_identity(kw_ml$w_a0,  Y, tau_unnorm(Y, Z, D, p_ml, "a0"))
+  )
+  for (nm in names(checks)) {
+    cat(sprintf("  %-14s  %s\n", nm, if (checks[nm]) "TRUE" else "FALSE"))
+  }
+}
+
+diag_block_401k(X_401_kappa, "p401 — pension covariates")
+
+
+
+
+
+
+```
+
+
+
+
+
+
+

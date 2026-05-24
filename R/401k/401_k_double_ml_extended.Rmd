@@ -1,0 +1,238 @@
+---
+title: "401k_double_ml_extended"
+author: "Alexander Unger"
+date: "2026-05-22"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# BLOCK E — WALD-AIPW VIA DoubleML (IIVM)
+# ==============================================================================
+# Applies the DoubleML vignette approach (DML_smoothers.rmd) to the 401k data.
+#
+# Design:
+#   Instrument Z = e401  (eligibility)
+#   Treatment  D = p401  (participation)  — binary
+#   Outcome    Y = net_tfa
+#   Covariates X = age, db, educ, fsize, hown, inc, male, marr, pira, twoearn
+#
+# Estimator: DoubleMLIIVM  (Wald-AIPW / LATE)
+# Learners:  XGBoost for outcome + propensity models
+#            (requires specific hyperparameters for omega'Y = tau_hat to hold)
+# ==============================================================================
+
+library(DoubleML)
+library(mlr3verse)
+
+# ------------------------------------------------------------------------------
+# Learner setup
+# XGBoost hyperparameters required so that the smoother matrix SY = Y_hat holds,
+# which is the condition for omega'Y to reproduce the point estimate exactly.
+# (See vignette: alpha=0, subsample=1, max_delta_step=0, base_score=0)
+# ------------------------------------------------------------------------------
+regr_xgb  <- lrn("regr.xgboost",
+                  alpha         = 0,
+                  subsample     = 1,
+                  max_delta_step = 0,
+                  base_score    = 0)
+classif_xgb <- lrn("classif.xgboost",
+                    alpha         = 0,
+                    subsample     = 1,
+                    max_delta_step = 0,
+                    base_score    = 0.5)
+
+# IIVM needs three learners:
+#   ml_g : outcome model  E[Y | X, Z=z]   — regression
+#   ml_m : treatment model P(D=1 | X, Z)  — classification
+#   ml_r : instrument model P(Z=1 | X)    — classification
+ml_g_iivm <- regr_xgb$clone()
+ml_m_iivm <- classif_xgb$clone()
+ml_r_iivm <- classif_xgb$clone()
+
+# ------------------------------------------------------------------------------
+# Build DoubleML data object from pension data
+# DoubleMLData$new() needs a data.frame with named columns
+# ------------------------------------------------------------------------------
+pension_df <- data.frame(
+  net_tfa = Y,
+  p401    = D,
+  e401    = Z,
+  age     = pension$age,
+  db      = pension$db,
+  educ    = pension$educ,
+  fsize   = pension$fsize,
+  hown    = pension$hown,
+  inc     = pension$inc,
+  male    = pension$male,
+  marr    = pension$marr,
+  pira    = pension$pira,
+  twoearn = pension$twoearn
+)
+
+iivm_data_401 <- DoubleMLData$new(
+  pension_df,
+  y_col  = "net_tfa",
+  d_cols = "p401",
+  z_cols = "e401",
+  x_cols = c("age", "db", "educ", "fsize", "hown",
+             "inc", "male", "marr", "pira", "twoearn")
+)
+
+cat("DoubleML data object:\n")
+print(iivm_data_401)
+
+# ------------------------------------------------------------------------------
+# Fit DoubleMLIIVM
+# store_models = TRUE and store_predictions = TRUE are required for
+# get_outcome_weights() to work
+# ------------------------------------------------------------------------------
+set.seed(1234)
+cf_folds <- 5
+
+iivm_obj_401 <- DoubleMLIIVM$new(
+  iivm_data_401,
+  ml_g = ml_g_iivm,
+  ml_m = ml_m_iivm,
+  ml_r = ml_r_iivm,
+  n_folds = cf_folds
+)
+
+cat(sprintf("\nFitting Wald-AIPW (IIVM) with %d-fold cross-fitting...\n", cf_folds))
+iivm_obj_401$fit(store_models = TRUE, store_predictions = TRUE)
+
+cat("\nDoubleML Wald-AIPW result:\n")
+print(iivm_obj_401$summary())
+
+# ------------------------------------------------------------------------------
+# Extract outcome weights
+# ------------------------------------------------------------------------------
+cat("\nExtracting outcome weights...\n")
+omega_waipw_401 <- get_outcome_weights(
+  object   = iivm_obj_401,
+  dml_data = iivm_data_401
+)
+
+# Algebraic identity check: omega'Y should reproduce the point estimate
+identity_check <- all.equal(
+  as.numeric(omega_waipw_401$omega %*% Y),
+  as.numeric(iivm_obj_401$all_coef)
+)
+cat("omega'Y replicates point estimate?", identity_check, "\n")
+
+
+
+```
+
+```{r}
+# ==============================================================================
+# BLOCK F — WEIGHT DIAGNOSTICS FOR WALD-AIPW
+# ==============================================================================
+
+cat("\n")
+cat("==============================================================================\n")
+cat("WEIGHT DIAGNOSTICS — Wald-AIPW (DoubleMLIIVM), 401(k)\n")
+cat("==============================================================================\n")
+
+w_waipw <- as.vector(omega_waipw_401$omega)
+
+diag_tab <- weight_diag(w_waipw, "Wald-AIPW (IIVM)")
+print(diag_tab, row.names = FALSE)
+
+cat(sprintf("\nSum of weights:       %10.6f  (should be ~0 for translation invariance)\n",
+            sum(w_waipw)))
+cat(sprintf("Effective sample size: %9.1f  (out of N = %d)\n",
+            1 / sum(w_waipw^2), length(w_waipw)))
+cat(sprintf("Negative weights:      %9.1f%%\n",
+            mean(w_waipw < 0) * 100))
+cat(sprintf("Max |weight|:          %9.6f\n",
+            max(abs(w_waipw))))
+
+# Compare against kappa weights from Block earlier
+# (requires kw_ml from kappa_outcome_weights — recompute if needed)
+p_ml_401 <- logit_mle(Z, X_401_kappa)
+p_cb_401 <- get_cbps_p(Z, X_401_kappa)
+kw_ml    <- kappa_outcome_weights(Z, D, p_ml_401)
+kw_cb    <- kappa_outcome_weights(Z, D, p_cb_401)
+
+cat("\n--- Comparison: Wald-AIPW vs kappa estimators ---\n")
+comp_tab <- rbind(
+  weight_diag(w_waipw,        "Wald-AIPW (DML)"),
+  weight_diag(kw_cb$w_u,      "tau_cb_u"),
+  weight_diag(kw_ml$w_u,      "tau_ml_u"),
+  weight_diag(kw_ml$w_a10,    "tau_ml_a10"),
+  weight_diag(kw_ml$w_a,      "tau_ml_a"),
+  weight_diag(kw_ml$w_a1,     "tau_ml_t"),
+  weight_diag(kw_ml$w_a0,     "tau_ml_a0")
+)
+print(comp_tab, row.names = FALSE)
+
+```
+
+
+```{r}
+#===============================================================================
+# BLOCK G — LOVE PLOTS FOR WALD-AIPW
+# ==============================================================================
+# Covariate balance check using DML outcome weights.
+# Flip sign for untreated: multiply by (2*D - 1) for cobalt compatibility.
+# We compare Wald-AIPW weights against the raw (unadjusted) differences and
+# also against tau_ml_u (best normalized kappa) for direct visual comparison.
+# ==============================================================================
+
+cat("\nGenerating love plots...\n")
+
+# Flip weights for cobalt
+w_waipw_flipped  <- w_waipw * (2 * D - 1)
+w_u_ml_flipped   <- kw_ml$w_u * (2 * D - 1)
+w_u_cb_flipped   <- kw_cb$w_u * (2 * D - 1)
+w_a10_flipped    <- kw_ml$w_a10 * (2 * D - 1)
+
+# Love plot 1: Wald-AIPW alone
+love_waipw_only <- love.plot(
+  D ~ X_dml_401,
+  weights    = list("Wald-AIPW (DML)" = w_waipw_flipped),
+  position   = "bottom",
+  title      = "Wald-AIPW — 401(k)",
+  thresholds = c(m = 0.1),
+  var.order  = "unadjusted",
+  binary     = "std",
+  abs        = TRUE,
+  line       = TRUE,
+  colors     = viridis(2),
+  shapes     = c("circle", "triangle")
+)
+
+# Love plot 2: Wald-AIPW vs best normalized kappa (tau_ml_u) — direct comparison
+love_waipw_vs_kappa <- love.plot(
+  D ~ X_dml_401,
+  weights = list(
+    "Wald-AIPW (DML)" = w_waipw_flipped,
+    "tau_ml_u (kappa)" = w_u_ml_flipped,
+    "tau_ml_a10 (kappa)" = w_a10_flipped
+  ),
+  position   = "bottom",
+  title      = "Wald-AIPW vs Kappa Estimators — 401(k)",
+  thresholds = c(m = 0.1),
+  var.order  = "unadjusted",
+  binary     = "std",
+  abs        = TRUE,
+  line       = TRUE,
+  colors     = viridis(4),
+  shapes     = c("circle", "triangle", "diamond", "square")
+)
+
+love_waipw_only
+love_waipw_vs_kappa
+
+# Combined figure
+figure_waipw_401 <- grid.arrange(
+  love_waipw_only,
+  love_waipw_vs_kappa,
+  nrow = 1
+)
+
+cat("\nBLOCK G complete.\n\n")
+
+
+
+```
