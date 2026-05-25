@@ -1,145 +1,32 @@
-# before double ml
-library(haven)
-library(AER)
-library(sandwich)
-library(lmtest)
-
-data_path <- "/Users/alexung/Desktop/master_thesis/code/"          # <--- USER: set this path
-card <- read_dta(file.path(data_path, "card.dta"))
-
-# check whether the sample size sums up to 3010
-card_clean <- card[!is.na(card$wage) & !is.na(card$educ), ]
-cat(sprintf("Sample size: N = %d\n", nrow(card_clean)))
-
-
-# define log wage in cents and in dollars 
-card_clean$lwage_cnt <- log(card_clean$wage)           # cents (original units)
-card_clean$lwage     <- log(card_clean$wage / 100)     # dollars
-
-cat(sprintf("log(100) = %.6f\n", log(100)))
-cat(sprintf("Mean diff (should equal log(100)): %.6f\n",
-            mean(card_clean$lwage_cnt - card_clean$lwage)))
-card_clean$somecol <- as.integer(card_clean$educ > 12)
-card_clean$educ16  <- as.integer(card_clean$educ >= 16)
-card_clean$Z_inst <- as.integer(card_clean$nearc4)
-
-# --- Experience squared (may not exist in some versions of the dataset) ---
-if (!"expersq" %in% names(card_clean)) {
-  card_clean$expersq <- card_clean$exper^2
-}
-
-# --- Region dummies: reg661–reg668 ---
-# Card (1995) uses 9 Census division indicators, with one omitted as reference.
-# In the NLSYM dataset these are often named reg661, reg662, ..., reg668 (8 dummies,
-# leaving region 9 as reference). Check column names and adapt if needed.
-region_vars <- grep("^reg66", names(card_clean), value = TRUE)
-
-
-
-# --- Card specification: design matrices ---
-
-# For the kappa propensity score (logit / CBPS): intercept + covariates
-X_card_kappa <- model.matrix(
-  ~ exper + expersq + black + south + smsa + smsa66 +
-    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
-  data = card_clean
-)
-
-
-# For 2SLS: same covariates as a data.frame, WITHOUT the intercept column
-X_card_df <- as.data.frame(X_card_kappa[, -1, drop = FALSE])
-# The intercept column is removed because ivreg() adds its own intercept.
-
-# --- Kitagawa specification: design matrices ---
-
-X_kit_kappa <- model.matrix(
-  ~ black + south + smsa + smsa66 + south66,
-  data = card_clean
-)
-
-X_kit_df <- as.data.frame(X_kit_kappa[, -1, drop = FALSE])
-
-# convenience short hand notations 
-Y_cnt <- card_clean$lwage_cnt   # log wages, cents before log
-Y_dol <- card_clean$lwage       # log wages, dollars before log
-Z     <- card_clean$Z_inst      # instrument: nearc4
-D1    <- card_clean$somecol     # treatment 1: some college
-D2    <- card_clean$educ16      # treatment 2: college completion
-
-
-# for the next step alreading reading in all functions I need 
-source("/Users/alexung/Desktop/master_thesis/showing/functions_card.R")
-
-
-# this is to run every column
-run_column <- function(Y, Z, D, X_kappa, X_df, label) {
-  cat(sprintf("  Computing column: %s\n", label))
-  
-  # 2SLS
-  tsls      <- run_2sls(Y, D, Z, X_df, endog_name = "D")
-  
-  # Kappa estimators (point estimates + M-estimation SEs)
-  kappa_res <- kappa_analytic_se_all(Y, Z, D, X_kappa)
-  
-  list(tsls = tsls, kappa = kappa_res)
-}
-
-
-
-# compuing propensity score and maximum likelihood
-p_ml_card <- logit_mle(Z, X_card_kappa)
-p_cb_card <- get_cbps_p(Z, X_card_kappa)
-p_ml_kit  <- logit_mle(Z, X_kit_kappa)
-p_cb_kit  <- get_cbps_p(Z, X_kit_kappa)
-
-
-
-
-# Col 1: somecol, cents, Card spec
-col1 <- run_column(Y_cnt, Z, D1, X_card_kappa, X_card_df, "col1: somecol, cents, Card")
-
-# Col 2: somecol, dollars, Card spec
-col2 <- run_column(Y_dol, Z, D1, X_card_kappa, X_card_df, "col2: somecol, dollars, Card")
-
-# Col 3: somecol, cents, Kitagawa spec
-col3 <- run_column(Y_cnt, Z, D1, X_kit_kappa, X_kit_df, "col3: somecol, cents, Kitagawa")
-
-# Col 4: somecol, dollars, Kitagawa spec
-col4 <- run_column(Y_dol, Z, D1, X_kit_kappa, X_kit_df, "col4: somecol, dollars, Kitagawa")
-
-
-
-
-
-# Col 5: educ16, cents, Card spec
-col5 <- run_column(Y_cnt, Z, D2, X_card_kappa, X_card_df, "col5: educ16, cents, Card")
-
-# Col 6: educ16, dollars, Card spec
-col6 <- run_column(Y_dol, Z, D2, X_card_kappa, X_card_df, "col6: educ16, dollars, Card")
-
-# Col 7: educ16, cents, Kitagawa spec
-col7 <- run_column(Y_cnt, Z, D2, X_kit_kappa, X_kit_df, "col7: educ16, cents, Kitagawa")
-
-# Col 8: educ16, dollars, Kitagawa spec
-col8 <- run_column(Y_dol, Z, D2, X_kit_kappa, X_kit_df, "col8: educ16, dollars, Kitagawa")
-
-
-cols <- list(col1, col2, col3, col4, col5, col6, col7, col8)
-
-
-
-
+---
+title: "card_22_double_ml"
+author: "Alexander Unger"
+date: "2026-05-21"
+output: html_document
+---
+```{r}
+source("/Users/alexung/Desktop/master_thesis/showing/reque_for_double_ml.R")
 library(OutcomeWeights)  # dml_with_smoother(), get_outcome_weights()
 library(cobalt)          # love.plot()
 library(viridis)         # colour palette for Love plots
 library(gridExtra)       # grid.arrange()
 library(ggplot2)         # required by OutcomeWeights
 
+# Guard: verify that card_1995_replication.R has been run
+stopifnot(
+  exists("card_clean"), exists("D1"), exists("D2"), exists("Z"),
+  exists("Y_dol"), exists("Y_cnt"),
+  exists("kappa_weights"), exists("tau_u"), exists("tau_a10"),
+  exists("tau_unnorm"), exists("logit_mle"), exists("kappa_outcome_weights"),
+  exists("weight_diag"),
+  exists("check_weight_identity"), exists("get_cbps_p")
+)
 
 k_shift <- log(100)  # Y_cnt = Y_dol + k_shift (used in Block D)
 
+```
 
-
+```{r}
 # ==============================================================================
 # BLOCK A: X matrices for DML
 # ==============================================================================
@@ -183,17 +70,28 @@ check_omega_rows <- function(omega_obj, rows = c("PLR-IV", "Wald-AIPW")) {
     stop("Missing expected outcome-weight rows: ", paste(missing_rows, collapse = ", "))
 }
 
+cat("\nBLOCK A complete. Ready for BLOCKS B and C.\n\n")
+
+
+```
 
 
 
-
+```{r}
+# ==============================================================================
+# BLOCK B — DML: CARD SPECIFICATION
+# X = [exper, expersq, black, south, smsa, smsa66, reg661–reg668]
+# Corresponds to columns 1-2 and 5-6 of SUW Table 3.
+# ==============================================================================
 
 set.seed(42)
-
+cat(strrep("=", 70), "\n")
+cat("BLOCK B1 — DML: Card specification, somecol (D1 = educ > 12)\n")
+cat(strrep("=", 70), "\n\n")
 
 
 dml_card_d1 <- dml_with_smoother(Y_dol, D1, X_dml_card, Z,
-                                 n_cf_folds = 5, tune.parameters = "all")
+                                  n_cf_folds = 5, tune.parameters = "all")
 res_card_d1 <- summary(dml_card_d1)
 
 cat("Full summary:\n")
@@ -238,7 +136,7 @@ cat(strrep("=", 70), "\n\n")
 # Note: The same DML machinery is applied; only D changes.
 
 dml_card_d2 <- dml_with_smoother(Y_dol, D2, X_dml_card, Z,
-                                 n_cf_folds = 5, tune.parameters = "all")
+                                  n_cf_folds = 5, tune.parameters = "all")
 res_card_d2 <- summary(dml_card_d2)
 
 cat("Full summary:\n")
@@ -267,7 +165,9 @@ print(rbind(
 cat("\nBLOCK B2 done.\n\n")
 
 
+```
 
+```{r}
 # ==============================================================================
 # BLOCK C — DML: KITAGAWA SPECIFICATION
 # X = [black, south, smsa, smsa66, south66]  (5 covariates, no intercept)
@@ -281,7 +181,7 @@ cat(strrep("=", 70), "\n\n")
 
 
 dml_kit_d1 <- dml_with_smoother(Y_dol, D1, X_dml_kit, Z,
-                                n_cf_folds = 5, tune.parameters = "all")
+                                  n_cf_folds = 5, tune.parameters = "all")
 res_kit_d1 <- summary(dml_kit_d1)
 
 cat("Full summary:\n")
@@ -317,7 +217,7 @@ cat("BLOCK C2 — DML: Kitagawa specification, educ16 (D2 = educ >= 16)\n")
 cat(strrep("=", 70), "\n\n")
 
 dml_kit_d2 <- dml_with_smoother(Y_dol, D2, X_dml_kit, Z,
-                                n_cf_folds = 5, tune.parameters = "all")
+                                  n_cf_folds = 5, tune.parameters = "all")
 res_kit_d2 <- summary(dml_kit_d2)
 
 cat("Full summary:\n")
@@ -346,7 +246,13 @@ print(rbind(
 cat("\nBLOCK C2 done.\n\n")
 
 
+```
 
+
+
+
+
+```{r}
 # ==============================================================================
 # BLOCK D — TRANSLATION INVARIANCE: DML VS KAPPA (all 4 DML fits)
 # Requires: BLOCKS B and C.
@@ -360,18 +266,18 @@ cat(sprintf("k = log(100) = %.6f\n\n", k_shift))
 # Helper: one row of the translation-invariance table
 # (Adapted from kappa replication; now accepts any weight vector generically.)
 print_inv_table_dml <- function(spec_label, D,
-                                w_plriv, w_waldaipw,
-                                X_kappa, Y_dol, Y_cnt) {
+                                 w_plriv, w_waldaipw,
+                                 X_kappa, Y_dol, Y_cnt) {
   cat(sprintf("\n--- %s ---\n", spec_label))
   cat(sprintf("  %-26s  %9s  %9s  %10s  %10s  %7s\n",
               "Estimator", "Dollars", "Cents", "Diff(act)", "Diff(pred)", "Match?"))
   cat(strrep("-", 80), "\n")
-  
+
   p_ml  <- logit_mle(Z, X_kappa)
   p_cb  <- get_cbps_p(Z, X_kappa)
   kw_ml <- kappa_outcome_weights(Z, D, p_ml)
   kw_cb <- kappa_outcome_weights(Z, D, p_cb)
-  
+
   rows <- list(
     list(name = "PLR-IV (DML)",
          w = w_plriv,
@@ -406,7 +312,7 @@ print_inv_table_dml <- function(spec_label, D,
          ed = tau_unnorm(Y_dol, Z, D, p_ml, "a0"),
          ec = tau_unnorm(Y_cnt, Z, D, p_ml, "a0"))
   )
-  
+
   for (r in rows) {
     act  <- r$ec - r$ed
     pred <- sum(r$w) * k_shift
@@ -417,7 +323,32 @@ print_inv_table_dml <- function(spec_label, D,
   }
 }
 
+print_inv_table_dml("Card spec — somecol (D1)",
+                    D1, w_plriv_card_d1, w_waldaipw_card_d1,
+                    X_card_kappa, Y_dol, Y_cnt)
 
+print_inv_table_dml("Card spec — educ16 (D2)",
+                    D2, w_plriv_card_d2, w_waldaipw_card_d2,
+                    X_card_kappa, Y_dol, Y_cnt)
+
+print_inv_table_dml("Kitagawa spec — somecol (D1)",
+                    D1, w_plriv_kit_d1, w_waldaipw_kit_d1,
+                    X_kit_kappa, Y_dol, Y_cnt)
+
+print_inv_table_dml("Kitagawa spec — educ16 (D2)",
+                    D2, w_plriv_kit_d2, w_waldaipw_kit_d2,
+                    X_kit_kappa, Y_dol, Y_cnt)
+
+cat("\nInterpretation:\n")
+cat("  Sum_w ~= 0  => translation invariant (DML, tau_u, tau_a10).\n")
+cat("  Sum_w != 0  => estimate changes with outcome unit (unnormalized kappa).\n\n")
+
+
+```
+
+
+
+```{r}
 # ==============================================================================
 # BLOCK E — WEIGHT DIAGNOSTICS: DML VS KAPPA (all 4 DML fits)
 # Requires: BLOCKS B, C, and the kappa_weights_bundle() function.
@@ -459,7 +390,7 @@ diag_card_d1 <- rbind(
   weight_diag(kw_card_d1$tau_ml_a1,  "tau_ml_a1/t   (kappa, Card, somecol)"),
   weight_diag(kw_card_d1$tau_ml_a0,  "tau_ml_a0     (kappa, Card, somecol)")
 )
-
+print(diag_card_d1, row.names = FALSE)
 
 # --- E2: educ16, Card spec ---
 cat("\n--- Card specification, educ16 (D2) ---\n")
@@ -475,7 +406,7 @@ diag_card_d2 <- rbind(
   weight_diag(kw_card_d2$tau_ml_a1,  "tau_ml_a1/t   (kappa, Card, educ16)"),
   weight_diag(kw_card_d2$tau_ml_a0,  "tau_ml_a0     (kappa, Card, educ16)")
 )
-
+print(diag_card_d2, row.names = FALSE)
 
 # --- E3: somecol, Kitagawa spec ---
 cat("\n--- Kitagawa specification, somecol (D1) ---\n")
@@ -491,7 +422,7 @@ diag_kit_d1 <- rbind(
   weight_diag(kw_kit_d1$tau_ml_a1,  "tau_ml_a1/t   (kappa, Kitagawa, somecol)"),
   weight_diag(kw_kit_d1$tau_ml_a0,  "tau_ml_a0     (kappa, Kitagawa, somecol)")
 )
-
+print(diag_kit_d1, row.names = FALSE)
 
 # --- E4: educ16, Kitagawa spec ---
 cat("\n--- Kitagawa specification, educ16 (D2) ---\n")
@@ -507,16 +438,24 @@ diag_kit_d2 <- rbind(
   weight_diag(kw_kit_d2$tau_ml_a1,  "tau_ml_a1/t   (kappa, Kitagawa, educ16)"),
   weight_diag(kw_kit_d2$tau_ml_a0,  "tau_ml_a0     (kappa, Kitagawa, educ16)")
 )
+print(diag_kit_d2, row.names = FALSE)
+
+cat("\n")
 
 
 
+```
+
+```{r}
 # ==============================================================================
 # BLOCK F — LOVE PLOTS: DML VS KAPPA
 # Requires: BLOCKS B and E.
 # ==============================================================================
 
 
-
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — LOVE PLOTS: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
 
 
 kw_card_d1 <- kappa_weights_bundle(Z, D1, X_card_kappa)
@@ -557,7 +496,10 @@ lp_f1_6 <- make_love_card_d1("tau_ml_a ",      kw_card_d1$tau_ml_a)
 lp_f1_7 <- make_love_card_d1("tau_ml_a1/t ",   kw_card_d1$tau_ml_a1)
 lp_f1_8 <- make_love_card_d1("tau_ml_a0 ",     kw_card_d1$tau_ml_a0)
 
-
+grid.arrange(lp_f1_1, lp_f1_2, lp_f1_3, lp_f1_4,
+             lp_f1_5, lp_f1_6, lp_f1_7, lp_f1_8,
+             nrow = 2,
+             top = "Love plots: DML vs Kappa | Card specification | somecol")
 
 
 # --- F2: Card vs Kitagawa — DML only, somecol ---
@@ -585,7 +527,9 @@ lp_f2_2 <- make_love_card_d1("Wald-AIPW Card ",   w_waldaipw_card_d1)
 lp_f2_3 <- make_love_kit_d1( "PLR-IV Kitagawa ",  w_plriv_kit_d1)
 lp_f2_4 <- make_love_kit_d1( "Wald-AIPW Kitagawa", w_waldaipw_kit_d1)
 
-
+grid.arrange(lp_f2_1, lp_f2_2, lp_f2_3, lp_f2_4,
+             nrow = 1,
+             top = "Love plots: DML — Card vs Kitagawa specification | somecol")
 
 
 # --- F3: Card spec, educ16 — all 8 estimators ---
@@ -616,14 +560,25 @@ lp_f3_6 <- make_love_card_d2("tau_ml_a",      kw_card_d2$tau_ml_a)
 lp_f3_7 <- make_love_card_d2("tau_ml_a1/t",   kw_card_d2$tau_ml_a1)
 lp_f3_8 <- make_love_card_d2("tau_ml_a0",     kw_card_d2$tau_ml_a0)
 
+grid.arrange(lp_f3_1, lp_f3_2, lp_f3_3, lp_f3_4,
+             lp_f3_5, lp_f3_6, lp_f3_7, lp_f3_8,
+             nrow = 2,
+             top = "Love plots: DML vs Kappa | Card specification | educ16")
+
+```
 
 
+```{r}
 # ==============================================================================
 # BLOCK G — SUMMARY TABLE: DML VS KAPPA POINT ESTIMATES
 # Requires: BLOCKS B and C.
 # ==============================================================================
 
 
+cat(strrep("=", 70), "\n")
+cat("BLOCK G — SUMMARY TABLE: DML VS KAPPA POINT ESTIMATES\n")
+cat("(log wages in dollars; kappa M-estimation SEs; DML OLS-based SEs)\n")
+cat(strrep("=", 70), "\n\n")
 
 # Helper: extract PLR-IV and Wald-AIPW from a dml summary matrix
 dml_row <- function(res, estimator) {
@@ -646,11 +601,18 @@ print_cell <- function(coef, se) {
     return(sprintf("%7.3f (  NA  )", coef))
   pval  <- 2 * pnorm(-abs(coef / se))
   stars <- ifelse(pval < 0.01, "***", ifelse(pval < 0.05, "**",
-                                             ifelse(pval < 0.10, "*",   "")))
+           ifelse(pval < 0.10, "*",   "")))
   sprintf("%7.3f%3s (%5.3f)", coef, stars, se)
 }
 
-
+# Column headers
+cat(sprintf("%-22s  %-19s  %-19s  %-19s  %-19s\n",
+            "Estimator",
+            "somecol | Card",
+            "somecol | Kitagawa",
+            "educ16  | Card",
+            "educ16  | Kitagawa"))
+cat(strrep("-", 100), "\n")
 
 # DML rows
 plriv_card_d1   <- dml_row(res_card_d1, "PLR-IV")
@@ -662,19 +624,36 @@ waipw_card_d2   <- dml_row(res_card_d2, "Wald-AIPW")
 waipw_kit_d1    <- dml_row(res_kit_d1,  "Wald-AIPW")
 waipw_kit_d2    <- dml_row(res_kit_d2,  "Wald-AIPW")
 
+cat(sprintf("%-22s  %s  %s  %s  %s\n", "PLR-IV (DML)",
+    print_cell(plriv_card_d1["coef"], plriv_card_d1["se"]),
+    print_cell(plriv_kit_d1["coef"],  plriv_kit_d1["se"]),
+    print_cell(plriv_card_d2["coef"], plriv_card_d2["se"]),
+    print_cell(plriv_kit_d2["coef"],  plriv_kit_d2["se"])))
+
+cat(sprintf("%-22s  %s  %s  %s  %s\n", "Wald-AIPW (DML)",
+    print_cell(waipw_card_d1["coef"], waipw_card_d1["se"]),
+    print_cell(waipw_kit_d1["coef"],  waipw_kit_d1["se"]),
+    print_cell(waipw_card_d2["coef"], waipw_card_d2["se"]),
+    print_cell(waipw_kit_d2["coef"],  waipw_kit_d2["se"])))
+
+cat(strrep("-", 100), "\n")
 
 # Kappa rows
 kappa_estimators <- c("tau_cb_u", "tau_ml_u", "tau_ml_a10",
-                      "tau_ml_a", "tau_ml_t", "tau_ml_a0")
+                       "tau_ml_a", "tau_ml_t", "tau_ml_a0")
 kappa_labels     <- c("tau_cb_u (kappa)",   "tau_ml_u (kappa)",
-                      "tau_ml_a10 (kappa)", "tau_ml_a (kappa)",
-                      "tau_ml_t (kappa)",   "tau_ml_a0 (kappa)")
+                       "tau_ml_a10 (kappa)", "tau_ml_a (kappa)",
+                       "tau_ml_t (kappa)",   "tau_ml_a0 (kappa)")
+
+for (i in seq_along(kappa_estimators)) {
+  est <- kappa_estimators[i]
+  cat(sprintf("%-22s  %s  %s  %s  %s\n",
+      kappa_labels[i],
+      print_cell(kappa_card_d1$estimates[est], kappa_card_d1$se[est]),
+      print_cell(kappa_kit_d1$estimates[est],  kappa_kit_d1$se[est]),
+      print_cell(kappa_card_d2$estimates[est], kappa_card_d2$se[est]),
+      print_cell(kappa_kit_d2$estimates[est],  kappa_kit_d2$se[est])))
+}
 
 
-
-
-
-
-
-
-
+```

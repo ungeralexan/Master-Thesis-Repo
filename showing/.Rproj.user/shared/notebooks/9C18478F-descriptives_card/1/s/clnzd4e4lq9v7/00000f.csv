@@ -1,0 +1,218 @@
+"0","# =============================================================================="
+"0","# BLOCK E — Propensity score distributions"
+"0","# =============================================================================="
+"0","# WHY: The ESS = 1/sum(w_i^2) is largely determined by the variance of the"
+"0","# propensity score distribution.  When P(Z=1|X) is close to 0 or 1 for many"
+"0","# observations, the kappa weights become extreme, collapsing the ESS."
+"0","# This block shows the P(Z=1|X) distribution under the Card and Kitagawa specs"
+"0","# and explains why the educ16 cells have even worse ESS (the propensity score"
+"0","# for treatment is what matters there, not just the propensity score for Z)."
+"0","#"
+"0","# This is the single most important descriptive finding for understanding"
+"0","# the weight diagnostics — the shape of the propensity score IS the ESS."
+"0","# =============================================================================="
+"0",""
+"0","cat(strrep(""-"", 60), ""\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"0","cat(""BLOCK E — Propensity score distributions\n"")"
+"1","BLOCK E — Propensity score distributions
+"
+"0","cat(strrep(""-"", 60), ""\n\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+
+"
+"0","# Card specification propensity score (for Z | X_card)"
+"0","X_card_ps <- model.matrix("
+"0","  ~ black + south + smsa + smsa66 +"
+"0","    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,"
+"0","  data = card_clean"
+"0",")"
+"0","X_kit_ps  <- model.matrix("
+"0","  ~ black + south + smsa + smsa66 + south66,"
+"0","  data = card_clean"
+"0",")"
+"0",""
+"0","p_card <- logit_mle(Z, X_card_ps)"
+"0","p_kit  <- logit_mle(Z, X_kit_ps)"
+"0",""
+"0","cat(""--- P(Z=1 | X) distribution ---\n"")"
+"1","--- P(Z=1 | X) distribution ---
+"
+"0","cat(""(Higher variance = lower ESS; tails near 0 or 1 = extreme kappa weights)\n\n"")"
+"1","(Higher variance = lower ESS; tails near 0 or 1 = extreme kappa weights)
+
+"
+"0","for (spec in c(""Card"", ""Kitagawa"")) {"
+"0","  p_hat <- if (spec == ""Card"") p_card else p_kit"
+"0","  cat(sprintf(""%s specification:\n"", spec))"
+"0","  cat(sprintf(""  Min         : %.4f\n"", min(p_hat)))"
+"0","  cat(sprintf(""  Q1          : %.4f\n"", quantile(p_hat, 0.25)))"
+"0","  cat(sprintf(""  Median      : %.4f\n"", median(p_hat)))"
+"0","  cat(sprintf(""  Mean        : %.4f\n"", mean(p_hat)))"
+"0","  cat(sprintf(""  Q3          : %.4f\n"", quantile(p_hat, 0.75)))"
+"0","  cat(sprintf(""  Max         : %.4f\n"", max(p_hat)))"
+"0","  cat(sprintf(""  Std dev     : %.4f\n"", sd(p_hat)))"
+"0","  cat(sprintf(""  %% below 0.3 : %.1f%%  ← near-zero propensity: large negative kappa weight\n"","
+"0","              100 * mean(p_hat < 0.3)))"
+"0","  cat(sprintf(""  %% above 0.7 : %.1f%%  ← near-one propensity: large positive kappa weight\n"","
+"0","              100 * mean(p_hat > 0.7)))"
+"0",""
+"0","  # Implied ESS for kappa weights (tau_u, using MLE propensity)"
+"0","  kw_tmp <- kappa_outcome_weights(Z, D1, p_hat)"
+"0","  ess_u  <- 1 / sum(kw_tmp$w_u^2)"
+"0","  cat(sprintf(""  Implied ESS (tau_u, D1): %.2f\n\n"", ess_u))"
+"0","}"
+"1","Card specification:
+"
+"1","  Min         : 0.1900
+"
+"1","  Q1          : 0.4303
+"
+"1","  Median      : 0.7907
+"
+"1","  Mean        : 0.6821
+"
+"1","  Q3          : 0.8740
+"
+"1","  Max         : 0.9495
+"
+"1","  Std dev     : 0.2355
+"
+"1","  % below 0.3 : 7.9%  ← near-zero propensity: large negative kappa weight
+"
+"1","  % above 0.7 : 63.9%  ← near-one propensity: large positive kappa weight
+"
+"1","  Implied ESS (tau_u, D1): 4.63
+
+"
+"1","Kitagawa specification:
+"
+"1","  Min         : 0.2532
+"
+"1","  Q1          : 0.4554
+"
+"1","  Median      : 0.7976
+"
+"1","  Mean        : 0.6821
+"
+"1","  Q3          : 0.8783
+"
+"1","  Max         : 0.9067
+"
+"1","  Std dev     : 0.2280
+"
+"1","  % below 0.3 : 7.3%  ← near-zero propensity: large negative kappa weight
+"
+"1","  % above 0.7 : 63.8%  ← near-one propensity: large positive kappa weight
+"
+"1","  Implied ESS (tau_u, D1): 2.94
+
+"
+"0","cat(""KEY INSIGHT:\n"")"
+"1","KEY INSIGHT:
+"
+"0","cat(""  A propensity score that varies between ~0.25 and ~0.75 means many\n"")"
+"1","  A propensity score that varies between ~0.25 and ~0.75 means many
+"
+"0","cat(""  observations sit close to the instrument-take-up boundary.  The kappa\n"")"
+"1","  observations sit close to the instrument-take-up boundary.  The kappa
+"
+"0","cat(""  weight for observation i is proportional to [Z_i/p_i - (1-Z_i)/(1-p_i)],\n"")"
+"1","  weight for observation i is proportional to [Z_i/p_i - (1-Z_i)/(1-p_i)],
+"
+"0","cat(""  which is LARGE when p_i is near 0 (Z=1 is surprising) or near 1 (Z=0\n"")"
+"1","  which is LARGE when p_i is near 0 (Z=1 is surprising) or near 1 (Z=0
+"
+"0","cat(""  is surprising).  When most p_i are spread across (0.25, 0.75), many\n"")"
+"1","  is surprising).  When most p_i are spread across (0.25, 0.75), many
+"
+"0","cat(""  observations get moderate-to-large weights, and the ESS is determined by\n"")"
+"1","  observations get moderate-to-large weights, and the ESS is determined by
+"
+"0","cat(""  how heavily the top few are loaded.  The Card spec's region dummies push\n"")"
+"1","  how heavily the top few are loaded.  The Card spec's region dummies push
+"
+"0","cat(""  some p_i toward 0.1 (rural South, never near college) or 0.9 (Northeast\n"")"
+"1","  some p_i toward 0.1 (rural South, never near college) or 0.9 (Northeast
+"
+"0","cat(""  cities, almost always near college), which is exactly why the Card spec\n"")"
+"1","  cities, almost always near college), which is exactly why the Card spec
+"
+"0","cat(""  collapses the ESS further than the Kitagawa spec in some cells.\n\n"")"
+"1","  collapses the ESS further than the Kitagawa spec in some cells.
+
+"
+"0","# Treatment propensity P(D=1|X) — equally important for understanding leverage"
+"0","# The DML nuisance model estimates E[D|X, Z] and E[Y|X, Z]."
+"0","# If P(D1=1|X) is near 0 or 1 for some cells, those cells dominate the AIPW"
+"0","# augmentation term, which is why Wald-AIPW has higher Max|w| than kappa."
+"0","p_d1_card <- logit_mle(D1, X_card_ps)"
+"0","p_d2_card <- logit_mle(D2, X_card_ps)"
+"0",""
+"0","cat(""--- P(D|X) treatment propensity (Card spec) ---\n"")"
+"1","--- P(D|X) treatment propensity (Card spec) ---
+"
+"0","cat(""(Near-zero P(D2|X) = very few college completers conditional on X:\n"")"
+"1","(Near-zero P(D2|X) = very few college completers conditional on X:
+"
+"0","cat(""  this is why ESS collapses completely for the educ16 cells)\n\n"")"
+"1","  this is why ESS collapses completely for the educ16 cells)
+
+"
+"0","for (spec_d in c(""D1"", ""D2"")) {"
+"0","  p_d_hat <- if (spec_d == ""D1"") p_d1_card else p_d2_card"
+"0","  cat(sprintf(""P(%s=1 | X_card):\n"", spec_d))"
+"0","  cat(sprintf(""  Min         : %.4f\n"", min(p_d_hat)))"
+"0","  cat(sprintf(""  Q1          : %.4f\n"", quantile(p_d_hat, 0.25)))"
+"0","  cat(sprintf(""  Median      : %.4f\n"", median(p_d_hat)))"
+"0","  cat(sprintf(""  Mean        : %.4f\n"", mean(p_d_hat)))"
+"0","  cat(sprintf(""  Q3          : %.4f\n"", quantile(p_d_hat, 0.75)))"
+"0","  cat(sprintf(""  Max         : %.4f\n"", max(p_d_hat)))"
+"0","  cat(sprintf(""  %% below 0.05: %.1f%%  ← near-zero: extreme AIPW weight risk\n"","
+"0","              100 * mean(p_d_hat < 0.05)))"
+"0","  cat(sprintf(""  %% above 0.95: %.1f%%  ← near-one:  extreme AIPW weight risk\n\n"","
+"0","              100 * mean(p_d_hat > 0.95)))"
+"0","}"
+"1","P(D1=1 | X_card):
+"
+"1","  Min         : 0.1801
+"
+"1","  Q1          : 0.3932
+"
+"1","  Median      : 0.5770
+"
+"1","  Mean        : 0.5053
+"
+"1","  Q3          : 0.5962
+"
+"1","  Max         : 0.8116
+"
+"1","  % below 0.05: 0.0%  ← near-zero: extreme AIPW weight risk
+"
+"1","  % above 0.95: 0.0%  ← near-one:  extreme AIPW weight risk
+
+"
+"1","P(D2=1 | X_card):
+"
+"1","  Min         : 0.0669
+"
+"1","  Q1          : 0.2138
+"
+"1","  Median      : 0.3017
+"
+"1","  Mean        : 0.2714
+"
+"1","  Q3          : 0.3474
+"
+"1","  Max         : 0.4397
+"
+"1","  % below 0.05: 0.0%  ← near-zero: extreme AIPW weight risk
+"
+"1","  % above 0.95: 0.0%  ← near-one:  extreme AIPW weight risk
+
+"

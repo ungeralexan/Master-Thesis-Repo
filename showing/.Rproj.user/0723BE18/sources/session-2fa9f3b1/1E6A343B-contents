@@ -1,0 +1,1573 @@
+---
+title: "descriptives"
+author: "Alexander Unger"
+date: "2026-05-24"
+output: html_document
+---
+```{r}
+# ==============================================================================
+#
+# Descriptive analysis of the Card (1995) dataset.
+# Purpose: understand the data before trusting any LATE estimate.
+#
+# This script answers the question: *why* do the weight diagnostics in
+# card_22_double_ml.R look the way they do?  A very low ESS, ~33% negative
+# weights, and large Max|w| do not fall from the sky — they are consequences
+# of specific features of this dataset and instrument.  Understanding those
+# features makes the thesis results interpretable rather than merely reported.
+#
+# Structure
+# ---------
+#   BLOCK A  — sample overview and variable distributions
+#   BLOCK B  — instrument (nearc4) diagnostics: first stage, strength, overlap
+#   BLOCK C  — compliance type estimation (compliers / always-takers /
+#               never-takers / defiers) via Abadie kappa weights
+#   BLOCK D  — complier covariate profiles vs. full sample
+#   BLOCK E  — propensity score distributions (MLE logit vs. CBPS)
+#              → explains why ESS is so low
+#   BLOCK F  — outcome distributions: D=0 vs. D=1, Z=0 vs. Z=1
+#   BLOCK G  — first-stage heterogeneity across covariates
+#              → explains why region dummies cause Love plot trouble
+#   BLOCK H  — Wald ratio intuition: the raw, uncontrolled version
+#              → grounds DML/kappa estimates in something tangible
+#
+# Dependencies
+# ------------
+#   card_1995_replication.R  must have been run first (provides card_clean,
+#   Y_dol, D1, D2, Z, and all kappa functions).
+#
+# ==============================================================================
+source("/Users/alexung/Desktop/master_thesis/showing/reque_for_double_ml.R")
+# Guard: make sure the replication environment is loaded
+stopifnot(
+  exists("card_clean"),
+  exists("D1"), exists("D2"), exists("Z"),
+  exists("Y_dol"),
+  exists("kappa_outcome_weights"),
+  exists("logit_mle")
+)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+cat(strrep("=", 70), "\n")
+cat("CARD (1995) — DESCRIPTIVE ANALYSIS\n")
+cat(strrep("=", 70), "\n\n")
+
+N <- nrow(card_clean)
+```
+
+
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK A — Sample overview and variable distributions
+# ==============================================================================
+# WHY: Before any IV analysis, we need to know who is in the sample.
+# N = 3,010, but the distribution of education, wages, race, and geography
+# determines whether the complier population is interesting or a statistical
+# artefact of regional wage variation.
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK A — Sample overview\n")
+cat(strrep("-", 60), "\n\n")
+
+cat(sprintf("Total observations       : %d\n", N))
+cat(sprintf("Instrument Z = nearc4    : %d (%.1f%%) near college\n",
+            sum(Z), 100 * mean(Z)))
+cat(sprintf("Treatment D1 (somecol)   : %d (%.1f%%) some college\n",
+            sum(D1), 100 * mean(D1)))
+cat(sprintf("Treatment D2 (educ16)    : %d (%.1f%%) college completion\n",
+            sum(D2), 100 * mean(D2)))
+cat("\n")
+
+# Education distribution — why this matters:
+# The jump from educ > 12 (D1) to educ >= 16 (D2) is a much rarer event.
+# A 35% base rate for D1 vs. a much smaller rate for D2 means the IV has
+# far less first-stage variation for D2, directly explaining the ESS collapse
+# in the educ16 cells of the weight diagnostics.
+cat("Education level distribution:\n")
+educ_tab <- table(card_clean$educ)
+print(educ_tab)
+cat(sprintf("\nMedian education years    : %.0f\n", median(card_clean$educ)))
+cat(sprintf("Mean  education years     : %.2f\n", mean(card_clean$educ)))
+cat(sprintf("Std deviation             : %.2f\n", sd(card_clean$educ)))
+cat("\n")
+
+# Race and geography — important because the Card spec includes region dummies
+# that interact with college proximity.  If college access is geographically
+# concentrated and wages vary by region, the IV is partially confounded with
+# regional wage levels — explaining why region dummies cause Love plot trouble.
+cat("Racial composition:\n")
+cat(sprintf("  Black                   : %d (%.1f%%)\n",
+            sum(card_clean$black), 100 * mean(card_clean$black)))
+cat(sprintf("  Non-black               : %d (%.1f%%)\n",
+            N - sum(card_clean$black), 100 * (1 - mean(card_clean$black))))
+cat(sprintf("South (age 66)            : %d (%.1f%%)\n",
+            sum(card_clean$south66), 100 * mean(card_clean$south66)))
+cat(sprintf("SMSA at survey            : %d (%.1f%%)\n",
+            sum(card_clean$smsa), 100 * mean(card_clean$smsa)))
+cat(sprintf("SMSA at age 16            : %d (%.1f%%)\n",
+            sum(card_clean$smsa66), 100 * mean(card_clean$smsa66)))
+cat("\n")
+
+# Outcome distribution
+# WHY: Very wide wage distributions increase the variance of all IV estimators.
+# Log wages in dollars typically span 5–9 log units; understanding this range
+# contextualises why Max|w| = 0.277 is genuinely dangerous — it can shift the
+# estimate by 0.277 * (range of Y) in the extreme.
+cat("Log wage (dollars) distribution:\n")
+cat(sprintf("  Min                     : %.3f\n", min(Y_dol)))
+cat(sprintf("  Q1                      : %.3f\n", quantile(Y_dol, 0.25)))
+cat(sprintf("  Median                  : %.3f\n", median(Y_dol)))
+cat(sprintf("  Mean                    : %.3f\n", mean(Y_dol)))
+cat(sprintf("  Q3                      : %.3f\n", quantile(Y_dol, 0.75)))
+cat(sprintf("  Max                     : %.3f\n", max(Y_dol)))
+cat(sprintf("  Std deviation           : %.3f\n", sd(Y_dol)))
+cat(sprintf("  IQR                     : %.3f log-wage units\n",
+            IQR(Y_dol)))
+cat("\n")
+
+```
+
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK B — Instrument diagnostics: first stage and instrument strength
+# ==============================================================================
+# WHY: The first stage tells us how much variation the instrument generates
+# in treatment take-up.  A weak first stage (small Cov(D, Z)) means the
+# estimator has to divide by a small number to recover the LATE, which
+# amplifies noise and pushes weights toward extremes — directly explaining
+# the low ESS.  The first-stage F-statistic is the canonical rule-of-thumb;
+# here we compute it for both D1 and D2.
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK B — Instrument diagnostics\n")
+cat(strrep("-", 60), "\n\n")
+
+cat("--- Raw first stage: P(D | Z) ---\n")
+# Cross-tabulate Z x D for both treatment definitions
+cat("\nD1 (somecol) by Z (nearc4):\n")
+tab_d1 <- table(Z = Z, D1 = D1)
+print(addmargins(tab_d1))
+p_d1_z1 <- mean(D1[Z == 1])
+p_d1_z0 <- mean(D1[Z == 0])
+fs_d1   <- p_d1_z1 - p_d1_z0
+cat(sprintf("\n  P(D1=1 | Z=1) = %.4f\n", p_d1_z1))
+cat(sprintf("  P(D1=1 | Z=0) = %.4f\n", p_d1_z0))
+cat(sprintf("  First-stage diff (fs) = %.4f\n", fs_d1))
+
+cat("\nD2 (educ16) by Z (nearc4):\n")
+tab_d2 <- table(Z = Z, D2 = D2)
+print(addmargins(tab_d2))
+p_d2_z1 <- mean(D2[Z == 1])
+p_d2_z0 <- mean(D2[Z == 0])
+fs_d2   <- p_d2_z1 - p_d2_z0
+cat(sprintf("\n  P(D2=1 | Z=1) = %.4f\n", p_d2_z1))
+cat(sprintf("  P(D2=1 | Z=0) = %.4f\n", p_d2_z0))
+cat(sprintf("  First-stage diff (fs) = %.4f\n", fs_d2))
+
+# INTERPRETATION: The first-stage difference for D2 is substantially smaller
+# than for D1.  This is the root cause of the ESS = 1 pattern in the educ16
+# cells: a small first stage means the instrument explains little variation
+# in treatment, forcing all identification weight onto the few observations
+# where nearc4 actually changed the college-completion decision.
+
+cat("\n--- First-stage OLS regressions ---\n")
+# A simple OLS first stage (without controls) gives the Wald ratio denominator.
+# With controls it gives the residualised first stage that DML uses.
+fs_ols_d1 <- lm(D1 ~ Z, data = card_clean)
+fs_ols_d2 <- lm(D2 ~ Z, data = card_clean)
+cat("\nD1 ~ Z (no controls):\n")
+print(summary(fs_ols_d1)$coefficients)
+cat(sprintf("  F-statistic: %.2f\n", summary(fs_ols_d1)$fstatistic[1]))
+cat("\nD2 ~ Z (no controls):\n")
+print(summary(fs_ols_d2)$coefficients)
+cat(sprintf("  F-statistic: %.2f\n", summary(fs_ols_d2)$fstatistic[1]))
+
+# WHY: The F-statistic for D2 will be much smaller than for D1, confirming
+# the weak-instrument concern that the weight diagnostics surface.
+
+# First stage with Card controls
+X_controls_card <- model.matrix(
+  ~ exper + expersq + black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+)
+fs_card_d1 <- lm(D1 ~ Z + X_controls_card)
+fs_card_d2 <- lm(D2 ~ Z + X_controls_card)
+cat("\nD1 ~ Z + Card controls (F on Z):\n")
+fs_coef_d1 <- summary(fs_card_d1)$coefficients["Z", ]
+print(fs_coef_d1)
+cat("\nD2 ~ Z + Card controls (F on Z):\n")
+fs_coef_d2 <- summary(fs_card_d2)$coefficients["Z", ]
+print(fs_coef_d2)
+cat("\n")
+
+
+
+
+
+
+
+```
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK C — Compliance type estimation via Abadie kappa weights
+# ==============================================================================
+# WHY: The LATE estimand is defined over *compliers* only (Imbens & Angrist
+# 1994).  But the data give us only four observable cells: (Z=0,D=0),
+# (Z=0,D=1), (Z=1,D=0), (Z=1,D=1).  Compliance types are unobserved at the
+# individual level, but their *proportions* in the population are identified.
+# These proportions explain:
+#   — why there are always-takers for D1 (you can go to college without living
+#     near one) but virtually none for D2 in some specs
+#   — why ~33% negative weights are expected: never-takers and always-takers
+#     receive negative kappa weights by construction (Abadie 2003, Lemma 2.1)
+#   — whether the LATE we estimate is representative or covers a tiny slice
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK C — Compliance type estimation\n")
+cat(strrep("-", 60), "\n\n")
+
+# Under the LATE assumptions (IV monotonicity = no defiers), the four
+# compliance type shares are identified as:
+#   π_c  = P(D1=1|Z=1) - P(D1=1|Z=0)          [compliers]
+#   π_at = P(D1=1|Z=0)                          [always-takers]
+#   π_nt = 1 - P(D1=1|Z=1)                     [never-takers]
+# (Note: π_c + π_at + π_nt = 1 under no-defiers assumption)
+# This uses the unconditional version; the kappa-weighted version follows below.
+
+for (treatment in c("D1", "D2")) {
+  D_vec   <- if (treatment == "D1") D1 else D2
+  D_label <- if (treatment == "D1") "somecol (D1)" else "educ16 (D2)"
+
+  p1 <- mean(D_vec[Z == 1])   # P(D=1 | Z=1)
+  p0 <- mean(D_vec[Z == 0])   # P(D=1 | Z=0)
+
+  pi_c  <- p1 - p0            # complier share
+  pi_at <- p0                 # always-taker share (P(D=1|Z=0) = at / (at+nt+c ... well, = P(D(0)=1))
+  pi_nt <- 1 - p1             # never-taker share
+
+  cat(sprintf("Treatment: %s\n", D_label))
+  cat(sprintf("  π_complier      = %.4f  (%.1f%% of sample)\n",
+              pi_c,  100 * pi_c))
+  cat(sprintf("  π_always-taker  = %.4f  (%.1f%% of sample)\n",
+              pi_at, 100 * pi_at))
+  cat(sprintf("  π_never-taker   = %.4f  (%.1f%% of sample)\n",
+              pi_nt, 100 * pi_nt))
+  cat(sprintf("  Sum check       = %.6f  (should = 1)\n",
+              pi_c + pi_at + pi_nt))
+
+  # WHY THE NEGATIVE WEIGHT SHARE IS ~33%:
+  # Always-takers and never-takers receive negative kappa weights.
+  # Their combined share ≈ π_at + π_nt = 1 - π_c.
+  # But whether a *particular* observation carries a negative weight also
+  # depends on covariates (propensity score).  The observed ~33% negative
+  # weight share is consistent with π_at + π_nt ≈ 66%, because the kappa
+  # weight function mixes these groups.  The precise share depends on
+  # P(Z=1|X) — see Block E below.
+  frac_nonneg <- pi_at + pi_nt
+  cat(sprintf("  Non-complier share (AT+NT): %.1f%%\n",
+              100 * frac_nonneg))
+  cat(sprintf("  This is the population of observations that 'should' receive\n"))
+  cat(sprintf("  negative kappa weights — consistent with observed %%neg ≈ 31-33%%.\n\n"))
+}
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK D — Complier covariate profiles vs. full sample
+# ==============================================================================
+# GOAL:
+#   Estimate the covariate profile of the latent complier population.
+#
+#   Target:
+#       E[X | complier] = E[kappa_i * X_i] / E[kappa_i]
+#
+#   Sample analogue:
+#       mean_complier(X) = sum(kappa_i * X_i) / sum(kappa_i)
+#
+#   Abadie kappa weight:
+#       kappa_i = 1
+#                 - D_i * (1 - Z_i) / (1 - p_i)
+#                 - (1 - D_i) * Z_i / p_i
+#
+#   where:
+#       Z_i = instrument, nearc4
+#       D_i = treatment, e.g. somecol or educ16
+#       p_i = P(Z_i = 1 | X_i)
+#
+# IMPORTANT:
+#   This estimates "what compliers look like", not "who is a complier".
+#   For binary X, the complier mean is the estimated share of compliers
+#   with X = 1.
+#
+# WARNING:
+#   kappa_i is signed. Therefore, finite-sample estimates for dummy variables
+#   can leave [0,1]. This is not a literal percentage anymore; it is a sign
+#   that the kappa reconstruction is unstable.
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK D — Complier covariate profiles\n")
+cat(strrep("-", 60), "\n\n")
+
+
+# ------------------------------------------------------------------------------
+# Helper: Abadie kappa weights for complier covariate means
+# ------------------------------------------------------------------------------
+
+kappa_complier <- function(Z, D, p) {
+  Z <- as.numeric(Z)
+  D <- as.numeric(D)
+  p <- as.numeric(p)
+
+  # numerical safety
+  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)
+
+  1 -
+    D * (1 - Z) / (1 - p) -
+    (1 - D) * Z / p
+}
+
+
+# ------------------------------------------------------------------------------
+# Helper: print complier profile table
+# ------------------------------------------------------------------------------
+
+print_complier_profile <- function(D, D_name, p, p_name, covar_names) {
+
+  kappa_cov <- kappa_complier(Z = Z, D = D, p = p)
+
+  gamma_hat <- mean(kappa_cov)
+
+  cat("\n")
+  cat("------------------------------------------------------------\n")
+  cat(sprintf("Treatment: %s | Propensity score: %s\n", D_name, p_name))
+  cat("------------------------------------------------------------\n")
+
+  cat(sprintf("Estimated complier share, mean(kappa): %.6f\n", gamma_hat))
+  cat(sprintf("Sum(kappa): %.6f\n", sum(kappa_cov)))
+  cat(sprintf("Min(kappa): %.6f\n", min(kappa_cov)))
+  cat(sprintf("Max(kappa): %.6f\n", max(kappa_cov)))
+  cat(sprintf("Share negative kappa: %.2f%%\n\n", mean(kappa_cov < 0) * 100))
+
+  cat(sprintf("%-12s  %8s  %8s  %10s  %12s\n",
+              "Covariate", "Full", "D=1", "Complier", "Flag"))
+  cat(strrep("-", 60), "\n")
+
+  for (cov in covar_names) {
+    if (!cov %in% names(card_clean)) next
+
+    x_i <- card_clean[[cov]]
+
+    full_mn  <- mean(x_i, na.rm = TRUE)
+    treat_mn <- mean(x_i[D == 1], na.rm = TRUE)
+    comp_mn  <- sum(kappa_cov * x_i, na.rm = TRUE) / sum(kappa_cov, na.rm = TRUE)
+
+    is_binary <- all(na.omit(unique(x_i)) %in% c(0, 1))
+
+    flag <- ""
+    if (is_binary && (comp_mn < -1e-8 || comp_mn > 1 + 1e-8)) {
+      flag <- "outside [0,1]"
+    }
+
+    cat(sprintf("%-12s  %8.4f  %8.4f  %10.4f  %12s\n",
+                cov, full_mn, treat_mn, comp_mn, flag))
+  }
+
+  cat("\nInterpretation:\n")
+  cat("  Full      = mean in the full sample.\n")
+  cat("  D=1       = mean among observed treated individuals.\n")
+  cat("  Complier  = kappa-weighted estimate of E[X | complier].\n")
+  cat("  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.\n\n")
+}
+
+
+# ------------------------------------------------------------------------------
+# Covariates to inspect
+# ------------------------------------------------------------------------------
+
+covar_names <- c(
+  "black", "south", "smsa", "smsa66", "south66",
+  "exper", "expersq",
+  "reg661", "reg662", "reg663", "reg664",
+  "reg665", "reg666", "reg667", "reg668"
+)
+
+
+# ------------------------------------------------------------------------------
+# Version 1: Unconditional propensity score p = P(Z = 1)
+# ------------------------------------------------------------------------------
+
+p_marginal <- rep(mean(Z), length(Z))
+
+print_complier_profile(
+  D           = D1,
+  D_name      = "D1 = somecol",
+  p           = p_marginal,
+  p_name      = "marginal P(Z=1)",
+  covar_names = covar_names
+)
+
+print_complier_profile(
+  D           = D2,
+  D_name      = "D2 = educ16",
+  p           = p_marginal,
+  p_name      = "marginal P(Z=1)",
+  covar_names = covar_names
+)
+
+
+# ------------------------------------------------------------------------------
+# Version 2: Covariate-adjusted propensity score p(X)
+# Recommended for the Card design.
+# ------------------------------------------------------------------------------
+
+p_card_ml <- logit_mle(Z, X_controls_card)
+
+print_complier_profile(
+  D           = D1,
+  D_name      = "D1 = somecol",
+  p           = p_card_ml,
+  p_name      = "Card logit p(X)",
+  covar_names = covar_names
+)
+
+print_complier_profile(
+  D           = D2,
+  D_name      = "D2 = educ16",
+  p           = p_card_ml,
+  p_name      = "Card logit p(X)",
+  covar_names = covar_names
+)
+
+
+# ------------------------------------------------------------------------------
+# Raw Wald benchmark
+# ------------------------------------------------------------------------------
+
+cat(strrep("-", 60), "\n")
+cat("Raw Wald ratios, no controls\n")
+cat(strrep("-", 60), "\n\n")
+
+itt_y_d1   <- mean(Y_dol[Z == 1]) - mean(Y_dol[Z == 0])
+fs_d1      <- mean(D1[Z == 1])    - mean(D1[Z == 0])
+wald_d1    <- itt_y_d1 / fs_d1
+
+itt_y_d2   <- mean(Y_dol[Z == 1]) - mean(Y_dol[Z == 0])
+fs_d2      <- mean(D2[Z == 1])    - mean(D2[Z == 0])
+wald_d2    <- itt_y_d2 / fs_d2
+
+cat(sprintf("D1 = somecol:\n"))
+cat(sprintf("  ITT(Y)        = %.6f\n", itt_y_d1))
+cat(sprintf("  First stage   = %.6f\n", fs_d1))
+cat(sprintf("  Wald ratio    = %.6f\n\n", wald_d1))
+
+cat(sprintf("D2 = educ16:\n"))
+cat(sprintf("  ITT(Y)        = %.6f\n", itt_y_d2))
+cat(sprintf("  First stage   = %.6f\n", fs_d2))
+cat(sprintf("  Wald ratio    = %.6f\n\n", wald_d2))
+
+```
+
+
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK E — Propensity score distributions
+# ==============================================================================
+# WHY: The ESS = 1/sum(w_i^2) is largely determined by the variance of the
+# propensity score distribution.  When P(Z=1|X) is close to 0 or 1 for many
+# observations, the kappa weights become extreme, collapsing the ESS.
+# This block shows the P(Z=1|X) distribution under the Card and Kitagawa specs
+# and explains why the educ16 cells have even worse ESS (the propensity score
+# for treatment is what matters there, not just the propensity score for Z).
+#
+# This is the single most important descriptive finding for understanding
+# the weight diagnostics — the shape of the propensity score IS the ESS.
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK E — Propensity score distributions\n")
+cat(strrep("-", 60), "\n\n")
+
+# Card specification propensity score (for Z | X_card)
+X_card_ps <- model.matrix(
+  ~ black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+)
+X_kit_ps  <- model.matrix(
+  ~ black + south + smsa + smsa66 + south66,
+  data = card_clean
+)
+
+p_card <- logit_mle(Z, X_card_ps)
+p_kit  <- logit_mle(Z, X_kit_ps)
+
+cat("--- P(Z=1 | X) distribution ---\n")
+cat("(Higher variance = lower ESS; tails near 0 or 1 = extreme kappa weights)\n\n")
+
+for (spec in c("Card", "Kitagawa")) {
+  p_hat <- if (spec == "Card") p_card else p_kit
+  cat(sprintf("%s specification:\n", spec))
+  cat(sprintf("  Min         : %.4f\n", min(p_hat)))
+  cat(sprintf("  Q1          : %.4f\n", quantile(p_hat, 0.25)))
+  cat(sprintf("  Median      : %.4f\n", median(p_hat)))
+  cat(sprintf("  Mean        : %.4f\n", mean(p_hat)))
+  cat(sprintf("  Q3          : %.4f\n", quantile(p_hat, 0.75)))
+  cat(sprintf("  Max         : %.4f\n", max(p_hat)))
+  cat(sprintf("  Std dev     : %.4f\n", sd(p_hat)))
+  cat(sprintf("  %% below 0.3 : %.1f%%  ← near-zero propensity: large negative kappa weight\n",
+              100 * mean(p_hat < 0.3)))
+  cat(sprintf("  %% above 0.7 : %.1f%%  ← near-one propensity: large positive kappa weight\n",
+              100 * mean(p_hat > 0.7)))
+
+  # Implied ESS for kappa weights (tau_u, using MLE propensity)
+  kw_tmp <- kappa_outcome_weights(Z, D1, p_hat)
+  ess_u  <- 1 / sum(kw_tmp$w_u^2)
+  cat(sprintf("  Implied ESS (tau_u, D1): %.2f\n\n", ess_u))
+}
+
+cat("KEY INSIGHT:\n")
+cat("  A propensity score that varies between ~0.25 and ~0.75 means many\n")
+cat("  observations sit close to the instrument-take-up boundary.  The kappa\n")
+cat("  weight for observation i is proportional to [Z_i/p_i - (1-Z_i)/(1-p_i)],\n")
+cat("  which is LARGE when p_i is near 0 (Z=1 is surprising) or near 1 (Z=0\n")
+cat("  is surprising).  When most p_i are spread across (0.25, 0.75), many\n")
+cat("  observations get moderate-to-large weights, and the ESS is determined by\n")
+cat("  how heavily the top few are loaded.  The Card spec's region dummies push\n")
+cat("  some p_i toward 0.1 (rural South, never near college) or 0.9 (Northeast\n")
+cat("  cities, almost always near college), which is exactly why the Card spec\n")
+cat("  collapses the ESS further than the Kitagawa spec in some cells.\n\n")
+
+# Treatment propensity P(D=1|X) — equally important for understanding leverage
+# The DML nuisance model estimates E[D|X, Z] and E[Y|X, Z].
+# If P(D1=1|X) is near 0 or 1 for some cells, those cells dominate the AIPW
+# augmentation term, which is why Wald-AIPW has higher Max|w| than kappa.
+p_d1_card <- logit_mle(D1, X_card_ps)
+p_d2_card <- logit_mle(D2, X_card_ps)
+
+cat("--- P(D|X) treatment propensity (Card spec) ---\n")
+cat("(Near-zero P(D2|X) = very few college completers conditional on X:\n")
+cat("  this is why ESS collapses completely for the educ16 cells)\n\n")
+
+for (spec_d in c("D1", "D2")) {
+  p_d_hat <- if (spec_d == "D1") p_d1_card else p_d2_card
+  cat(sprintf("P(%s=1 | X_card):\n", spec_d))
+  cat(sprintf("  Min         : %.4f\n", min(p_d_hat)))
+  cat(sprintf("  Q1          : %.4f\n", quantile(p_d_hat, 0.25)))
+  cat(sprintf("  Median      : %.4f\n", median(p_d_hat)))
+  cat(sprintf("  Mean        : %.4f\n", mean(p_d_hat)))
+  cat(sprintf("  Q3          : %.4f\n", quantile(p_d_hat, 0.75)))
+  cat(sprintf("  Max         : %.4f\n", max(p_d_hat)))
+  cat(sprintf("  %% below 0.05: %.1f%%  ← near-zero: extreme AIPW weight risk\n",
+              100 * mean(p_d_hat < 0.05)))
+  cat(sprintf("  %% above 0.95: %.1f%%  ← near-one:  extreme AIPW weight risk\n\n",
+              100 * mean(p_d_hat > 0.95)))
+}
+
+```
+
+
+
+
+
+```{r}
+# ==============================================================================
+# FULL DIAGNOSTIC BLOCK — High p(Z|X), Z = 0, D = 1, and kappa leverage
+# ==============================================================================
+# Purpose:
+#   Diagnose whether low ESS / unstable kappa profiles are driven by observations
+#   with high predicted probability of Z = 1, but observed Z = 0 and D = 1.
+#
+# Interpretation:
+#   If p_i = P(Z_i = 1 | X_i) is high, but Z_i = 0 and D_i = 1, then
+#
+#       kappa_i = 1 - D_i(1-Z_i)/(1-p_i) - (1-D_i)Z_i/p_i
+#
+#   becomes very negative because the term 1/(1-p_i) is large.
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# 0. Basic safety checks
+# ------------------------------------------------------------------------------
+
+required_vars <- c(
+  "nearc4", "somecol", "educ16",
+  "black", "south", "smsa", "smsa66",
+  "reg661", "reg662", "reg663", "reg664",
+  "reg665", "reg666", "reg667", "reg668"
+)
+
+missing_vars <- setdiff(required_vars, names(card_clean))
+
+if (length(missing_vars) > 0) {
+  stop("These variables are missing from card_clean: ",
+       paste(missing_vars, collapse = ", "))
+}
+
+cat("N rows in card_clean:", nrow(card_clean), "\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. Helper: robust logit propensity score
+# ------------------------------------------------------------------------------
+
+safe_logit <- function(eta) {
+  eta <- pmin(pmax(eta, -35), 35)
+  1 / (1 + exp(-eta))
+}
+
+logit_mle <- function(Z, X) {
+  Z <- as.numeric(Z)
+  X <- as.matrix(X)
+
+  fit <- glm.fit(
+    x = X,
+    y = Z,
+    family = binomial(link = "logit")
+  )
+
+  beta <- coef(fit)
+  beta[is.na(beta)] <- 0
+
+  p <- as.vector(safe_logit(X %*% beta))
+  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)
+
+  return(p)
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Helper: Abadie kappa for complier moments
+# ------------------------------------------------------------------------------
+
+kappa_complier <- function(Z, D, p) {
+  Z <- as.numeric(Z)
+  D <- as.numeric(D)
+  p <- as.numeric(p)
+
+  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)
+
+  1 -
+    D * (1 - Z) / (1 - p) -
+    (1 - D) * Z / p
+}
+
+
+# ------------------------------------------------------------------------------
+# 3. Build Card propensity score p(Z = 1 | X)
+# ------------------------------------------------------------------------------
+
+X_card_ps <- model.matrix(
+  ~ black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 +
+    reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+)
+
+card_clean$pZ_card <- logit_mle(
+  Z = card_clean$nearc4,
+  X = X_card_ps
+)
+
+cat("Summary of pZ_card = P(nearc4 = 1 | X_card):\n")
+print(summary(card_clean$pZ_card))
+cat("\nQuantiles of pZ_card:\n")
+print(quantile(card_clean$pZ_card,
+               probs = c(0, 0.001, 0.01, 0.05, 0.10, 0.25,
+                         0.50, 0.75, 0.90, 0.95, 0.99, 0.999, 1),
+               na.rm = TRUE))
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Compute kappa for D1 = somecol and D2 = educ16
+# ------------------------------------------------------------------------------
+
+card_clean$kappa_somecol_card <- kappa_complier(
+  Z = card_clean$nearc4,
+  D = card_clean$somecol,
+  p = card_clean$pZ_card
+)
+
+card_clean$kappa_educ16_card <- kappa_complier(
+  Z = card_clean$nearc4,
+  D = card_clean$educ16,
+  p = card_clean$pZ_card
+)
+
+cat("Kappa summary for D1 = somecol:\n")
+print(summary(card_clean$kappa_somecol_card))
+cat(sprintf("mean(kappa) = %.6f\n", mean(card_clean$kappa_somecol_card)))
+cat(sprintf("sum(kappa)  = %.6f\n", sum(card_clean$kappa_somecol_card)))
+cat(sprintf("share negative kappa = %.2f%%\n\n",
+            100 * mean(card_clean$kappa_somecol_card < 0)))
+
+cat("Kappa summary for D2 = educ16:\n")
+print(summary(card_clean$kappa_educ16_card))
+cat(sprintf("mean(kappa) = %.6f\n", mean(card_clean$kappa_educ16_card)))
+cat(sprintf("sum(kappa)  = %.6f\n", sum(card_clean$kappa_educ16_card)))
+cat(sprintf("share negative kappa = %.2f%%\n\n",
+            100 * mean(card_clean$kappa_educ16_card < 0)))
+
+
+# ------------------------------------------------------------------------------
+# 5. First-stage checks
+# ------------------------------------------------------------------------------
+
+cat("Raw first-stage checks:\n\n")
+
+cat("D1 = somecol:\n")
+print(with(card_clean, tapply(somecol, nearc4, mean)))
+cat(sprintf("First stage D1 = %.6f\n\n",
+            with(card_clean, mean(somecol[nearc4 == 1]) -
+                           mean(somecol[nearc4 == 0]))))
+
+cat("D2 = educ16:\n")
+print(with(card_clean, tapply(educ16, nearc4, mean)))
+cat(sprintf("First stage D2 = %.6f\n\n",
+            with(card_clean, mean(educ16[nearc4 == 1]) -
+                           mean(educ16[nearc4 == 0]))))
+
+
+# ------------------------------------------------------------------------------
+# 6. Main diagnostic:
+#    high p(Z=1|X), but observed Z=0 and D=1
+# ------------------------------------------------------------------------------
+
+high_p_Z0_D1_diagnostic <- function(data, D_name, kappa_name,
+                                    p_name = "pZ_card",
+                                    Z_name = "nearc4",
+                                    cutoffs = c(0.70, 0.80, 0.90, 0.95)) {
+
+  out <- data.frame()
+
+  for (cut in cutoffs) {
+
+    idx_high <- data[[p_name]] >= cut
+
+    idx_risk <- data[[p_name]] >= cut &
+      data[[Z_name]] == 0 &
+      data[[D_name]] == 1
+
+    row <- data.frame(
+      Treatment = D_name,
+      Cutoff = cut,
+
+      N_total = nrow(data),
+
+      N_high_p = sum(idx_high, na.rm = TRUE),
+      Share_high_p_full = mean(idx_high, na.rm = TRUE),
+
+      N_high_p_Z0_D1 = sum(idx_risk, na.rm = TRUE),
+      Share_high_p_Z0_D1_full = mean(idx_risk, na.rm = TRUE),
+
+      Share_Z0_D1_among_high_p =
+        ifelse(sum(idx_high, na.rm = TRUE) > 0,
+               sum(idx_risk, na.rm = TRUE) / sum(idx_high, na.rm = TRUE),
+               NA_real_),
+
+      Min_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               min(data[[kappa_name]][idx_risk], na.rm = TRUE),
+               NA_real_),
+
+      Mean_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               mean(data[[kappa_name]][idx_risk], na.rm = TRUE),
+               NA_real_),
+
+      Max_abs_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               max(abs(data[[kappa_name]][idx_risk]), na.rm = TRUE),
+               NA_real_)
+    )
+
+    out <- rbind(out, row)
+  }
+
+  return(out)
+}
+
+diag_somecol <- high_p_Z0_D1_diagnostic(
+  data = card_clean,
+  D_name = "somecol",
+  kappa_name = "kappa_somecol_card"
+)
+
+diag_educ16 <- high_p_Z0_D1_diagnostic(
+  data = card_clean,
+  D_name = "educ16",
+  kappa_name = "kappa_educ16_card"
+)
+
+cat("Diagnostic: high p(Z=1|X), observed Z=0, D=1 — D1 = somecol\n")
+print(diag_somecol)
+cat("\n")
+
+cat("Diagnostic: high p(Z=1|X), observed Z=0, D=1 — D2 = educ16\n")
+print(diag_educ16)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Symmetric diagnostic:
+#    low p(Z=1|X), but observed Z=1 and D=0
+# ------------------------------------------------------------------------------
+
+low_p_Z1_D0_diagnostic <- function(data, D_name, kappa_name,
+                                   p_name = "pZ_card",
+                                   Z_name = "nearc4",
+                                   cutoffs = c(0.30, 0.20, 0.10, 0.05)) {
+
+  out <- data.frame()
+
+  for (cut in cutoffs) {
+
+    idx_low <- data[[p_name]] <= cut
+
+    idx_risk <- data[[p_name]] <= cut &
+      data[[Z_name]] == 1 &
+      data[[D_name]] == 0
+
+    row <- data.frame(
+      Treatment = D_name,
+      Cutoff = cut,
+
+      N_total = nrow(data),
+
+      N_low_p = sum(idx_low, na.rm = TRUE),
+      Share_low_p_full = mean(idx_low, na.rm = TRUE),
+
+      N_low_p_Z1_D0 = sum(idx_risk, na.rm = TRUE),
+      Share_low_p_Z1_D0_full = mean(idx_risk, na.rm = TRUE),
+
+      Share_Z1_D0_among_low_p =
+        ifelse(sum(idx_low, na.rm = TRUE) > 0,
+               sum(idx_risk, na.rm = TRUE) / sum(idx_low, na.rm = TRUE),
+               NA_real_),
+
+      Min_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               min(data[[kappa_name]][idx_risk], na.rm = TRUE),
+               NA_real_),
+
+      Mean_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               mean(data[[kappa_name]][idx_risk], na.rm = TRUE),
+               NA_real_),
+
+      Max_abs_kappa_in_risk_group =
+        ifelse(sum(idx_risk, na.rm = TRUE) > 0,
+               max(abs(data[[kappa_name]][idx_risk]), na.rm = TRUE),
+               NA_real_)
+    )
+
+    out <- rbind(out, row)
+  }
+
+  return(out)
+}
+
+diag_low_somecol <- low_p_Z1_D0_diagnostic(
+  data = card_clean,
+  D_name = "somecol",
+  kappa_name = "kappa_somecol_card"
+)
+
+diag_low_educ16 <- low_p_Z1_D0_diagnostic(
+  data = card_clean,
+  D_name = "educ16",
+  kappa_name = "kappa_educ16_card"
+)
+
+cat("Diagnostic: low p(Z=1|X), observed Z=1, D=0 — D1 = somecol\n")
+print(diag_low_somecol)
+cat("\n")
+
+cat("Diagnostic: low p(Z=1|X), observed Z=1, D=0 — D2 = educ16\n")
+print(diag_low_educ16)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 8. Inspect the most negative kappa observations
+# ------------------------------------------------------------------------------
+
+inspect_vars <- c(
+  "pZ_card", "nearc4", "somecol", "educ16",
+  "kappa_somecol_card", "kappa_educ16_card",
+  "black", "south", "smsa", "smsa66",
+  "reg661", "reg662", "reg663", "reg664",
+  "reg665", "reg666", "reg667", "reg668"
+)
+
+inspect_vars <- intersect(inspect_vars, names(card_clean))
+
+cat("20 most negative kappa observations for D1 = somecol:\n")
+print(
+  head(
+    card_clean[order(card_clean$kappa_somecol_card), inspect_vars],
+    20
+  )
+)
+cat("\n")
+
+cat("20 most negative kappa observations for D2 = educ16:\n")
+print(
+  head(
+    card_clean[order(card_clean$kappa_educ16_card), inspect_vars],
+    20
+  )
+)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 9. Optional: aggregate the top absolute kappa contributors
+# ------------------------------------------------------------------------------
+
+top_abs_kappa_summary <- function(data, kappa_name, top_n = c(5, 10, 20, 50)) {
+
+  abs_k <- abs(data[[kappa_name]])
+  total_abs <- sum(abs_k, na.rm = TRUE)
+
+  out <- data.frame()
+
+  ord <- order(abs_k, decreasing = TRUE)
+
+  for (n_top in top_n) {
+    idx <- ord[seq_len(min(n_top, length(ord)))]
+
+    row <- data.frame(
+      Kappa = kappa_name,
+      Top_n = n_top,
+      Share_abs_kappa = sum(abs_k[idx], na.rm = TRUE) / total_abs,
+      Min_kappa_top = min(data[[kappa_name]][idx], na.rm = TRUE),
+      Max_kappa_top = max(data[[kappa_name]][idx], na.rm = TRUE),
+      Mean_pZ_top = mean(data$pZ_card[idx], na.rm = TRUE),
+      Share_Z0_D1_somecol_top =
+        mean(data$nearc4[idx] == 0 & data$somecol[idx] == 1, na.rm = TRUE),
+      Share_Z0_D1_educ16_top =
+        mean(data$nearc4[idx] == 0 & data$educ16[idx] == 1, na.rm = TRUE)
+    )
+
+    out <- rbind(out, row)
+  }
+
+  return(out)
+}
+
+cat("Top absolute-kappa concentration — D1 = somecol:\n")
+print(top_abs_kappa_summary(card_clean, "kappa_somecol_card"))
+cat("\n")
+
+cat("Top absolute-kappa concentration — D2 = educ16:\n")
+print(top_abs_kappa_summary(card_clean, "kappa_educ16_card"))
+cat("\n")
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# CBPS vs. MLE propensity score diagnostic — Card (1995)
+# ==============================================================================
+# Purpose:
+#   Compare kappa weights and ESS under MLE logit vs. CBPS propensity scores
+#   for both the Card and Kitagawa covariate specifications.
+#
+#   Key question: is the extreme-weight / low-ESS problem a structural overlap
+#   issue (data), or does the MLE amplify it relative to CBPS?
+#
+# Requires:
+#   - card_clean  : the cleaned Card dataset (with nearc4, somecol, educ16,
+#                   all covariate columns, and Y in log-dollars)
+#   - All functions from functions_card.R already sourced:
+#       logit_mle(), get_cbps_p(), kappa_outcome_weights(), weight_diag()
+#       safe_logit(), prep_design_for_mest(), fit_cbps_alpha()
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# 0.  Grab the core vectors (adjust names if yours differ)
+# ------------------------------------------------------------------------------
+
+Z  <- as.numeric(card_clean$nearc4)
+D1 <- as.integer(card_clean$somecol)
+D2 <- as.integer(card_clean$educ16)
+Y  <- card_clean$lwage          # log wage in dollars — adjust if named differently
+
+
+# ------------------------------------------------------------------------------
+# 1.  Design matrices — exactly as in your main analysis
+# ------------------------------------------------------------------------------
+
+X_card_ps <- model.matrix(
+  ~ black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 +
+    reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+)
+
+X_kit_ps <- model.matrix(
+  ~ black + south + smsa + smsa66 + south66,
+  data = card_clean
+)
+
+
+# ------------------------------------------------------------------------------
+# 2.  Estimate propensity scores: MLE and CBPS, both specs
+# ------------------------------------------------------------------------------
+
+cat("Estimating propensity scores...\n")
+
+p_card_ml  <- logit_mle(Z, X_card_ps)
+p_kit_ml   <- logit_mle(Z, X_kit_ps)
+
+cat("  MLE done. Fitting CBPS (Card spec)...\n")
+cbps_card_fit <- fit_cbps_alpha(Z, X_card_ps)
+p_card_cb     <- cbps_card_fit$p
+cat(sprintf("  CBPS Card  — converged: %s, max moment: %.2e\n",
+            cbps_card_fit$converged, cbps_card_fit$max_moment))
+
+cat("  Fitting CBPS (Kitagawa spec)...\n")
+cbps_kit_fit <- fit_cbps_alpha(Z, X_kit_ps)
+p_kit_cb     <- cbps_kit_fit$p
+cat(sprintf("  CBPS Kit   — converged: %s, max moment: %.2e\n\n",
+            cbps_kit_fit$converged, cbps_kit_fit$max_moment))
+
+
+# ------------------------------------------------------------------------------
+# 3.  Propensity score distribution comparison
+# ------------------------------------------------------------------------------
+
+cat(strrep("=", 65), "\n")
+cat("PROPENSITY SCORE DISTRIBUTIONS: P(Z=1|X)\n")
+cat(strrep("=", 65), "\n\n")
+
+ps_summary <- function(p, label) {
+  qs <- quantile(p, probs = c(0, 0.01, 0.05, 0.10, 0.25, 0.50,
+                               0.75, 0.90, 0.95, 0.99, 1))
+  cat(sprintf("%-30s\n", label))
+  cat(sprintf("  Min / 1pct / 5pct  : %.4f / %.4f / %.4f\n",
+              qs["0%"], qs["1%"], qs["5%"]))
+  cat(sprintf("  Q1 / Median / Q3   : %.4f / %.4f / %.4f\n",
+              qs["25%"], qs["50%"], qs["75%"]))
+  cat(sprintf("  95pct / 99pct / Max: %.4f / %.4f / %.4f\n",
+              qs["95%"], qs["99%"], qs["100%"]))
+  cat(sprintf("  Std dev            : %.4f\n", sd(p)))
+  cat(sprintf("  pct below 0.10     : %.1f%%\n", 100 * mean(p < 0.10)))
+  cat(sprintf("  pct below 0.20     : %.1f%%\n", 100 * mean(p < 0.20)))
+  cat(sprintf("  pct above 0.80     : %.1f%%\n", 100 * mean(p > 0.80)))
+  cat(sprintf("  pct above 0.90     : %.1f%%\n", 100 * mean(p > 0.90)))
+  cat(sprintf("  pct above 0.93     : %.1f%%  <- the κ=-13.9 threshold\n",
+              100 * mean(p > 0.93)))
+  cat("\n")
+}
+
+ps_summary(p_card_ml, "Card spec  — MLE logit")
+ps_summary(p_card_cb, "Card spec  — CBPS")
+ps_summary(p_kit_ml,  "Kitagawa spec — MLE logit")
+ps_summary(p_kit_cb,  "Kitagawa spec — CBPS")
+
+
+# ------------------------------------------------------------------------------
+# 4.  Kappa weights: MLE vs CBPS, Card vs Kitagawa, D1 vs D2
+# ------------------------------------------------------------------------------
+
+cat(strrep("=", 65), "\n")
+cat("KAPPA WEIGHT DIAGNOSTICS\n")
+cat(strrep("=", 65), "\n\n")
+
+kappa_diag <- function(Z, D, p, label) {
+  kw <- 1 - D * (1 - Z) / (1 - p) - (1 - D) * Z / p
+  cat(sprintf("%-45s\n", label))
+  cat(sprintf("  mean(kappa)      : %.6f\n", mean(kw)))
+  cat(sprintf("  min(kappa)       : %.4f\n", min(kw)))
+  cat(sprintf("  max(kappa)       : %.4f\n", max(kw)))
+  cat(sprintf("  share negative   : %.2f%%\n", 100 * mean(kw < 0)))
+  cat(sprintf("  share < -5       : %.2f%%  <- extreme leverage\n",
+              100 * mean(kw < -5)))
+  cat(sprintf("  share < -10      : %.2f%%\n", 100 * mean(kw < -10)))
+  cat("\n")
+}
+
+kappa_diag(Z, D1, p_card_ml, "D1=somecol | Card spec  | MLE")
+kappa_diag(Z, D1, p_card_cb, "D1=somecol | Card spec  | CBPS")
+kappa_diag(Z, D1, p_kit_ml,  "D1=somecol | Kitagawa   | MLE")
+kappa_diag(Z, D1, p_kit_cb,  "D1=somecol | Kitagawa   | CBPS")
+kappa_diag(Z, D2, p_card_ml, "D2=educ16  | Card spec  | MLE")
+kappa_diag(Z, D2, p_card_cb, "D2=educ16  | Card spec  | CBPS")
+kappa_diag(Z, D2, p_kit_ml,  "D2=educ16  | Kitagawa   | MLE")
+kappa_diag(Z, D2, p_kit_cb,  "D2=educ16  | Kitagawa   | CBPS")
+
+
+# ------------------------------------------------------------------------------
+# 5.  Outcome weight diagnostics (ESS, pct_neg, max|w|)
+#     using your exact kappa_outcome_weights() + weight_diag() functions
+# ------------------------------------------------------------------------------
+
+cat(strrep("=", 65), "\n")
+cat("OUTCOME WEIGHT DIAGNOSTICS (tau_u and tau_a10)\n")
+cat(strrep("=", 65), "\n\n")
+
+diag_rows <- list()
+
+run_diag <- function(D, p, label_u, label_a10) {
+  ow <- kappa_outcome_weights(Z, D, p)
+  list(
+    weight_diag(ow$w_u,   label_u),
+    weight_diag(ow$w_a10, label_a10)
+  )
+}
+
+diag_rows <- c(diag_rows,
+  run_diag(D1, p_card_ml, "tau_u   | D1 somecol | Card  | MLE",
+                           "tau_a10 | D1 somecol | Card  | MLE"),
+  run_diag(D1, p_card_cb, "tau_u   | D1 somecol | Card  | CBPS",
+                           "tau_a10 | D1 somecol | Card  | CBPS"),
+  run_diag(D1, p_kit_ml,  "tau_u   | D1 somecol | Kit   | MLE",
+                           "tau_a10 | D1 somecol | Kit   | MLE"),
+  run_diag(D1, p_kit_cb,  "tau_u   | D1 somecol | Kit   | CBPS",
+                           "tau_a10 | D1 somecol | Kit   | CBPS"),
+  run_diag(D2, p_card_ml, "tau_u   | D2 educ16  | Card  | MLE",
+                           "tau_a10 | D2 educ16  | Card  | MLE"),
+  run_diag(D2, p_card_cb, "tau_u   | D2 educ16  | Card  | CBPS",
+                           "tau_a10 | D2 educ16  | Card  | CBPS"),
+  run_diag(D2, p_kit_ml,  "tau_u   | D2 educ16  | Kit   | MLE",
+                           "tau_a10 | D2 educ16  | Kit   | MLE"),
+  run_diag(D2, p_kit_cb,  "tau_u   | D2 educ16  | Kit   | CBPS",
+                           "tau_a10 | D2 educ16  | Kit   | CBPS")
+)
+
+diag_table <- do.call(rbind, diag_rows)
+print(diag_table, row.names = FALSE)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 6.  The "risk cell" diagnostic: high p, Z=0, D=1 — MLE vs CBPS
+#     Shows whether CBPS shrinks the extreme propensity values that cause
+#     κ = -13.9 under MLE.
+# ------------------------------------------------------------------------------
+
+cat(strrep("=", 65), "\n")
+cat("RISK CELL: high p, observed Z=0, D=1  (the κ extreme source)\n")
+cat(strrep("=", 65), "\n\n")
+
+risk_cell_diag <- function(p, D, Z, kappa_vec, label, cutoffs = c(0.70, 0.80, 0.90)) {
+  cat(sprintf("%-45s\n", label))
+  for (cut in cutoffs) {
+    idx <- p >= cut & Z == 0 & D == 1
+    n_risk <- sum(idx)
+    if (n_risk == 0) {
+      cat(sprintf("  p > %.2f: 0 obs in risk cell\n", cut))
+      next
+    }
+    cat(sprintf("  p > %.2f: N=%3d | min(κ)=%7.2f | mean(κ)=%7.2f | max(p)=%.4f\n",
+                cut, n_risk,
+                min(kappa_vec[idx]),
+                mean(kappa_vec[idx]),
+                max(p[idx])))
+  }
+  cat("\n")
+}
+
+kw_d1_card_ml <- 1 - D1*(1-Z)/(1-p_card_ml) - (1-D1)*Z/p_card_ml
+kw_d1_card_cb <- 1 - D1*(1-Z)/(1-p_card_cb) - (1-D1)*Z/p_card_cb
+kw_d1_kit_ml  <- 1 - D1*(1-Z)/(1-p_kit_ml)  - (1-D1)*Z/p_kit_ml
+kw_d1_kit_cb  <- 1 - D1*(1-Z)/(1-p_kit_cb)  - (1-D1)*Z/p_kit_cb
+
+risk_cell_diag(p_card_ml, D1, Z, kw_d1_card_ml, "D1=somecol | Card spec  | MLE")
+risk_cell_diag(p_card_cb, D1, Z, kw_d1_card_cb, "D1=somecol | Card spec  | CBPS")
+risk_cell_diag(p_kit_ml,  D1, Z, kw_d1_kit_ml,  "D1=somecol | Kitagawa   | MLE")
+risk_cell_diag(p_kit_cb,  D1, Z, kw_d1_kit_cb,  "D1=somecol | Kitagawa   | CBPS")
+
+
+# ------------------------------------------------------------------------------
+# 7.  Point estimates for tau_u: all four combinations
+#     So you can see whether CBPS also changes the estimate, not just the weights
+# ------------------------------------------------------------------------------
+
+cat(strrep("=", 65), "\n")
+cat("POINT ESTIMATES: tau_u across specs and p-score methods\n")
+cat(strrep("=", 65), "\n\n")
+
+est_tbl <- data.frame(
+  Label = c(
+    "tau_u | D1 somecol | Card  | MLE",
+    "tau_u | D1 somecol | Card  | CBPS",
+    "tau_u | D1 somecol | Kit   | MLE",
+    "tau_u | D1 somecol | Kit   | CBPS",
+    "tau_u | D2 educ16  | Card  | MLE",
+    "tau_u | D2 educ16  | Card  | CBPS",
+    "tau_u | D2 educ16  | Kit   | MLE",
+    "tau_u | D2 educ16  | Kit   | CBPS"
+  ),
+  Estimate = c(
+    tau_u(Y, Z, D1, p_card_ml),
+    tau_u(Y, Z, D1, p_card_cb),
+    tau_u(Y, Z, D1, p_kit_ml),
+    tau_u(Y, Z, D1, p_kit_cb),
+    tau_u(Y, Z, D2, p_card_ml),
+    tau_u(Y, Z, D2, p_card_cb),
+    tau_u(Y, Z, D2, p_kit_ml),
+    tau_u(Y, Z, D2, p_kit_cb)
+  )
+)
+est_tbl$Estimate <- round(est_tbl$Estimate, 4)
+print(est_tbl, row.names = FALSE)
+cat("\n")
+
+cat("Done.\n")
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK G2 — Covariate-adjusted first-stage heterogeneity
+# ==============================================================================
+# GOAL:
+#   Estimate whether the first stage differs across covariate subgroups,
+#   after controlling for the Card covariates.
+#
+# Raw subgroup first stage:
+#   fs_g = P(D=1 | Z=1, G=g) - P(D=1 | Z=0, G=g)
+#
+# Covariate-adjusted first stage:
+#   D_i = alpha + rho Z_i + X_i beta + theta (Z_i * G_i) + gamma G_i + u_i
+#
+# Then:
+#   fs(G=0) = rho
+#   fs(G=1) = rho + theta
+#
+# For region heterogeneity, use region as a factor:
+#   D_i = alpha + region_i + Z_i:region_i + other controls + u_i
+#
+# Then each region-specific first stage is the coefficient on Z within that
+# region, controlling for the remaining covariates.
+# ==============================================================================
+
+cat(strrep("-", 60), "\n")
+cat("BLOCK G2 — Covariate-adjusted first-stage heterogeneity\n")
+cat(strrep("-", 60), "\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 0. Make sure variables are numeric
+# ------------------------------------------------------------------------------
+
+card_clean$Z_nearc4 <- as.numeric(card_clean$nearc4)
+card_clean$D_somecol <- as.numeric(card_clean$somecol)
+card_clean$D_educ16  <- as.numeric(card_clean$educ16)
+
+
+# ------------------------------------------------------------------------------
+# 1. Construct a region factor from reg661-reg668
+# ------------------------------------------------------------------------------
+
+region_vars <- paste0("reg66", 1:8)
+region_vars <- region_vars[region_vars %in% names(card_clean)]
+
+card_clean$region66 <- NA_character_
+
+for (rv in region_vars) {
+  card_clean$region66[card_clean[[rv]] == 1] <- rv
+}
+
+card_clean$region66 <- factor(card_clean$region66)
+
+cat("Region counts:\n")
+print(table(card_clean$region66, useNA = "ifany"))
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 2. Function for binary subgroup heterogeneity
+# ------------------------------------------------------------------------------
+
+adjusted_fs_binary <- function(data, D_name, G_name, controls) {
+
+  # Formula:
+  # D ~ Z * G + controls
+  fml <- as.formula(
+    paste0(
+      D_name, " ~ Z_nearc4 * ", G_name, " + ",
+      paste(controls, collapse = " + ")
+    )
+  )
+
+  fit <- lm(fml, data = data)
+
+  co <- coef(fit)
+  vc <- vcov(fit)
+
+  # Main Z coefficient = first stage for G=0
+  beta_Z <- co["Z_nearc4"]
+
+  # Interaction coefficient = difference in first stage for G=1 vs G=0
+  int_name_1 <- paste0("Z_nearc4:", G_name)
+  int_name_2 <- paste0(G_name, ":Z_nearc4")
+
+  int_name <- if (int_name_1 %in% names(co)) int_name_1 else int_name_2
+
+  beta_int <- if (int_name %in% names(co)) co[int_name] else 0
+
+  fs_g0 <- beta_Z
+  fs_g1 <- beta_Z + beta_int
+
+  se_g0 <- sqrt(vc["Z_nearc4", "Z_nearc4"])
+
+  # Delta method for beta_Z + beta_int
+  if (int_name %in% rownames(vc)) {
+    se_g1 <- sqrt(
+      vc["Z_nearc4", "Z_nearc4"] +
+        vc[int_name, int_name] +
+        2 * vc["Z_nearc4", int_name]
+    )
+  } else {
+    se_g1 <- se_g0
+  }
+
+  out <- data.frame(
+    Treatment = D_name,
+    Subgroup = G_name,
+    Group = c("0", "1"),
+    N = c(sum(data[[G_name]] == 0, na.rm = TRUE),
+          sum(data[[G_name]] == 1, na.rm = TRUE)),
+    Adj_first_stage = c(fs_g0, fs_g1),
+    SE = c(se_g0, se_g1),
+    t_value = c(fs_g0 / se_g0, fs_g1 / se_g1)
+  )
+
+  return(out)
+}
+
+
+# ------------------------------------------------------------------------------
+# 3. Function for region-specific adjusted first stages
+# ------------------------------------------------------------------------------
+
+adjusted_fs_region <- function(data, D_name, controls_other) {
+
+  # Formula:
+  # D ~ 0 + region66 + Z:region66 + other controls
+  #
+  # Using 0 + region66 creates one intercept per region.
+  # Z_nearc4:region66 gives one first-stage coefficient per region.
+  fml <- as.formula(
+    paste0(
+      D_name, " ~ 0 + region66 + Z_nearc4:region66 + ",
+      paste(controls_other, collapse = " + ")
+    )
+  )
+
+  fit <- lm(fml, data = data)
+
+  co <- coef(fit)
+  vc <- vcov(fit)
+
+  regions <- levels(data$region66)
+
+  out <- data.frame()
+
+  for (r in regions) {
+
+    coef_name <- paste0("region66", r, ":Z_nearc4")
+    coef_name_alt <- paste0("Z_nearc4:region66", r)
+
+    cn <- if (coef_name %in% names(co)) coef_name else coef_name_alt
+
+    if (!cn %in% names(co)) next
+
+    fs_r <- co[cn]
+    se_r <- sqrt(vc[cn, cn])
+
+    row <- data.frame(
+      Treatment = D_name,
+      Region = r,
+      N = sum(data$region66 == r, na.rm = TRUE),
+      N_Z1 = sum(data$region66 == r & data$Z_nearc4 == 1, na.rm = TRUE),
+      N_Z0 = sum(data$region66 == r & data$Z_nearc4 == 0, na.rm = TRUE),
+      Adj_first_stage = fs_r,
+      SE = se_r,
+      t_value = fs_r / se_r
+    )
+
+    out <- rbind(out, row)
+  }
+
+  return(out)
+}
+
+
+# ------------------------------------------------------------------------------
+# 4. Define controls
+# ------------------------------------------------------------------------------
+
+# For binary subgroup interactions, include standard Card controls.
+# Important: when G is one of the controls, remove it from the controls list
+# to avoid duplication.
+base_controls <- c(
+  "exper", "expersq",
+  "black", "south", "smsa", "smsa66",
+  "reg661", "reg662", "reg663", "reg664",
+  "reg665", "reg666", "reg667", "reg668"
+)
+
+# For region-specific heterogeneity, do NOT include individual region dummies
+# because region66 already absorbs them.
+controls_for_region <- c(
+  "exper", "expersq",
+  "black", "south", "smsa", "smsa66"
+)
+
+
+# ------------------------------------------------------------------------------
+# 5. Binary subgroup adjusted first stages
+# ------------------------------------------------------------------------------
+
+binary_subgroups <- c("black", "south", "smsa", "smsa66")
+
+cat("Adjusted first-stage heterogeneity: binary subgroups\n\n")
+
+binary_results <- data.frame()
+
+for (D_name in c("D_somecol", "D_educ16")) {
+  for (G_name in binary_subgroups) {
+
+    controls_use <- setdiff(base_controls, G_name)
+
+    tmp <- adjusted_fs_binary(
+      data = card_clean,
+      D_name = D_name,
+      G_name = G_name,
+      controls = controls_use
+    )
+
+    binary_results <- rbind(binary_results, tmp)
+  }
+}
+
+print(binary_results)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Region-specific adjusted first stages
+# ------------------------------------------------------------------------------
+
+cat("Adjusted first-stage heterogeneity: regions\n\n")
+
+region_results_somecol <- adjusted_fs_region(
+  data = card_clean,
+  D_name = "D_somecol",
+  controls_other = controls_for_region
+)
+
+region_results_educ16 <- adjusted_fs_region(
+  data = card_clean,
+  D_name = "D_educ16",
+  controls_other = controls_for_region
+)
+
+cat("D1 = somecol:\n")
+print(region_results_somecol)
+cat("\n")
+
+cat("D2 = educ16:\n")
+print(region_results_educ16)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Add ratios relative to the overall adjusted first stage
+# ------------------------------------------------------------------------------
+
+fs_overall_somecol <- coef(lm(
+  D_somecol ~ Z_nearc4 + exper + expersq + black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+))["Z_nearc4"]
+
+fs_overall_educ16 <- coef(lm(
+  D_educ16 ~ Z_nearc4 + exper + expersq + black + south + smsa + smsa66 +
+    reg661 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668,
+  data = card_clean
+))["Z_nearc4"]
+
+region_results_somecol$Ratio_to_overall_adj <- region_results_somecol$Adj_first_stage / fs_overall_somecol
+region_results_educ16$Ratio_to_overall_adj  <- region_results_educ16$Adj_first_stage / fs_overall_educ16
+
+cat("Overall adjusted first stage:\n")
+cat(sprintf("  D1 = somecol: %.6f\n", fs_overall_somecol))
+cat(sprintf("  D2 = educ16 : %.6f\n\n", fs_overall_educ16))
+
+cat("Region results with ratios — D1 = somecol:\n")
+print(region_results_somecol)
+cat("\n")
+
+cat("Region results with ratios — D2 = educ16:\n")
+print(region_results_educ16)
+cat("\n")
+
+
+# ------------------------------------------------------------------------------
+# 8. Interpretation helper
+# ------------------------------------------------------------------------------
+
+cat("INTERPRETATION:\n")
+cat("  Adj_first_stage is the covariate-adjusted effect of nearc4 on D within the subgroup/region.\n")
+cat("  For binary groups, it comes from D ~ Z * G + controls.\n")
+cat("  For regions, it comes from D ~ region + Z:region + controls.\n")
+cat("  Large positive values mean the instrument creates many compliers in that group.\n")
+cat("  Near-zero values mean weak/no first stage in that group.\n")
+cat("  Negative values mean the raw/adjusted relationship reverses in that group; treat cautiously,\n")
+cat("  especially when N_Z0 or N_Z1 is small.\n")
+cat("  Ratio_to_overall_adj compares the region-specific first stage to the overall adjusted first stage.\n")
+cat("  Values above 1 mean the region contributes more strongly to the complier margin than average.\n")
+cat("  Values below 1 mean it contributes less strongly than average.\n")
+
+```
+
+
+
+
+
+

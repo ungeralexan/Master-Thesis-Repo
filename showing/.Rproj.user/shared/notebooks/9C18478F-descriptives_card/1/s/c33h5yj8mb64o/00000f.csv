@@ -1,0 +1,492 @@
+"0",""
+"0","# =============================================================================="
+"0","# BLOCK D — Complier covariate profiles vs. full sample"
+"0","# =============================================================================="
+"0","# GOAL:"
+"0","#   Estimate the covariate profile of the latent complier population."
+"0","#"
+"0","#   Target:"
+"0","#       E[X | complier] = E[kappa_i * X_i] / E[kappa_i]"
+"0","#"
+"0","#   Sample analogue:"
+"0","#       mean_complier(X) = sum(kappa_i * X_i) / sum(kappa_i)"
+"0","#"
+"0","#   Abadie kappa weight:"
+"0","#       kappa_i = 1"
+"0","#                 - D_i * (1 - Z_i) / (1 - p_i)"
+"0","#                 - (1 - D_i) * Z_i / p_i"
+"0","#"
+"0","#   where:"
+"0","#       Z_i = instrument, nearc4"
+"0","#       D_i = treatment, e.g. somecol or educ16"
+"0","#       p_i = P(Z_i = 1 | X_i)"
+"0","#"
+"0","# IMPORTANT:"
+"0","#   This estimates ""what compliers look like"", not ""who is a complier""."
+"0","#   For binary X, the complier mean is the estimated share of compliers"
+"0","#   with X = 1."
+"0","#"
+"0","# WARNING:"
+"0","#   kappa_i is signed. Therefore, finite-sample estimates for dummy variables"
+"0","#   can leave [0,1]. This is not a literal percentage anymore; it is a sign"
+"0","#   that the kappa reconstruction is unstable."
+"0","# =============================================================================="
+"0",""
+"0","cat(strrep(""-"", 60), ""\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"0","cat(""BLOCK D — Complier covariate profiles\n"")"
+"1","BLOCK D — Complier covariate profiles
+"
+"0","cat(strrep(""-"", 60), ""\n\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+
+"
+"0","# ------------------------------------------------------------------------------"
+"0","# Helper: Abadie kappa weights for complier covariate means"
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","kappa_complier <- function(Z, D, p) {"
+"0","  Z <- as.numeric(Z)"
+"0","  D <- as.numeric(D)"
+"0","  p <- as.numeric(p)"
+"0",""
+"0","  # numerical safety"
+"0","  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)"
+"0",""
+"0","  1 -"
+"0","    D * (1 - Z) / (1 - p) -"
+"0","    (1 - D) * Z / p"
+"0","}"
+"0",""
+"0",""
+"0","# ------------------------------------------------------------------------------"
+"0","# Helper: print complier profile table"
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","print_complier_profile <- function(D, D_name, p, p_name, covar_names) {"
+"0",""
+"0","  kappa_cov <- kappa_complier(Z = Z, D = D, p = p)"
+"0",""
+"0","  gamma_hat <- mean(kappa_cov)"
+"0",""
+"0","  cat(""\n"")"
+"0","  cat(""------------------------------------------------------------\n"")"
+"0","  cat(sprintf(""Treatment: %s | Propensity score: %s\n"", D_name, p_name))"
+"0","  cat(""------------------------------------------------------------\n"")"
+"0",""
+"0","  cat(sprintf(""Estimated complier share, mean(kappa): %.6f\n"", gamma_hat))"
+"0","  cat(sprintf(""Sum(kappa): %.6f\n"", sum(kappa_cov)))"
+"0","  cat(sprintf(""Min(kappa): %.6f\n"", min(kappa_cov)))"
+"0","  cat(sprintf(""Max(kappa): %.6f\n"", max(kappa_cov)))"
+"0","  cat(sprintf(""Share negative kappa: %.2f%%\n\n"", mean(kappa_cov < 0) * 100))"
+"0",""
+"0","  cat(sprintf(""%-12s  %8s  %8s  %10s  %12s\n"","
+"0","              ""Covariate"", ""Full"", ""D=1"", ""Complier"", ""Flag""))"
+"0","  cat(strrep(""-"", 60), ""\n"")"
+"0",""
+"0","  for (cov in covar_names) {"
+"0","    if (!cov %in% names(card_clean)) next"
+"0",""
+"0","    x_i <- card_clean[[cov]]"
+"0",""
+"0","    full_mn  <- mean(x_i, na.rm = TRUE)"
+"0","    treat_mn <- mean(x_i[D == 1], na.rm = TRUE)"
+"0","    comp_mn  <- sum(kappa_cov * x_i, na.rm = TRUE) / sum(kappa_cov, na.rm = TRUE)"
+"0",""
+"0","    is_binary <- all(na.omit(unique(x_i)) %in% c(0, 1))"
+"0",""
+"0","    flag <- """""
+"0","    if (is_binary && (comp_mn < -1e-8 || comp_mn > 1 + 1e-8)) {"
+"0","      flag <- ""outside [0,1]"""
+"0","    }"
+"0",""
+"0","    cat(sprintf(""%-12s  %8.4f  %8.4f  %10.4f  %12s\n"","
+"0","                cov, full_mn, treat_mn, comp_mn, flag))"
+"0","  }"
+"0",""
+"0","  cat(""\nInterpretation:\n"")"
+"0","  cat(""  Full      = mean in the full sample.\n"")"
+"0","  cat(""  D=1       = mean among observed treated individuals.\n"")"
+"0","  cat(""  Complier  = kappa-weighted estimate of E[X | complier].\n"")"
+"0","  cat(""  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.\n\n"")"
+"0","}"
+"0",""
+"0",""
+"0","# ------------------------------------------------------------------------------"
+"0","# Covariates to inspect"
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","covar_names <- c("
+"0","  ""black"", ""south"", ""smsa"", ""smsa66"", ""south66"","
+"0","  ""exper"", ""expersq"","
+"0","  ""reg661"", ""reg662"", ""reg663"", ""reg664"","
+"0","  ""reg665"", ""reg666"", ""reg667"", ""reg668"""
+"0",")"
+"0",""
+"0",""
+"0","# ------------------------------------------------------------------------------"
+"0","# Version 1: Unconditional propensity score p = P(Z = 1)"
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","p_marginal <- rep(mean(Z), length(Z))"
+"0",""
+"0","print_complier_profile("
+"0","  D           = D1,"
+"0","  D_name      = ""D1 = somecol"","
+"0","  p           = p_marginal,"
+"0","  p_name      = ""marginal P(Z=1)"","
+"0","  covar_names = covar_names"
+"0",")"
+"1","
+"
+"1","------------------------------------------------------------
+"
+"1","Treatment: D1 = somecol | Propensity score: marginal P(Z=1)
+"
+"1","------------------------------------------------------------
+"
+"1","Estimated complier share, mean(kappa): 0.121929
+"
+"1","Sum(kappa): 367.007107
+"
+"1","Min(kappa): -2.145246
+"
+"1","Max(kappa): 1.000000
+"
+"1","Share negative kappa: 44.52%
+
+"
+"1","Covariate         Full       D=1    Complier          Flag
+"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","black           0.2336    0.1460      0.2102              
+"
+"1","south           0.4037    0.3517      0.1338              
+"
+"1","smsa            0.7130    0.7824      1.0685  outside [0,1]
+"
+"1","smsa66          0.6495    0.7002      1.1537  outside [0,1]
+"
+"1","south66         0.4143    0.3465      0.1176              
+"
+"1","exper           8.8561    6.6667      9.4693              
+"
+"1","expersq        95.5791   54.6640    110.3437              
+"
+"1","reg661          0.0465    0.0414      0.0481              
+"
+"1","reg662          0.1608    0.1755      0.4249              
+"
+"1","reg663          0.1957    0.2091      0.2374              
+"
+"1","reg664          0.0641    0.0703      0.0005              
+"
+"1","reg665          0.2083    0.1690      0.1684              
+"
+"1","reg666          0.0960    0.0789     -0.0807  outside [0,1]
+"
+"1","reg667          0.1100    0.0986      0.0299              
+"
+"1","reg668          0.0282    0.0408     -0.0546  outside [0,1]
+"
+"1","
+Interpretation:
+"
+"1","  Full      = mean in the full sample.
+"
+"1","  D=1       = mean among observed treated individuals.
+"
+"1","  Complier  = kappa-weighted estimate of E[X | complier].
+"
+"1","  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.
+
+"
+"0","print_complier_profile("
+"0","  D           = D2,"
+"0","  D_name      = ""D2 = educ16"","
+"0","  p           = p_marginal,"
+"0","  p_name      = ""marginal P(Z=1)"","
+"0","  covar_names = covar_names"
+"0",")"
+"1","
+"
+"1","------------------------------------------------------------
+"
+"1","Treatment: D2 = educ16 | Propensity score: marginal P(Z=1)
+"
+"1","------------------------------------------------------------
+"
+"1","Estimated complier share, mean(kappa): 0.068569
+"
+"1","Sum(kappa): 206.392760
+"
+"1","Min(kappa): -2.145246
+"
+"1","Max(kappa): 1.000000
+"
+"1","Share negative kappa: 55.35%
+
+"
+"1","Covariate         Full       D=1    Complier          Flag
+"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","black           0.2336    0.1004      0.3176              
+"
+"1","south           0.4037    0.3182      0.5187              
+"
+"1","smsa            0.7130    0.7846      0.1673              
+"
+"1","smsa66          0.6495    0.6928     -0.0187  outside [0,1]
+"
+"1","south66         0.4143    0.3133      0.4960              
+"
+"1","exper           8.8561    5.6450      9.3853              
+"
+"1","expersq        95.5791   40.3794    111.2662              
+"
+"1","reg661          0.0465    0.0465      0.0420              
+"
+"1","reg662          0.1608    0.2056      0.2757              
+"
+"1","reg663          0.1957    0.2166      0.1131              
+"
+"1","reg664          0.0641    0.0747      0.1209              
+"
+"1","reg665          0.2083    0.1567      0.2768              
+"
+"1","reg666          0.0960    0.0685      0.2286              
+"
+"1","reg667          0.1100    0.0881     -0.0094  outside [0,1]
+"
+"1","reg668          0.0282    0.0367     -0.0339  outside [0,1]
+"
+"1","
+Interpretation:
+"
+"1","  Full      = mean in the full sample.
+"
+"1","  D=1       = mean among observed treated individuals.
+"
+"1","  Complier  = kappa-weighted estimate of E[X | complier].
+"
+"1","  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.
+
+"
+"0","# ------------------------------------------------------------------------------"
+"0","# Version 2: Covariate-adjusted propensity score p(X)"
+"0","# Recommended for the Card design."
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","p_card_ml <- logit_mle(Z, X_controls_card)"
+"0",""
+"0","print_complier_profile("
+"0","  D           = D1,"
+"0","  D_name      = ""D1 = somecol"","
+"0","  p           = p_card_ml,"
+"0","  p_name      = ""Card logit p(X)"","
+"0","  covar_names = covar_names"
+"0",")"
+"1","
+"
+"1","------------------------------------------------------------
+"
+"1","Treatment: D1 = somecol | Propensity score: Card logit p(X)
+"
+"1","------------------------------------------------------------
+"
+"1","Estimated complier share, mean(kappa): 0.094918
+"
+"1","Sum(kappa): 285.702760
+"
+"1","Min(kappa): -14.557192
+"
+"1","Max(kappa): 1.000000
+"
+"1","Share negative kappa: 44.52%
+
+"
+"1","Covariate         Full       D=1    Complier          Flag
+"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","black           0.2336    0.1460      0.2956              
+"
+"1","south           0.4037    0.3517      0.0057              
+"
+"1","smsa            0.7130    0.7824      1.1092  outside [0,1]
+"
+"1","smsa66          0.6495    0.7002      0.8055              
+"
+"1","south66         0.4143    0.3465      0.0833              
+"
+"1","exper           8.8561    6.6667      8.5194              
+"
+"1","expersq        95.5791   54.6640     88.5827              
+"
+"1","reg661          0.0465    0.0414      0.1448              
+"
+"1","reg662          0.1608    0.1755      0.2504              
+"
+"1","reg663          0.1957    0.2091      0.3495              
+"
+"1","reg664          0.0641    0.0703     -0.1724  outside [0,1]
+"
+"1","reg665          0.2083    0.1690     -0.1632  outside [0,1]
+"
+"1","reg666          0.0960    0.0789     -0.0136  outside [0,1]
+"
+"1","reg667          0.1100    0.0986      0.2602              
+"
+"1","reg668          0.0282    0.0408     -0.0758  outside [0,1]
+"
+"1","
+Interpretation:
+"
+"1","  Full      = mean in the full sample.
+"
+"1","  D=1       = mean among observed treated individuals.
+"
+"1","  Complier  = kappa-weighted estimate of E[X | complier].
+"
+"1","  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.
+
+"
+"0","print_complier_profile("
+"0","  D           = D2,"
+"0","  D_name      = ""D2 = educ16"","
+"0","  p           = p_card_ml,"
+"0","  p_name      = ""Card logit p(X)"","
+"0","  covar_names = covar_names"
+"0",")"
+"1","
+"
+"1","------------------------------------------------------------
+"
+"1","Treatment: D2 = educ16 | Propensity score: Card logit p(X)
+"
+"1","------------------------------------------------------------
+"
+"1","Estimated complier share, mean(kappa): 0.051029
+"
+"1","Sum(kappa): 153.598157
+"
+"1","Min(kappa): -14.557192
+"
+"1","Max(kappa): 1.000000
+"
+"1","Share negative kappa: 55.35%
+
+"
+"1","Covariate         Full       D=1    Complier          Flag
+"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","black           0.2336    0.1004      0.3153              
+"
+"1","south           0.4037    0.3182     -0.2751  outside [0,1]
+"
+"1","smsa            0.7130    0.7846      1.1332  outside [0,1]
+"
+"1","smsa66          0.6495    0.6928      0.7331              
+"
+"1","south66         0.4143    0.3133     -0.3273  outside [0,1]
+"
+"1","exper           8.8561    5.6450      7.1853              
+"
+"1","expersq        95.5791   40.3794     63.0613              
+"
+"1","reg661          0.0465    0.0465      0.2237              
+"
+"1","reg662          0.1608    0.2056      0.5235              
+"
+"1","reg663          0.1957    0.2166      0.4132              
+"
+"1","reg664          0.0641    0.0747     -0.0314  outside [0,1]
+"
+"1","reg665          0.2083    0.1567     -0.4738  outside [0,1]
+"
+"1","reg666          0.0960    0.0685     -0.1119  outside [0,1]
+"
+"1","reg667          0.1100    0.0881      0.2584              
+"
+"1","reg668          0.0282    0.0367     -0.1094  outside [0,1]
+"
+"1","
+Interpretation:
+"
+"1","  Full      = mean in the full sample.
+"
+"1","  D=1       = mean among observed treated individuals.
+"
+"1","  Complier  = kappa-weighted estimate of E[X | complier].
+"
+"1","  If a dummy complier mean is outside [0,1], the kappa reconstruction is unstable.
+
+"
+"0","# ------------------------------------------------------------------------------"
+"0","# Raw Wald benchmark"
+"0","# ------------------------------------------------------------------------------"
+"0",""
+"0","cat(strrep(""-"", 60), ""\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+"
+"0","cat(""Raw Wald ratios, no controls\n"")"
+"1","Raw Wald ratios, no controls
+"
+"0","cat(strrep(""-"", 60), ""\n\n"")"
+"1","------------------------------------------------------------"
+"1"," "
+"1","
+
+"
+"0","itt_y_d1   <- mean(Y_dol[Z == 1]) - mean(Y_dol[Z == 0])"
+"0","fs_d1      <- mean(D1[Z == 1])    - mean(D1[Z == 0])"
+"0","wald_d1    <- itt_y_d1 / fs_d1"
+"0",""
+"0","itt_y_d2   <- mean(Y_dol[Z == 1]) - mean(Y_dol[Z == 0])"
+"0","fs_d2      <- mean(D2[Z == 1])    - mean(D2[Z == 0])"
+"0","wald_d2    <- itt_y_d2 / fs_d2"
+"0",""
+"0","cat(sprintf(""D1 = somecol:\n""))"
+"1","D1 = somecol:
+"
+"0","cat(sprintf(""  ITT(Y)        = %.6f\n"", itt_y_d1))"
+"1","  ITT(Y)        = 0.155907
+"
+"0","cat(sprintf(""  First stage   = %.6f\n"", fs_d1))"
+"1","  First stage   = 0.121929
+"
+"0","cat(sprintf(""  Wald ratio    = %.6f\n\n"", wald_d1))"
+"1","  Wald ratio    = 1.278672
+
+"
+"0","cat(sprintf(""D2 = educ16:\n""))"
+"1","D2 = educ16:
+"
+"0","cat(sprintf(""  ITT(Y)        = %.6f\n"", itt_y_d2))"
+"1","  ITT(Y)        = 0.155907
+"
+"0","cat(sprintf(""  First stage   = %.6f\n"", fs_d2))"
+"1","  First stage   = 0.068569
+"
+"0","cat(sprintf(""  Wald ratio    = %.6f\n\n"", wald_d2))"
+"1","  Wald ratio    = 2.273731
+
+"

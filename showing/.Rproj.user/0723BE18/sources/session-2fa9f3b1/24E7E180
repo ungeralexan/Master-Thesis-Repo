@@ -1,27 +1,27 @@
 {
-    "id": "7FB13D43",
-    "path": "~/Desktop/master_thesis/showing/card_22_double_ml_extended.Rmd",
-    "project_path": "card_22_double_ml_extended.Rmd",
+    "id": "24E7E180",
+    "path": "~/Desktop/master_thesis/showing/card_22_double_ml.Rmd",
+    "project_path": "card_22_double_ml.Rmd",
     "type": "r_markdown",
-    "hash": "3058522915",
+    "hash": "0",
     "contents": "",
     "dirty": false,
-    "created": 1779385191936.0,
+    "created": 1779641968103.0,
     "source_on_save": false,
     "relative_order": 4,
     "properties": {
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "835,33",
-        "scrollLine": "826"
+        "cursorPosition": "7,0",
+        "scrollLine": "0"
     },
     "folds": "",
-    "lastKnownWriteTime": 1779386209,
+    "lastKnownWriteTime": 1779384224,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1779386209249,
+    "last_content_update": 1779384224,
     "read_only": false,
     "read_only_alternatives": []
 }

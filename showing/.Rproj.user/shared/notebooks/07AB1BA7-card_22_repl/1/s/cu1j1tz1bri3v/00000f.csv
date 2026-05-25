@@ -1,0 +1,153 @@
+"0","# unnormalization check"
+"0",""
+"0","k_shift <- log(100)   # constant by which lwage_cnt exceeds lwage"
+"0",""
+"0","cat(""\n\n"")"
+"1","
+
+"
+"0","cat(""==============================================================================\n"")"
+"1","==============================================================================
+"
+"0","cat(""TRANSLATION-INVARIANCE CHECK\n"")"
+"1","TRANSLATION-INVARIANCE CHECK
+"
+"0","cat(""Demonstrates: normalized estimators are cents/dollars invariant;\n"")"
+"1","Demonstrates: normalized estimators are cents/dollars invariant;
+"
+"0","cat(""unnormalized are NOT (SUW 2025, Section 4.2).\n"")"
+"1","unnormalized are NOT (SUW 2025, Section 4.2).
+"
+"0","cat(""==============================================================================\n"")"
+"1","==============================================================================
+"
+"0","unnorm_check <- function(D, X_kappa, spec_label) {"
+"0","  p_ml <- logit_mle(Z, X_kappa)"
+"0","  p_cb <- get_cbps_p(Z, X_kappa)"
+"0","  kw_ml <- kappa_outcome_weights(Z, D, p_ml)"
+"0","  kw_cb <- kappa_outcome_weights(Z, D, p_cb)"
+"0",""
+"0","  cat(sprintf(""\n=== %s ===\n"", spec_label))"
+"0","  cat(sprintf(""%-18s  %8s  %8s  %10s  %10s  %10s\n"","
+"0","              ""Estimator"", ""Cents"", ""Dollars"", ""Diff(act)"","
+"0","              ""Diff(pred)"", ""Match?""))"
+"0","  cat(strrep(""-"", 72), ""\n"")"
+"0",""
+"0","  # Helper: print one row"
+"0","  pr <- function(name, w, est_cnt, est_dol) {"
+"0","    act  <- est_cnt - est_dol"
+"0","    pred <- sum(w) * k_shift"
+"0","    ok   <- isTRUE(all.equal(act, pred, tolerance = 1e-6))"
+"0","    cat(sprintf(""%-18s  %8.4f  %8.4f  %10.4f  %10.4f  %10s\n"","
+"0","                name, est_cnt, est_dol, act, pred,"
+"0","                if (ok) ""TRUE"" else ""FALSE""))"
+"0","  }"
+"0",""
+"0","  # Normalized (sum(w) ~ 0, diff ~ 0)"
+"0","  pr(""tau_cb_u"",    kw_cb$w_u,"
+"0","     tau_u(Y_cnt, Z, D, p_cb),    tau_u(Y_dol, Z, D, p_cb))"
+"0","  pr(""tau_ml_u"",    kw_ml$w_u,"
+"0","     tau_u(Y_cnt, Z, D, p_ml),    tau_u(Y_dol, Z, D, p_ml))"
+"0","  pr(""tau_ml_a10"",  kw_ml$w_a10,"
+"0","     tau_a10(Y_cnt, Z, D, p_ml),  tau_a10(Y_dol, Z, D, p_ml))"
+"0",""
+"0","  # Unnormalized (sum(w) != 0, diff = sum(w) * log(100) != 0)"
+"0","  pr(""tau_ml_a"",    kw_ml$w_a,"
+"0","     tau_unnorm(Y_cnt, Z, D, p_ml, ""a""),"
+"0","     tau_unnorm(Y_dol, Z, D, p_ml, ""a""))"
+"0","  pr(""tau_ml_t"",    kw_ml$w_a1,"
+"0","     tau_unnorm(Y_cnt, Z, D, p_ml, ""a1""),"
+"0","     tau_unnorm(Y_dol, Z, D, p_ml, ""a1""))"
+"0","  pr(""tau_ml_a0"",   kw_ml$w_a0,"
+"0","     tau_unnorm(Y_cnt, Z, D, p_ml, ""a0""),"
+"0","     tau_unnorm(Y_dol, Z, D, p_ml, ""a0""))"
+"0","}"
+"0",""
+"0","unnorm_check(D1, X_card_kappa, ""somecol — Card specification"")"
+"1","
+=== somecol — Card specification ===
+"
+"1","Estimator              Cents   Dollars   Diff(act)  Diff(pred)      Match?
+"
+"1","------------------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","tau_cb_u              0.3762    0.3762     -0.0000     -0.0000        TRUE
+"
+"1","tau_ml_u              0.3308    0.3308     -0.0000     -0.0000        TRUE
+"
+"1","tau_ml_a10            0.3460    0.3460      0.0000      0.0000        TRUE
+"
+"1","tau_ml_a             -0.3193    0.1695     -0.4888     -0.4888        TRUE
+"
+"1","tau_ml_t             -0.3214    0.1707     -0.4921     -0.4921        TRUE
+"
+"1","tau_ml_a0            -0.2904    0.1542     -0.4446     -0.4446        TRUE
+"
+"0","unnorm_check(D1, X_kit_kappa,  ""somecol — Kitagawa specification"")"
+"1","
+=== somecol — Kitagawa specification ===
+"
+"1","Estimator              Cents   Dollars   Diff(act)  Diff(pred)      Match?
+"
+"1","------------------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","tau_cb_u              0.3310    0.3310      0.0000      0.0000        TRUE
+"
+"1","tau_ml_u              0.3556    0.3556      0.0000      0.0000        TRUE
+"
+"1","tau_ml_a10            0.2930    0.2930      0.0000     -0.0000        TRUE
+"
+"1","tau_ml_a              2.2476    0.8418      1.4058      1.4058        TRUE
+"
+"1","tau_ml_t              2.0526    0.7688      1.2838      1.2838        TRUE
+"
+"1","tau_ml_a0             2.8460    1.0659      1.7801      1.7801        TRUE
+"
+"0","unnorm_check(D2, X_card_kappa, ""educ16  — Card specification"")"
+"1","
+=== educ16  — Card specification ===
+"
+"1","Estimator              Cents   Dollars   Diff(act)  Diff(pred)      Match?
+"
+"1","------------------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","tau_cb_u              0.8530    0.8530     -0.0000     -0.0000        TRUE
+"
+"1","tau_ml_u              0.6191    0.6191     -0.0000     -0.0000        TRUE
+"
+"1","tau_ml_a10            0.5862    0.5862     -0.0000     -0.0000        TRUE
+"
+"1","tau_ml_a             -0.5939    0.3154     -0.9093     -0.9093        TRUE
+"
+"1","tau_ml_t             -0.6013    0.3193     -0.9206     -0.9206        TRUE
+"
+"1","tau_ml_a0            -0.5012    0.2661     -0.7673     -0.7673        TRUE
+"
+"0","unnorm_check(D2, X_kit_kappa,  ""educ16  — Kitagawa specification"")"
+"1","
+=== educ16  — Kitagawa specification ===
+"
+"1","Estimator              Cents   Dollars   Diff(act)  Diff(pred)      Match?
+"
+"1","------------------------------------------------------------------------"
+"1"," "
+"1","
+"
+"1","tau_cb_u              0.5885    0.5885      0.0000      0.0000        TRUE
+"
+"1","tau_ml_u              0.6276    0.6276      0.0000      0.0000        TRUE
+"
+"1","tau_ml_a10            0.8356    0.8356      0.0000     -0.0000        TRUE
+"
+"1","tau_ml_a              4.3169    1.6168      2.7001      2.7001        TRUE
+"
+"1","tau_ml_t              3.6507    1.3673      2.2834      2.2834        TRUE
+"
+"1","tau_ml_a0             7.2410    2.7120      4.5290      4.5290        TRUE
+"
