@@ -1,0 +1,478 @@
+\documentclass[12pt,a4paper]{article}
+
+% ------------------------------------------------------------
+% Encoding, language, typography
+% ------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ------------------------------------------------------------
+% Page layout
+% ------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ------------------------------------------------------------
+% Mathematics
+% ------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{bm}
+
+% ------------------------------------------------------------
+% Tables, lists, links
+% ------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+% ------------------------------------------------------------
+% Citations
+% ------------------------------------------------------------
+\usepackage[round,authoryear]{natbib}
+
+% ------------------------------------------------------------
+% Theorem-style environments, optional
+% ------------------------------------------------------------
+\usepackage{amsthm}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% ------------------------------------------------------------
+% Useful math commands
+% ------------------------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\En}{\mathbb{E}_N}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbbm{1}}
+
+\title{Partially Linear Instrumental Variables and Double Machine Learning}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Double Machine Learning for Instrumental Variables}
+
+\paragraph{Assumptions for the partially linear IV model.}
+The partially linear instrumental variables model relies on three distinct types of assumptions:
+(i) structural/modeling assumptions, (ii) identification assumptions, and (iii) estimation
+assumptions required for Double Machine Learning.
+
+\medskip
+\noindent
+\textbf{Structural/modeling assumption.}
+The outcome equation is partially linear:
+\begin{align}
+    Y_i = D_i\theta_0 + g_0(X_i) + U_i.
+    \label{eq:pliv_structural_assumption}
+\end{align}
+The treatment enters the outcome equation linearly with constant coefficient \(\theta_0\),
+while the covariate component \(g_0(X_i)\) is left unrestricted. Thus, the model relaxes
+linearity in the controls but does not relax effect homogeneity.
+
+\medskip
+\noindent
+\textbf{Instrument validity conditional on covariates.}
+The instrument is valid conditional on \(X_i\):
+\begin{align}
+    \mathbb{E}[U_i \mid X_i,Z_i] = 0.
+    \label{eq:pliv_conditional_exogeneity}
+\end{align}
+This replaces the non-IV partially linear regression condition
+\(\mathbb{E}[U_i \mid X_i,D_i]=0\). Hence, \(D_i\) may be endogenous, but the instrument
+\(Z_i\) must be orthogonal to the structural error after conditioning on \(X_i\).
+
+\medskip
+\noindent
+\textbf{Instrument residualization.}
+The instrument can be decomposed into a covariate-predictable part and a residual component:
+\begin{align}
+    Z_i = m_0(X_i) + V_i,
+    \qquad
+    \mathbb{E}[V_i \mid X_i] = 0.
+    \label{eq:pliv_instrument_residualization}
+\end{align}
+Equivalently,
+\begin{align}
+    V_i = Z_i - m_0(X_i),
+    \qquad
+    m_0(X_i)=\mathbb{E}[Z_i\mid X_i].
+\end{align}
+The residual \(V_i\) is the part of the instrument that remains after partialling out the
+covariates.
+
+\medskip
+\noindent
+\textbf{Residualized first-stage relevance.}
+The residualized instrument must predict the treatment:
+\begin{align}
+    \mathbb{E}[\widetilde{Z}_i\widetilde{D}_i]\neq 0,
+    \label{eq:pliv_residualized_first_stage}
+\end{align}
+where
+\begin{align}
+    \widetilde{Z}_i &= Z_i-\mathbb{E}[Z_i\mid X_i], \\
+    \widetilde{D}_i &= D_i-\mathbb{E}[D_i\mid X_i].
+\end{align}
+This is the analogue of the usual IV relevance condition after removing the variation explained
+by \(X_i\). In the notation of \citet{chernozhukov2018double}, this condition corresponds to
+\(|\mathbb{E}[D_iV_i]|\geq c>0\).
+
+\medskip
+\noindent
+\textbf{Nuisance functions.}
+For the Robinson-style PLIV score, define the nuisance functions
+\begin{align}
+    \ell_0(X_i) &= \mathbb{E}[Y_i\mid X_i], \\
+    r_0(X_i) &= \mathbb{E}[D_i\mid X_i], \\
+    m_0(X_i) &= \mathbb{E}[Z_i\mid X_i].
+\end{align}
+The corresponding residualized variables are
+\begin{align}
+    \widetilde{Y}_i &= Y_i-\ell_0(X_i), \\
+    \widetilde{D}_i &= D_i-r_0(X_i), \\
+    \widetilde{Z}_i &= Z_i-m_0(X_i).
+\end{align}
+
+\medskip
+\noindent
+\textbf{Orthogonal moment condition.}
+The identifying moment condition is
+\begin{align}
+    \mathbb{E}
+    \left[
+        \left(
+            \widetilde{Y}_i-\theta_0\widetilde{D}_i
+        \right)
+        \widetilde{Z}_i
+    \right]
+    =0.
+    \label{eq:pliv_orthogonal_moment}
+\end{align}
+Equivalently, the Neyman-orthogonal score is
+\begin{align}
+    \psi(W_i;\theta,\eta)
+    =
+    \left(
+        Y_i-\ell(X_i)-\theta(D_i-r(X_i))
+    \right)
+    \left(
+        Z_i-m(X_i)
+    \right),
+    \qquad
+    \eta=(\ell,r,m).
+    \label{eq:pliv_score_assumption_block}
+\end{align}
+Neyman orthogonality means that small first-stage errors in the nuisance functions affect the
+final estimator only in second order.
+
+\medskip
+\noindent
+\textbf{DML estimation assumptions.}
+The nuisance functions \(\ell_0\), \(r_0\), and \(m_0\) are estimated by machine learning methods
+using cross-fitting. Cross-fitting requires that the prediction for observation \(i\) is obtained from
+models not trained on observation \(i\). In addition, the nuisance estimators must be sufficiently
+accurate. A sufficient product-rate condition for the Robinson-style PLIV score is
+\begin{align}
+    \|\hat m-m_0\|_{P,2}
+    \left(
+        \|\hat r-r_0\|_{P,2}
+        +
+        \|\hat\ell-\ell_0\|_{P,2}
+    \right)
+    =
+    o(N^{-1/2}).
+    \label{eq:pliv_product_rate_assumption_block}
+\end{align}
+Together with standard moment and boundedness conditions, this yields root-\(N\) consistent
+and asymptotically normal inference for \(\theta_0\).
+
+\subsection{Partially Linear Instrumental Variables and Double Machine Learning}
+\label{subsec:pliv_dml}
+
+The double/debiased machine learning framework of \citet{chernozhukov2018double}
+provides a way to combine flexible nuisance-function estimation with valid inference
+on a low-dimensional target parameter. A useful starting point is the partially linear
+regression model of \citet{robinson1988root},
+\begin{align}
+    Y_i = D_i \theta_0 + g_0(X_i) + U_i,
+    \qquad
+    \E[U_i \mid X_i,D_i] = 0,
+    \label{eq:plr_model}
+\end{align}
+where \(Y_i\) denotes the outcome, \(D_i\) the treatment variable, \(X_i\) a vector of
+covariates, and \(g_0(\cdot)\) an unknown nuisance function. The parameter of interest
+is the scalar coefficient \(\theta_0\). The model relaxes the linear specification of the
+covariates by allowing \(g_0(X_i)\) to be an unrestricted function, but it still imposes a
+constant treatment effect \(\theta_0\).
+
+In the applications considered in this thesis, however, \(D_i\) is not assumed to be
+conditionally exogenous. Instead, identification relies on an instrumental variable
+\(Z_i\). Following \citet[Section~4.2]{chernozhukov2018double}, the partially linear
+instrumental variables model extends \eqref{eq:plr_model} by replacing conditional
+exogeneity of \(D_i\) with conditional validity of the instrument:
+\begin{align}
+    Y_i &= D_i \theta_0 + g_0(X_i) + U_i,
+    \qquad
+    \E[U_i \mid X_i,Z_i] = 0,
+    \label{eq:pliv_structural} \\
+    Z_i &= m_0(X_i) + V_i,
+    \qquad
+    \E[V_i \mid X_i] = 0.
+    \label{eq:pliv_firststage_z}
+\end{align}
+Here, \(Z_i\) is the instrumental variable and \(V_i = Z_i - m_0(X_i)\) denotes the part
+of the instrument that is not predictable from the covariates. Thus, the model allows
+\(D_i\) to be endogenous, but requires the residualized instrument to be orthogonal to
+the structural error.
+
+
+The moment condition implied by \eqref{eq:pliv_structural}--\eqref{eq:pliv_firststage_z}
+can be written as
+\begin{align}
+    \E
+    \left[
+        \left(Y_i - D_i \theta_0 - g_0(X_i)\right)
+        \left(Z_i - m_0(X_i)\right)
+    \right]
+    = 0.
+    \label{eq:pliv_moment_g}
+\end{align}
+Equivalently, using the notation \(W_i=(Y_i,D_i,X_i,Z_i)\), this corresponds to the
+Neyman-orthogonal score
+\begin{align}
+    \psi(W_i;\theta,\eta)
+    =
+    \left(Y_i - D_i\theta - g(X_i)\right)
+    \left(Z_i - m(X_i)\right),
+    \qquad
+    \eta=(g,m).
+    \label{eq:pliv_score_g}
+\end{align}
+
+For implementation, \citet{chernozhukov2018double} also propose a Robinson-style
+partialling-out score. Define the nuisance functions
+\begin{align}
+    \ell_0(X_i) &= \E[Y_i \mid X_i], \label{eq:nuisance_l} \\
+    r_0(X_i) &= \E[D_i \mid X_i], \label{eq:nuisance_r} \\
+    m_0(X_i) &= \E[Z_i \mid X_i]. \label{eq:nuisance_m}
+\end{align}
+Then the residualized variables are
+\begin{align}
+    \widetilde{Y}_i &= Y_i - \ell_0(X_i), \label{eq:y_tilde_pliv} \\
+    \widetilde{D}_i &= D_i - r_0(X_i), \label{eq:d_tilde_pliv} \\
+    \widetilde{Z}_i &= Z_i - m_0(X_i). \label{eq:z_tilde_pliv}
+\end{align}
+The corresponding orthogonal score is
+\begin{align}
+    \psi(W_i;\theta,\eta)
+    =
+    \left(
+        Y_i - \ell(X_i)
+        -
+        \theta\left(D_i-r(X_i)\right)
+    \right)
+    \left(
+        Z_i-m(X_i)
+    \right),
+    \qquad
+    \eta=(\ell,r,m).
+    \label{eq:pliv_robinson_score}
+\end{align}
+At the true nuisance functions, this can be written compactly as
+\begin{align}
+    \psi(W_i;\theta_0,\eta_0)
+    =
+    \left(
+        \widetilde{Y}_i
+        -
+        \theta_0 \widetilde{D}_i
+    \right)
+    \widetilde{Z}_i.
+    \label{eq:pliv_residual_score}
+\end{align}
+The identifying moment condition is therefore
+\begin{align}
+    \E
+    \left[
+        \left(
+            \widetilde{Y}_i
+            -
+            \theta_0 \widetilde{D}_i
+        \right)
+        \widetilde{Z}_i
+    \right]
+    = 0.
+    \label{eq:pliv_residual_moment}
+\end{align}
+
+Solving \eqref{eq:pliv_residual_moment} gives the population coefficient
+\begin{align}
+    \theta_0
+    =
+    \frac{
+        \E[\widetilde{Z}_i \widetilde{Y}_i]
+    }{
+        \E[\widetilde{Z}_i \widetilde{D}_i]
+    },
+    \label{eq:pliv_population_ratio}
+\end{align}
+provided that the residualized first stage satisfies
+\begin{align}
+    \E[\widetilde{Z}_i \widetilde{D}_i] \neq 0.
+    \label{eq:pliv_relevance}
+\end{align}
+This condition is the analogue of instrument relevance after partialling out the covariates.
+
+In practice, the nuisance functions \(\ell_0\), \(r_0\), and \(m_0\) are unknown and are
+estimated flexibly by machine learning methods. Let \(\hat{\ell}\), \(\hat r\), and
+\(\hat m\) denote cross-fitted estimates of the nuisance functions. The DML estimator based
+on the Robinson-style score is then
+\begin{align}
+    \hat{\theta}_{\mathrm{PLIV}}
+    =
+    \frac{
+        \sum_{i=1}^N
+        \left(Z_i-\hat m(X_i)\right)
+        \left(Y_i-\hat{\ell}(X_i)\right)
+    }{
+        \sum_{i=1}^N
+        \left(Z_i-\hat m(X_i)\right)
+        \left(D_i-\hat r(X_i)\right)
+    }.
+    \label{eq:pliv_dml_estimator}
+\end{align}
+Thus, the partially linear IV estimator can be interpreted as an instrumental variables
+estimator applied to residualized outcome, treatment, and instrument variables.
+
+The theoretical validity of this estimator rests on three types of conditions. First, the
+partially linear IV model \eqref{eq:pliv_structural}--\eqref{eq:pliv_firststage_z} must hold.
+Second, the residualized first stage in \eqref{eq:pliv_relevance} must be nonzero. Third,
+the nuisance estimators must be sufficiently accurate. In the DML framework, this requirement
+is expressed through product-rate conditions on the first-stage errors. For the Robinson-style
+score, a sufficient condition is of the form
+\begin{align}
+    \left\|
+        \hat m - m_0
+    \right\|_{P,2}
+    \left(
+        \left\|
+            \hat r-r_0
+        \right\|_{P,2}
+        +
+        \left\|
+            \hat{\ell}-\ell_0
+        \right\|_{P,2}
+    \right)
+    =
+    o(N^{-1/2}),
+    \label{eq:pliv_product_rate}
+\end{align}
+up to the precise regularity conditions stated in \citet[Assumption~4.2]{chernozhukov2018double}.
+Together with cross-fitting and Neyman orthogonality, these conditions imply root-\(N\)
+consistent and asymptotically normal inference for \(\theta_0\).
+
+
+\subsection{Distinguishing PLIV from LATE Estimators}
+\label{subsec:pliv_vs_late}
+
+The estimators considered in this thesis are all related to instrumental variables, but they do
+not all target the same causal parameter under the same assumptions. This distinction is
+important when comparing kappa-based estimators, Wald-AIPW, and PLIV.
+
+The main target parameter in the kappa-weighting framework is the local average treatment
+effect (LATE). Under the standard IV assumptions---conditional instrument independence,
+exclusion, instrument relevance, overlap, and monotonicity---the LATE is defined as
+\begin{align}
+    \tau_{\mathrm{LATE}}
+    =
+    \mathbb{E}
+    \left[
+        Y_i(1)-Y_i(0)
+        \mid
+        D_i(1)>D_i(0)
+    \right].
+    \label{eq:late_definition_comparison}
+\end{align}
+Thus, the LATE is the average treatment effect for compliers, i.e. for those individuals whose
+treatment status is changed by the instrument. Kappa-based estimators and the DML
+Wald-AIPW estimator are both naturally interpreted as estimators of this complier-average
+causal effect. They differ in how they adjust for covariates and in the outcome weights they
+imply, but they are designed to target the same LATE parameter.
+
+The partially linear IV estimator, by contrast, is based on a different modeling structure. In
+the PLIV model, the outcome equation is written as
+\begin{align}
+    Y_i
+    =
+    D_i\theta_0
+    +
+    g_0(X_i)
+    +
+    U_i,
+    \qquad
+    \mathbb{E}[U_i\mid X_i,Z_i]=0.
+    \label{eq:pliv_structural_comparison}
+\end{align}
+Here, \(\theta_0\) is the constant coefficient on the endogenous treatment \(D_i\), while
+\(g_0(X_i)\) is an unknown and potentially flexible function of the covariates. Hence, PLIV
+relaxes the functional form of the covariate adjustment, but it does not relax effect
+homogeneity. The model imposes that the treatment enters the structural outcome equation
+through a single scalar coefficient \(\theta_0\).
+
+Using the Robinson-style partialling-out representation, define
+
+which yields the population ratio
+\begin{align}
+    \theta_0
+    =
+    \frac{
+        \mathbb{E}[\widetilde{Z}_i\widetilde{Y}_i]
+    }{
+        \mathbb{E}[\widetilde{Z}_i\widetilde{D}_i]
+    }.
+    \label{eq:pliv_ratio_comparison}
+\end{align}
+This expression has a Wald-type form, since it divides a residualized reduced-form relationship
+by a residualized first-stage relationship. However, it should not be confused with the LATE
+Wald estimand. The PLIV ratio estimates the constant structural IV coefficient in
+\eqref{eq:pliv_structural_comparison}, whereas the LATE estimand in
+\eqref{eq:late_definition_comparison} averages heterogeneous treatment effects over the
+complier subpopulation.
+
+The two parameters coincide only under additional effect-homogeneity restrictions. If
+\begin{align}
+    Y_i(1)-Y_i(0)=\theta_0
+    \qquad
+    \text{for all } i,
+    \label{eq:homogeneous_effects_comparison}
+\end{align}
+then the average treatment effect, the local average treatment effect, and the PLIV coefficient
+all reduce to the same scalar parameter. Without such a homogeneity restriction, however, the
+PLIV coefficient should be interpreted as a structural IV benchmark rather than as a direct
+LATE estimator.
+
+Therefore, the empirical comparison in this thesis distinguishes between two groups of
+estimators. PLIV is reported separately as an additional DML-IV benchmark. It is useful
+because it shares the residualized pseudo-IV structure and admits an outcome-weight
+representation, but it does not generally target the same parameter as the kappa LATE
+estimators under treatment-effect heterogeneity.
+% ------------------------------------------------------------
+% Bibliography placeholders
+% ------------------------------------------------------------
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}

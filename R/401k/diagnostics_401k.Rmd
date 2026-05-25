@@ -1,0 +1,506 @@
+---
+title: "401k_diagnostics"
+author: "Alexander Unger"
+date: "2026-05-25"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# DESCRIPTIVE DIAGNOSTICS — 401(k) Application
+# ==============================================================================
+# Mirrors the block structure from descriptives_card.R so findings are
+# directly comparable across applications.
+#
+# Design:
+#   Z = e401   (401k eligibility — instrument)
+#   D = p401   (401k participation — treatment)
+#   Y = net_tfa (net total financial assets, USD)
+#   N = 9,915
+#
+# Key structural feature:
+#   NO ALWAYS-TAKERS by design. You cannot participate without eligibility,
+#   so P(D=1 | Z=0) = 0 in the population. This triggers:
+#     - SUW Prop. 3.3: mean(kappa1) > 0 guaranteed in finite samples
+#     - SUW Prop. 3.4: tau_u denominator strictly > 0 by construction
+#     - But: tau_a10 has near-zero kappa0 denominator risk
+#     - And: the kappa weight for always-takers = -D(1-Z)/(1-p) is 0
+#       for all obs, which CHANGES the negative-weight story vs. Card
+#
+# Requires:
+#   pension     : the 401k dataset (from hdm package: data("pension"))
+#   All functions from functions_card.R already sourced:
+#     logit_mle(), get_cbps_p(), fit_cbps_alpha(), kappa_weights(),
+#     kappa_outcome_weights(), weight_diag()
+# ==============================================================================
+
+# If pension is not already loaded:
+# library(hdm); data("pension")
+
+Z <- as.numeric(pension$e401)
+D <- as.numeric(pension$p401)
+Y <- pension$net_tfa
+
+N <- length(Z)
+
+# Design matrix — exactly as in 401_k_replicateRmd.Rmd
+X_401_kappa <- model.matrix(
+  ~ age + db + educ + fsize + hown + inc + male + marr + pira + twoearn,
+  data = pension
+)
+colnames(X_401_kappa) <- c(
+  "(Intercept)", "age", "db", "educ", "fsize",
+  "hown", "inc", "male", "marr", "pira", "twoearn"
+)
+
+
+# ==============================================================================
+# BLOCK A — Sample overview and compliance types
+# ==============================================================================
+# WHY: The 401(k) design has NO ALWAYS-TAKERS. This is the single most
+# important structural difference from Card (1995). Understanding this
+# reshapes the interpretation of every subsequent diagnostic.
+#
+# Key definitions (AIR 1996):
+#   Always-taker : D(1)=1, D(0)=1 — participates regardless of eligibility
+#   Never-taker  : D(1)=0, D(0)=0 — never participates
+#   Complier     : D(1)=1, D(0)=0 — participates iff eligible
+#   Defier       : ruled out by monotonicity
+#
+# Institutional fact: 401(k) participation requires employer offering.
+# If Z=0 (not eligible), participation is IMPOSSIBLE → D=1 impossible when Z=0.
+# Therefore P(D=1 | Z=0) = 0 and always-takers do not exist.
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK A — Sample overview and compliance types\n")
+cat(strrep("=", 65), "\n\n")
+
+cat(sprintf("Total observations       : %d\n", N))
+cat(sprintf("Instrument Z (e401)      : %d (%.1f%%) eligible\n",
+            sum(Z), 100 * mean(Z)))
+cat(sprintf("Treatment D (p401)       : %d (%.1f%%) participate\n",
+            sum(D), 100 * mean(D)))
+cat(sprintf("Outcome Y (net_tfa, USD) : mean = %.0f, sd = %.0f\n\n",
+            mean(Y), sd(Y)))
+
+# Compliance type shares (unconditional Wald decomposition)
+p_D_Z1 <- mean(D[Z == 1])   # P(D=1 | Z=1)
+p_D_Z0 <- mean(D[Z == 0])   # P(D=1 | Z=0) — should be ≈ 0
+
+pi_c  <- p_D_Z1 - p_D_Z0    # complier share
+pi_at <- p_D_Z0              # always-taker share (= P(D=1|Z=0))
+pi_nt <- 1 - p_D_Z1         # never-taker share
+
+cat("--- Compliance type shares ---\n")
+cat(sprintf("  P(D=1 | Z=1)  = %.4f\n", p_D_Z1))
+cat(sprintf("  P(D=1 | Z=0)  = %.4f  <- should be ≈ 0 (no always-takers)\n", p_D_Z0))
+cat(sprintf("  π_complier    = %.4f  (%.1f%% of sample)\n", pi_c,  100 * pi_c))
+cat(sprintf("  π_always-taker= %.4f  (%.1f%% of sample)\n", pi_at, 100 * pi_at))
+cat(sprintf("  π_never-taker = %.4f  (%.1f%% of sample)\n", pi_nt, 100 * pi_nt))
+cat(sprintf("  Sum check     = %.6f  (should = 1)\n\n", pi_c + pi_at + pi_nt))
+
+# Verify: D=1 and Z=0 simultaneously — must be 0 if no always-takers
+n_always_taker_like <- sum(D == 1 & Z == 0)
+cat(sprintf("Obs with D=1 and Z=0     : %d  (%.2f%%)\n",
+            n_always_taker_like, 100 * mean(D == 1 & Z == 0)))
+if (n_always_taker_like == 0) {
+  cat("  → Confirmed: NO always-takers in this sample.\n")
+  cat("  → SUW Prop. 3.3 applies: mean(kappa1) > 0 guaranteed.\n")
+  cat("  → SUW Prop. 3.4 applies: tau_u denominator > 0 guaranteed.\n\n")
+} else {
+  cat(sprintf("  → WARNING: %d observations have D=1 and Z=0.\n", n_always_taker_like))
+  cat("     Always-takers exist; Prop. 3.3/3.4 guarantees do not strictly apply.\n\n")
+}
+
+# Cross-tabulation Z x D
+cat("Cross-tabulation Z x D:\n")
+print(table(Z = Z, D = D))
+cat("\n")
+
+
+```
+
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK B — Instrument strength
+# ==============================================================================
+# WHY: Unlike Card (1995) where the first stage was weak (F=39, adj. FS=0.064),
+# the 401(k) instrument is strong. Eligibility is a powerful predictor of
+# participation. This is WHY the ESS is large here — a large complier share
+# means the weight is spread across many observations rather than concentrated
+# on a few.
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK B — Instrument strength (first stage)\n")
+cat(strrep("=", 65), "\n\n")
+
+fs_ols <- lm(D ~ Z + age + db + educ + fsize + hown + inc +
+               male + marr + pira + twoearn, data = pension)
+fs_summary <- summary(fs_ols)
+fs_coef <- coef(fs_ols)["Z"]
+fs_fstat <- fs_summary$fstatistic
+
+cat(sprintf("First-stage OLS coefficient on Z: %.4f\n", fs_coef))
+cat(sprintf("First-stage F-statistic          : %.1f\n",
+            fs_fstat[1]))
+cat(sprintf("Adjusted first stage (π_c hat)   : %.4f\n\n", pi_c))
+
+cat("Raw first stage by Z:\n")
+print(tapply(D, Z, mean))
+cat(sprintf("Raw first stage = P(D|Z=1) - P(D|Z=0) = %.4f\n\n", pi_c))
+
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK C — Propensity score: P(Z=1|X) distributions
+# ==============================================================================
+# WHY: In Card, the propensity score was heavily skewed toward 1 (63.9% above
+# 0.7; region dummies created p≈0.93 cells). Here with no region dummies and
+# a richer but less categorical covariate set, we expect a more central
+# distribution — fewer extreme values, less kappa weight concentration.
+#
+# The kappa formula:  κ_i = 1 - D_i(1-Z_i)/(1-p_i) - (1-D_i)Z_i/p_i
+# With NO always-takers: the D_i(1-Z_i) term is always 0 (since D=1,Z=0
+# never occurs). So kappa simplifies to:
+#   κ_i = 1 - (1-D_i)*Z_i/p_i
+# This means the only source of negative kappa is Z_i=1 and D_i=0
+# (instrument assigned but treatment not taken = NEVER-TAKERS).
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK C — Propensity score distributions P(Z=1|X)\n")
+cat(strrep("=", 65), "\n\n")
+
+# Estimate both MLE and CBPS
+cat("Estimating MLE propensity score...\n")
+p_ml <- logit_mle(Z, X_401_kappa)
+
+cat("Estimating CBPS propensity score...\n")
+cbps_fit <- fit_cbps_alpha(Z, X_401_kappa)
+p_cb <- cbps_fit$p
+cat(sprintf("  CBPS converged: %s, max moment: %.2e\n\n",
+            cbps_fit$converged, cbps_fit$max_moment))
+
+ps_summary_401 <- function(p, label) {
+  qs <- quantile(p, probs = c(0, 0.01, 0.05, 0.10, 0.25,
+                              0.50, 0.75, 0.90, 0.95, 0.99, 1))
+  cat(sprintf("%-30s\n", label))
+  cat(sprintf("  Min / 1pct / 5pct  : %.4f / %.4f / %.4f\n",
+              qs["0%"], qs["1%"], qs["5%"]))
+  cat(sprintf("  Q1 / Median / Q3   : %.4f / %.4f / %.4f\n",
+              qs["25%"], qs["50%"], qs["75%"]))
+  cat(sprintf("  95pct / 99pct / Max: %.4f / %.4f / %.4f\n",
+              qs["95%"], qs["99%"], qs["100%"]))
+  cat(sprintf("  Std dev            : %.4f\n", sd(p)))
+  cat(sprintf("  pct below 0.20     : %.1f%%\n", 100 * mean(p < 0.20)))
+  cat(sprintf("  pct below 0.30     : %.1f%%\n", 100 * mean(p < 0.30)))
+  cat(sprintf("  pct above 0.70     : %.1f%%\n", 100 * mean(p > 0.70)))
+  cat(sprintf("  pct above 0.80     : %.1f%%\n", 100 * mean(p > 0.80)))
+  cat(sprintf("  pct above 0.90     : %.1f%%\n\n", 100 * mean(p > 0.90)))
+}
+
+ps_summary_401(p_ml, "MLE logit")
+ps_summary_401(p_cb, "CBPS")
+
+cat("Comparison to Card (1995) Card MLE spec:\n")
+cat("  Card: 63.9% above 0.70, 12.4% above 0.93, min=0.190\n")
+cat("  401k: see above — expect much more central distribution\n\n")
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK D — Kappa weights: structure under no-always-takers
+# ==============================================================================
+# WHY: With no always-takers, the kappa formula simplifies:
+#
+#   κ_i = 1 - (1-D_i)*Z_i / p_i
+#
+# This has a clean interpretation:
+#   - If Z_i=0: κ_i = 1  (always)
+#   - If Z_i=1 and D_i=1: κ_i = 1  (compliers — Z=1 led to D=1)
+#   - If Z_i=1 and D_i=0: κ_i = 1 - 1/p_i < 0  (never-takers)
+#
+# So the ONLY observations with negative kappa are never-takers (Z=1, D=0).
+# Their share = P(Z=1, D=0) = P(Z=1)*P(D=0|Z=1).
+# The complier share ≈ 44% here vs 12% in Card → much larger complier mass
+# → better distributed weights → higher ESS.
+#
+# The 62.9% negative weight share (from the main analysis) is larger than
+# expected from π_nt alone. This is because the OUTCOME WEIGHTS ω_i (not
+# kappa weights) include normalization terms that can push more obs negative.
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK D — Kappa weight structure under no-always-takers\n")
+cat(strrep("=", 65), "\n\n")
+
+cat("--- Theoretical simplification ---\n")
+cat("With no always-takers: D_i=1 only if Z_i=1, so D_i*(1-Z_i) = 0 always.\n")
+cat("Therefore: κ_i = 1 - (1-D_i)*Z_i/p_i\n")
+cat("  Z_i=0         → κ_i = 1  (always positive)\n")
+cat("  Z_i=1, D_i=1  → κ_i = 1  (complier, always positive)\n")
+cat("  Z_i=1, D_i=0  → κ_i = 1 - 1/p_i < 0  (never-taker, always negative)\n\n")
+
+kappa_ml <- 1 - D*(1-Z)/(1-p_ml) - (1-D)*Z/p_ml
+kappa_cb <- 1 - D*(1-Z)/(1-p_cb) - (1-D)*Z/p_cb
+
+# Verify the simplification
+n_at_risk <- sum(D == 1 & Z == 0)
+cat(sprintf("Verification: obs with D=1 and Z=0 = %d (should be 0)\n\n",
+            n_at_risk))
+
+kappa_diag_401 <- function(kappa, p, label) {
+  cat(sprintf("%-40s\n", label))
+  cat(sprintf("  mean(kappa)        : %.6f  (= π_c estimate)\n", mean(kappa)))
+  cat(sprintf("  min(kappa)         : %.4f\n", min(kappa)))
+  cat(sprintf("  max(kappa)         : %.4f\n", max(kappa)))
+  cat(sprintf("  share negative     : %.2f%%\n", 100 * mean(kappa < 0)))
+  cat(sprintf("  share = exactly 1  : %.2f%%  (Z=0 or compliers)\n",
+              100 * mean(abs(kappa - 1) < 1e-10)))
+  cat(sprintf("  share < -1         : %.2f%%\n", 100 * mean(kappa < -1)))
+  cat(sprintf("  share < -5         : %.2f%%\n", 100 * mean(kappa < -5)))
+  # Negative kappa obs: should all have Z=1, D=0
+  neg_idx <- kappa < 0
+  if (sum(neg_idx) > 0) {
+    cat(sprintf("  Among neg. kappa obs:\n"))
+    cat(sprintf("    All have Z=1,D=0 : %s\n",
+                all(Z[neg_idx] == 1 & D[neg_idx] == 0)))
+    cat(sprintf("    mean(p) there    : %.4f\n", mean(p[neg_idx])))
+    cat(sprintf("    min(p) there     : %.4f\n", min(p[neg_idx])))
+  }
+  cat("\n")
+}
+
+kappa_diag_401(kappa_ml, p_ml, "Kappa | MLE logit")
+kappa_diag_401(kappa_cb, p_cb, "Kappa | CBPS")
+
+# Complier covariate profile (marginal propensity for stability)
+cat("--- Complier covariate profile (marginal p for stability) ---\n")
+p_marg <- rep(mean(Z), N)
+kappa_marg <- 1 - D*(1-Z)/(1-p_marg) - (1-D)*Z/p_marg
+
+covar_names_401 <- c("age", "db", "educ", "fsize", "hown",
+                     "inc", "male", "marr", "pira", "twoearn")
+
+cat(sprintf("  mean(kappa_marg) = %.4f  (π_c estimate)\n", mean(kappa_marg)))
+cat(sprintf("  min(kappa_marg)  = %.4f\n", min(kappa_marg)))
+cat(sprintf("\n  %-12s  %8s  %8s  %10s  %10s\n",
+            "Covariate", "Full", "D=1", "Complier", "Flag"))
+cat(strrep("-", 56), "\n")
+
+for (cov in covar_names_401) {
+  if (!cov %in% names(pension)) next
+  x_i      <- pension[[cov]]
+  full_mn   <- mean(x_i, na.rm = TRUE)
+  treat_mn  <- mean(x_i[D == 1], na.rm = TRUE)
+  comp_mn   <- sum(kappa_marg * x_i, na.rm = TRUE) /
+    sum(kappa_marg, na.rm = TRUE)
+  is_binary <- all(na.omit(unique(x_i)) %in% c(0, 1))
+  flag      <- if (is_binary && (comp_mn < -1e-8 || comp_mn > 1 + 1e-8))
+    "outside [0,1]" else ""
+  cat(sprintf("  %-12s  %8.4f  %8.4f  %10.4f  %10s\n",
+              cov, full_mn, treat_mn, comp_mn, flag))
+}
+cat("\n")
+
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK E — Outcome weight diagnostics: MLE vs. CBPS
+# ==============================================================================
+# WHY: The main 401k analysis showed ESS ≈ 881–1002 — orders of magnitude
+# better than Card. Here we decompose this further:
+#   1. Does MLE vs. CBPS affect the ESS in this design?
+#   2. The 62.9% negative weight share for tau_u: why so high when always-
+#      takers don't exist? (Answer: the outcome weights ω_i normalise
+#      differently from κ_i; the kappa negative share ≈ π_nt ≈ 37%, but
+#      outcome weights shift more obs negative through the denominator.)
+#   3. Why does tau_cb_u give a very different point estimate (5657) vs
+#      tau_ml_u (2126)? Is this visible in the weight distribution?
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK E — Outcome weight diagnostics: MLE vs CBPS\n")
+cat(strrep("=", 65), "\n\n")
+
+kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+
+diag_table <- rbind(
+  weight_diag(kw_cb$w_u,   "tau_cb_u   | CBPS"),
+  weight_diag(kw_ml$w_u,   "tau_ml_u   | MLE"),
+  weight_diag(kw_ml$w_a10, "tau_ml_a10 | MLE"),
+  weight_diag(kw_ml$w_a,   "tau_ml_a   | MLE [NOT TI]"),
+  weight_diag(kw_ml$w_a1,  "tau_ml_t   | MLE [NOT TI]"),
+  weight_diag(kw_ml$w_a0,  "tau_ml_a0  | MLE [NOT TI]")
+)
+print(diag_table, row.names = FALSE)
+cat("\n")
+
+# Algebraic identity checks
+cat("Algebraic identity checks (sum(w * Y) == tau_hat):\n")
+for (nm in c("w_u", "w_a10", "w_a", "w_a1", "w_a0")) {
+  w_ml  <- kw_ml[[nm]]
+  tau_fn <- switch(nm,
+                   w_u   = tau_u(Y, Z, D, p_ml),
+                   w_a10 = tau_a10(Y, Z, D, p_ml),
+                   w_a   = tau_unnorm(Y, Z, D, p_ml, "a"),
+                   w_a1  = tau_unnorm(Y, Z, D, p_ml, "a1"),
+                   w_a0  = tau_unnorm(Y, Z, D, p_ml, "a0")
+  )
+  cat(sprintf("  %-12s MLE:  %s\n", nm,
+              isTRUE(all.equal(sum(w_ml * Y), tau_fn, tolerance = 1e-6))))
+}
+cat(sprintf("  %-12s CBPS: %s\n", "w_u",
+            isTRUE(all.equal(sum(kw_cb$w_u * Y),
+                             tau_u(Y, Z, D, p_cb), tolerance = 1e-6))))
+cat("\n")
+
+# Why 62.9% negative outcome weights despite no always-takers?
+cat("--- Decomposing the 62.9% negative outcome weight share ---\n")
+cat(sprintf("  Share kappa_ml < 0           : %.1f%%  (never-takers with Z=1,D=0)\n",
+            100 * mean(kappa_ml < 0)))
+cat(sprintf("  Share w_u (MLE) < 0          : %.1f%%\n",
+            100 * mean(kw_ml$w_u < 0)))
+cat(sprintf("  Share w_a10 (MLE) < 0        : %.1f%%\n",
+            100 * mean(kw_ml$w_a10 < 0)))
+cat("\n")
+cat("  Explanation: ω_u weights re-normalise kappa by the first-stage\n")
+cat("  denominator. Even obs with κ_i > 0 can get ω_i < 0 when their\n")
+cat("  contribution to the denominator dD exceeds their κ_i * Y contribution.\n")
+cat("  This is a property of the Uysal (2011) normalisation, not the data.\n\n")
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK F — MLE vs CBPS: what changes?
+# ==============================================================================
+# WHY: tau_cb_u = 5657 vs tau_ml_u = 2126 — a factor of 2.7 difference.
+# This is much larger than the MLE/CBPS gap in Card (0.290 vs 0.249).
+# What is driving this? Is CBPS changing the propensity score substantially,
+# or is this a signal of model sensitivity?
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK F — MLE vs. CBPS comparison\n")
+cat(strrep("=", 65), "\n\n")
+
+cat("Point estimates:\n")
+cat(sprintf("  tau_u  MLE  : %.2f\n", tau_u(Y, Z, D, p_ml)))
+cat(sprintf("  tau_u  CBPS : %.2f\n", tau_u(Y, Z, D, p_cb)))
+cat(sprintf("  tau_a10 MLE : %.2f\n", tau_a10(Y, Z, D, p_ml)))
+cat(sprintf("  Ratio CBPS/MLE (tau_u): %.2f\n\n",
+            tau_u(Y, Z, D, p_cb) / tau_u(Y, Z, D, p_ml)))
+
+# P-score distribution comparison
+cat("Propensity score comparison (MLE vs CBPS):\n")
+cat(sprintf("  %-30s  %8s  %8s\n", "Metric", "MLE", "CBPS"))
+cat(strrep("-", 52), "\n")
+for (prb in c(0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99)) {
+  cat(sprintf("  %-30s  %8.4f  %8.4f\n",
+              paste0("p", prb * 100, "th percentile"),
+              quantile(p_ml, prb), quantile(p_cb, prb)))
+}
+cat(sprintf("  %-30s  %8.4f  %8.4f\n", "Std dev",
+            sd(p_ml), sd(p_cb)))
+cat(sprintf("  %-30s  %8.4f  %8.4f\n", "Max abs difference",
+            max(abs(p_ml - p_cb)), NA))
+cat(sprintf("  Max |p_ml - p_cb|       : %.4f\n", max(abs(p_ml - p_cb))))
+cat(sprintf("  Mean |p_ml - p_cb|      : %.4f\n", mean(abs(p_ml - p_cb))))
+cat(sprintf("  Correlation(p_ml, p_cb) : %.6f\n\n", cor(p_ml, p_cb)))
+
+# The risk cell for this design: low p, Z=1, D=0 (never-takers with extreme p)
+cat("--- Risk cell: low p(Z=1|X), observed Z=1, D=0 (never-takers) ---\n")
+cat("(In 401k, the only source of extreme negative kappa)\n\n")
+
+for (cut in c(0.30, 0.20, 0.10)) {
+  idx_ml <- p_ml <= cut & Z == 1 & D == 0
+  idx_cb <- p_cb <= cut & Z == 1 & D == 0
+  if (sum(idx_ml) == 0) next
+  cat(sprintf("  p_ml < %.2f: N=%d obs | min(κ_ml)=%.2f | mean(κ_ml)=%.2f\n",
+              cut, sum(idx_ml),
+              min(kappa_ml[idx_ml]), mean(kappa_ml[idx_ml])))
+  cat(sprintf("  p_cb < %.2f: N=%d obs | min(κ_cb)=%.2f | mean(κ_cb)=%.2f\n",
+              cut, sum(idx_cb),
+              min(kappa_cb[idx_cb]), mean(kappa_cb[idx_cb])))
+}
+cat("\n")
+
+
+```
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK G — ESS drivers: why is ESS large here vs. Card?
+# ==============================================================================
+# WHY: ESS = 881–1002 here vs ESS = 1–5 in Card. This block quantifies the
+# three reasons why:
+#   1. Large complier share (π_c ≈ 44% vs 12% in Card)
+#   2. Central propensity score distribution (no extreme cells)
+#   3. No always-takers → one term of kappa = 0 → less weight concentration
+#
+# We compute the "implied ESS" from the propensity score alone (ignoring D)
+# as a reference, then compare to the actual outcome weight ESS.
+# ==============================================================================
+
+cat(strrep("=", 65), "\n")
+cat("BLOCK G — Why ESS is large: decomposition\n")
+cat(strrep("=", 65), "\n\n")
+
+cat("--- Implied ESS from kappa weights alone ---\n")
+ess_kappa <- function(kappa) round(1 / sum((kappa / sum(kappa))^2), 0)
+
+cat(sprintf("  ESS(kappa_ml) : %d\n", ess_kappa(kappa_ml)))
+cat(sprintf("  ESS(kappa_cb) : %d\n\n", ess_kappa(kappa_cb)))
+
+cat("--- Outcome weight ESS ---\n")
+ess_w <- function(w) round(1 / sum(w^2), 0)
+cat(sprintf("  ESS(w_u  MLE) : %d\n", ess_w(kw_ml$w_u)))
+cat(sprintf("  ESS(w_u  CBPS): %d\n", ess_w(kw_cb$w_u)))
+cat(sprintf("  ESS(w_a10 MLE): %d\n\n", ess_w(kw_ml$w_a10)))
+
+cat("--- Weight concentration: top obs share ---\n")
+for (n_top in c(5, 10, 50, 100)) {
+  w <- abs(kw_ml$w_u)
+  top_share <- sum(sort(w, decreasing = TRUE)[1:n_top]) / sum(w)
+  cat(sprintf("  Top %3d obs account for %.1f%% of |w| mass (tau_u MLE)\n",
+              n_top, 100 * top_share))
+}
+cat("\n")
+
+cat("--- Comparison: Card (1995) vs. 401(k) ---\n")
+cat(sprintf("  %-25s  %10s  %10s\n", "Metric", "Card (D1)", "401(k)"))
+cat(strrep("-", 50), "\n")
+cat(sprintf("  %-25s  %10s  %10s\n", "N",         "3,010",  "9,915"))
+cat(sprintf("  %-25s  %10s  %10s\n", "π_c (compl. share)", "12.2%", sprintf("%.1f%%", 100*pi_c)))
+cat(sprintf("  %-25s  %10s  %10s\n", "π_at (always-tak.)", "17.1%", sprintf("%.1f%%", 100*pi_at)))
+cat(sprintf("  %-25s  %10s  %10s\n", "Adj. first stage",  "0.064",  sprintf("%.3f", pi_c)))
+cat(sprintf("  %-25s  %10s  %10s\n", "Max p(Z=1|X)",      "0.949",  sprintf("%.3f", max(p_ml))))
+cat(sprintf("  %-25s  %10s  %10s\n", "Min p(Z=1|X)",      "0.190",  sprintf("%.3f", min(p_ml))))
+cat(sprintf("  %-25s  %10s  %10s\n", "ESS tau_u MLE",     "5",      as.character(ess_w(kw_ml$w_u))))
+cat(sprintf("  %-25s  %10s  %10s\n", "ESS tau_u CBPS",    "5",      as.character(ess_w(kw_cb$w_u))))
+cat("\n")
+
+cat("Done.\n")
+
+```

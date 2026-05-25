@@ -139,7 +139,18 @@ cat("omega'Y replicates point estimates (5-fold)?",
 
 rm(dml_5f_401); gc()
 
+# ------------------------------------------------------------------------------
+# Extract named weight vectors for PLR-IV and Wald-AIPW only.
+# These are reused in Blocks C, D, and E — avoids repeated indexing.
+# Row names come from dml_with_smoother(): "PLR-IV" and "Wald-AIPW".
+# ------------------------------------------------------------------------------
+w_plriv_2f   <- omega_dml_2f_401$omega["PLR-IV",    ]
+w_waipw_2f   <- omega_dml_2f_401$omega["Wald-AIPW", ]
+w_plriv_5f   <- omega_dml_5f_401$omega["PLR-IV",    ]
+w_waipw_5f   <- omega_dml_5f_401$omega["Wald-AIPW", ]
+
 cat("\nBLOCK B complete.\n\n")
+
 ```
 
 
@@ -147,21 +158,21 @@ cat("\nBLOCK B complete.\n\n")
 ```{r}
 
 # ==============================================================================
-# BLOCK C — COVARIATE BALANCING (love plots)
+# BLOCK C — LOVE PLOTS: DML (PLR-IV and Wald-AIPW only, 2-fold vs 5-fold)
 # ==============================================================================
-# Uses cobalt::love.plot() with DML outcome weights.
-# Flip sign of untreated weights: multiply by (2*D - 1) to make cobalt-compatible
-# (cobalt expects positive treated weights, negative untreated weights flipped).
+# REMOVED: PLR and AIPW panels — not needed for thesis comparison.
+# KEPT:    PLR-IV and Wald-AIPW, overlaying 2-fold vs 5-fold cross-fitting.
+# Uses named weight vectors extracted at end of Block B.
 # ==============================================================================
 
 threshold <- 0.1
 
-create_love_plot_401 <- function(title, index) {
+create_love_plot_401 <- function(title, w_2f, w_5f) {
   love.plot(
     D ~ X_dml_401,
     weights = list(
-      "2-fold" = omega_dml_2f_401$omega[index, ] * (2 * D - 1),
-      "5-fold" = omega_dml_5f_401$omega[index, ] * (2 * D - 1)
+      "2-fold" = w_2f * (2 * D - 1),
+      "5-fold" = w_5f * (2 * D - 1)
     ),
     position   = "bottom",
     title      = title,
@@ -175,27 +186,19 @@ create_love_plot_401 <- function(title, index) {
   )
 }
 
-# Row indices in omega matrix correspond to estimator order from dml_with_smoother:
-# 1 = PLR, 2 = PLR-IV, 3 = AIPW, 4 = Wald-AIPW
-love_plot_plr_401    <- create_love_plot_401("PLR",       1)
-love_plot_plriv_401  <- create_love_plot_401("PLR-IV",    2)
-love_plot_aipw_401   <- create_love_plot_401("AIPW",      3)
-love_plot_waipw_401  <- create_love_plot_401("Wald-AIPW", 4)
+love_plot_plriv_401  <- create_love_plot_401("PLR-IV",    w_plriv_2f, w_plriv_5f)
+love_plot_waipw_401  <- create_love_plot_401("Wald-AIPW", w_waipw_2f, w_waipw_5f)
 
-love_plot_plr_401
 love_plot_plriv_401
-love_plot_aipw_401
 love_plot_waipw_401
 
-# Combined plot (mirrors Knaus 2024 Figure 2 structure)
-figure_dml_401 <- grid.arrange(
-  love_plot_plr_401,   love_plot_aipw_401,
+grid.arrange(
   love_plot_plriv_401, love_plot_waipw_401,
-  nrow = 2
+  nrow = 1,
+  top  = "Love plots: PLR-IV vs Wald-AIPW | 401(k) | 2-fold vs 5-fold"
 )
 
 cat("\nBLOCK C complete.\n\n")
-
 
 
 
@@ -207,32 +210,158 @@ cat("\nBLOCK C complete.\n\n")
 
 ```{r}
 # ==============================================================================
-# BLOCK D — WEIGHT DIAGNOSTICS FOR DML WEIGHTS
+# BLOCK D — KAPPA OUTCOME WEIGHTS: SETUP
 # ==============================================================================
-# Complements the kappa weight diagnostics from the earlier section.
-# Compares DML outcome weights against kappa weights on the same diagnostics:
-# Sum_w, ESS, Pct_neg, Max_abs_w.
+# Computes propensity scores and outcome weights for all kappa estimators.
+# Reuses X_401_kappa from the replicate session (already in memory).
+# If running standalone, X_401_kappa must be defined first (see replicate Rmd).
+#
+# Produces:
+#   kw_401  — named list with weight vectors for all 6 kappa estimators
+#   p_ml_401, p_cb_401 — propensity scores (MLE and CBPS)
 # ==============================================================================
 
-cat("==============================================================================\n")
-cat("DML OUTCOME WEIGHT DIAGNOSTICS\n")
-cat("==============================================================================\n")
+cat(strrep("=", 70), "\n")
+cat("BLOCK D — KAPPA OUTCOME WEIGHTS SETUP\n")
+cat(strrep("=", 70), "\n\n")
 
-estimator_names <- rownames(omega_dml_2f_401$omega)
+# Recompute propensity scores here in case this Rmd is run standalone.
+# In a shared session these are already available from the replicate Rmd,
+# but recomputing is fast and makes this block self-contained.
+p_ml_401 <- logit_mle(Z, X_401_kappa)
+p_cb_401 <- get_cbps_p(Z, X_401_kappa)
 
-cat("\n--- 2-fold cross-fitting ---\n")
-tab_2f <- do.call(rbind, lapply(seq_along(estimator_names), function(i) {
-  weight_diag(omega_dml_2f_401$omega[i, ], estimator_names[i])
-}))
-print(tab_2f, row.names = FALSE)
+kw_ml_401 <- kappa_outcome_weights(Z, D, p_ml_401)
+kw_cb_401 <- kappa_outcome_weights(Z, D, p_cb_401)
 
-cat("\n--- 5-fold cross-fitting ---\n")
-tab_5f <- do.call(rbind, lapply(seq_along(estimator_names), function(i) {
-  weight_diag(omega_dml_5f_401$omega[i, ], estimator_names[i])
-}))
-print(tab_5f, row.names = FALSE)
+# Named list — mirrors kappa_weights_bundle() from Card double_ml
+kw_401 <- list(
+  tau_cb_u   = kw_cb_401$w_u,
+  tau_ml_u   = kw_ml_401$w_u,
+  tau_ml_a10 = kw_ml_401$w_a10,
+  tau_ml_a   = kw_ml_401$w_a,
+  tau_ml_a1  = kw_ml_401$w_a1,
+  tau_ml_a0  = kw_ml_401$w_a0
+)
+
+# Algebraic identity check: sum(w * Y) == tau_hat for all kappa estimators
+cat("Algebraic identity check (sum(w * Y) == tau_hat):\n")
+checks <- c(
+  tau_cb_u   = isTRUE(all.equal(sum(kw_401$tau_cb_u   * Y), tau_u(Y, Z, D, p_cb_401))),
+  tau_ml_u   = isTRUE(all.equal(sum(kw_401$tau_ml_u   * Y), tau_u(Y, Z, D, p_ml_401))),
+  tau_ml_a10 = isTRUE(all.equal(sum(kw_401$tau_ml_a10 * Y), tau_a10(Y, Z, D, p_ml_401))),
+  tau_ml_a   = isTRUE(all.equal(sum(kw_401$tau_ml_a   * Y), tau_unnorm(Y, Z, D, p_ml_401, "a"))),
+  tau_ml_a1  = isTRUE(all.equal(sum(kw_401$tau_ml_a1  * Y), tau_unnorm(Y, Z, D, p_ml_401, "a1"))),
+  tau_ml_a0  = isTRUE(all.equal(sum(kw_401$tau_ml_a0  * Y), tau_unnorm(Y, Z, D, p_ml_401, "a0")))
+)
+for (nm in names(checks)) {
+  cat(sprintf("  %-14s  %s\n", nm, if (checks[nm]) "TRUE" else "FALSE"))
+}
 
 cat("\nBLOCK D complete.\n\n")
 
 
 ```
+
+
+
+
+
+
+
+```{r}
+
+# ==============================================================================
+# BLOCK E — WEIGHT DIAGNOSTICS: DML (PLR-IV + Wald-AIPW) VS KAPPA
+# ==============================================================================
+# Mirrors the Card double_ml Block E structure.
+# Combines kappa weight diagnostics (from Block D) with DML diagnostics
+# (PLR-IV and Wald-AIPW only, 5-fold — the main spec for the thesis).
+# Produces a single unified table for easy comparison.
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK E — WEIGHT DIAGNOSTICS: DML VS KAPPA\n")
+cat("Sum_w = 0 => translation invariant | ESS = 1 / sum(w_i^2)\n\n")
+cat(strrep("=", 70), "\n\n")
+
+diag_rows <- rbind(
+  # --- Kappa estimators ---
+  weight_diag(kw_401$tau_cb_u,   "tau_cb_u      (kappa, CBPS)"),
+  weight_diag(kw_401$tau_ml_u,   "tau_ml_u      (kappa, MLE)"),
+  weight_diag(kw_401$tau_ml_a10, "tau_ml_a10    (kappa, MLE)"),
+  weight_diag(kw_401$tau_ml_a,   "tau_ml_a      (kappa, unnorm.)"),
+  weight_diag(kw_401$tau_ml_a1,  "tau_ml_a1/t   (kappa, unnorm.)"),
+  weight_diag(kw_401$tau_ml_a0,  "tau_ml_a0     (kappa, unnorm.)"),
+  # --- DML estimators: 5-fold (main spec) ---
+  weight_diag(w_plriv_5f,        "PLR-IV        (grf, 5-fold)"),
+  weight_diag(w_waipw_5f,        "Wald-AIPW     (grf, 5-fold)"),
+  # --- DML estimators: 2-fold (robustness) ---
+  weight_diag(w_plriv_2f,        "PLR-IV        (grf, 2-fold)"),
+  weight_diag(w_waipw_2f,        "Wald-AIPW     (grf, 2-fold)")
+)
+
+print(diag_rows, row.names = FALSE)
+
+cat("\nBLOCK E complete.\n\n")
+
+
+```
+
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK F — LOVE PLOTS: DML (PLR-IV + Wald-AIPW) VS KAPPA
+# ==============================================================================
+# Mirrors the Card double_ml Block F structure.
+# One love.plot() helper using X_dml_401 as covariate reference.
+# 8-panel grid: PLR-IV, Wald-AIPW (5-fold), + all 6 kappa estimators.
+# ==============================================================================
+
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — LOVE PLOTS: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
+
+make_love_401 <- function(title_str, w_vec) {
+  # Converts signed outcome weights to the treated-vs-control convention
+  # expected by cobalt::love.plot() by multiplying by (2*D - 1).
+  cobalt::love.plot(
+    D ~ X_dml_401,
+    weights    = w_vec * (2 * D - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis::viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+lp_f_1 <- make_love_401("PLR-IV (5-fold)",    w_plriv_5f)
+lp_f_2 <- make_love_401("Wald-AIPW (5-fold)", w_waipw_5f)
+lp_f_3 <- make_love_401("tau_cb_u",           kw_401$tau_cb_u)
+lp_f_4 <- make_love_401("tau_ml_u",           kw_401$tau_ml_u)
+lp_f_5 <- make_love_401("tau_ml_a10",         kw_401$tau_ml_a10)
+lp_f_6 <- make_love_401("tau_ml_a",           kw_401$tau_ml_a)
+lp_f_7 <- make_love_401("tau_ml_a1/t",        kw_401$tau_ml_a1)
+lp_f_8 <- make_love_401("tau_ml_a0",          kw_401$tau_ml_a0)
+
+grid.arrange(
+  lp_f_1, lp_f_2, lp_f_3, lp_f_4,
+  lp_f_5, lp_f_6, lp_f_7, lp_f_8,
+  nrow = 2,
+  top  = "Love plots: DML vs Kappa | 401(k) pension covariates"
+)
+
+cat("\nBLOCK F complete.\n\n")
+
+```
+
+
+
+
