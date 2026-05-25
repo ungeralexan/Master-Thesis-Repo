@@ -1,0 +1,268 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath,amssymb,amsfonts,mathtools}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[round,authoryear]{natbib}
+
+\newtheorem{remark}{Remark}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\tD}{\widetilde{D}}
+\newcommand{\tZ}{\widetilde{Z}}
+\newcommand{\tY}{\widetilde{Y}}
+\newcommand{\hattheta}{\hat{\theta}}
+\newcommand{\SE}{\mathrm{SE}}
+
+\title{\textbf{Why IV Estimators Have Larger Standard Errors:\\
+Mechanics, Implications, and Evidence from the Application}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section*{Overview}
+
+A consistent pattern across all specifications in this thesis is that IV-based estimators
+--- PLR-IV and Wald-AIPW --- produce substantially larger standard errors and wider
+confidence intervals than their non-IV counterparts PLR and AIPW\@.  This note explains
+the mechanical reason for this precision loss, derives the variance inflation formally,
+and interprets the specific pattern observed in the Card (1995) application.
+
+%----------------------------------------------------------------------
+\section{The Fundamental Mechanic: Division by the First Stage}
+%----------------------------------------------------------------------
+
+Every IV estimator can be written as a ratio of two quantities: a reduced-form
+relationship between the instrument and the outcome, and a first-stage relationship
+between the instrument and the treatment.  In the simplest case of the plain Wald
+estimator this is
+\begin{align}
+  \hat{\tau}_{\mathrm{Wald}}
+  \;=\;
+  \frac{
+    \E_N[Y_i \mid Z_i=1] - \E_N[Y_i \mid Z_i=0]
+  }{
+    \E_N[D_i \mid Z_i=1] - \E_N[D_i \mid Z_i=0]
+  }
+  \;=\;
+  \frac{\hat\pi_{\mathrm{RF}}}{\hat\pi_{\mathrm{FS}}}.
+  \label{eq:wald_ratio}
+\end{align}
+The variance of a ratio estimator follows by the delta method.  Let
+$\sigma^2_{\mathrm{RF}} = \mathrm{Var}(\hat\pi_{\mathrm{RF}})$ and
+$\sigma^2_{\mathrm{FS}} = \mathrm{Var}(\hat\pi_{\mathrm{FS}})$.  Then
+\begin{align}
+  \mathrm{Var}(\hat\tau_{\mathrm{Wald}})
+  \;\approx\;
+  \frac{\sigma^2_{\mathrm{RF}}}{\pi_{\mathrm{FS}}^2}
+  \;+\;
+  \frac{\pi_{\mathrm{RF}}^2 \,\sigma^2_{\mathrm{FS}}}{\pi_{\mathrm{FS}}^4}.
+  \label{eq:delta_method}
+\end{align}
+The key term is $1/\pi_{\mathrm{FS}}^2$.  Whenever the instrument explains only a small
+share of the variation in $D_i$, the first stage $\pi_{\mathrm{FS}}$ is small, this
+amplification factor is large, and all sampling uncertainty in the numerator is
+magnified into the final estimate.  This is the \emph{variance inflation} inherent to
+IV\@.
+
+In the DML setting, the same logic applies after residualization.  The PLR-IV estimator
+solves the moment condition
+$\E[(\tY_i - \theta_0 \tD_i)\tZ_i] = 0$
+and has the closed-form solution
+\begin{align}
+  \hattheta_{\mathrm{PLR\text{-}IV}}
+  \;=\;
+  \frac{\sum_i \hat{V}_i \,\tY_i}{\sum_i \hat{V}_i \,\tD_i},
+  \qquad
+  \hat{V}_i = Z_i - \hat{m}(X_i).
+  \label{eq:plriv_ratio}
+\end{align}
+The denominator $\sum_i \hat{V}_i \tD_i$ is the residualized first stage --- the
+covariance between the instrument residual and the treatment residual after partialling
+out all covariate information.  If the instrument is only weakly related to treatment
+after controlling for $X_i$, this denominator is small and variance inflates by exactly
+the same mechanism as in \eqref{eq:delta_method}.
+
+%----------------------------------------------------------------------
+\section{Why OLS and AIPW-ATE Are More Precise}
+%----------------------------------------------------------------------
+
+OLS and AIPW-ATE do not divide by a first stage.  They use \emph{all} variation in
+$D_i$ to identify the treatment effect.  In the residualized PLR representation, for
+instance, the estimator is
+\begin{align}
+  \hattheta_{\mathrm{PLR}}
+  \;=\;
+  \frac{\sum_i \tD_i \,\tY_i}{\sum_i \tD_i^2},
+\end{align}
+and the denominator $\sum_i \tD_i^2$ is the full residual variance of the treatment ---
+always large, irrespective of whether an instrument is available.
+
+The fundamental trade-off is therefore between \emph{consistency} and
+\emph{precision}.  OLS/AIPW achieves high precision by using all treatment variation,
+but at the cost of consistency: when $D_i$ is endogenous, these estimators are biased.
+IV achieves consistency by discarding all endogenous variation and relying only on
+instrument-driven variation, but that variation is typically a small fraction of the
+total, so precision falls.  This is not a failure of IV; it is the price of causal
+identification under endogeneity.
+
+\begin{remark}[Subpopulation interpretation of precision loss]
+An equivalent way to understand the precision loss is through the effective sample size
+(ESS).  IV estimators implicitly work with a \emph{sub-experiment}: the variation in
+outcomes induced by the instrument among compliers.  If the instrument affects treatment
+for, say, 15--20\% of the sample, the IV estimator is effectively drawing on that
+fraction of the data for identification.  Formally, the ESS of the IV outcome weights
+$\omega_i$ is $(\sum_i \omega_i^2)^{-1}$, which collapses when weights are concentrated
+on a small subgroup.  Low ESS $\Rightarrow$ high variance.
+\end{remark}
+
+%----------------------------------------------------------------------
+\section{Three Compounding Factors in the Card Application}
+%----------------------------------------------------------------------
+
+In the Card (1995) application, three features compound the general variance inflation
+and produce the very large standard errors observed across all IV specifications.
+
+\medskip\noindent\textbf{(i) Moderate instrument strength.}
+The instrument is a binary indicator for whether an individual grew up near a four-year
+college (\texttt{nearc4}).  While the first-stage relationship in Card (1995) is
+statistically significant, it is not strong by the standards of modern applied
+econometrics.  A first-stage coefficient of roughly 0.15--0.20 means the denominator
+in \eqref{eq:plriv_ratio} is small, and the amplification factor $1/\hat\pi_{\mathrm{FS}}^2$
+is correspondingly large.
+
+\medskip\noindent\textbf{(ii) Binary instrument and binary treatment.}
+Both $Z_i$ (college proximity) and the treatment variables ($D_1 = \mathbf{1}\{\text{educ}>12\}$,
+$D_2 = \mathbf{1}\{\text{educ}\geq 16\}$) are binary.  Binary variables have limited
+variance relative to continuous ones, which mechanically limits the first-stage signal
+and reduces the denominator in the IV ratio further.
+
+\medskip\noindent\textbf{(iii) Compliers are a small subpopulation.}
+Not everyone responds to the college proximity instrument.  The complier share ---
+those who would attend more education if and only if they grew up near a college ---
+is a fraction of the sample.  The LATE estimator is identified solely off this group.
+This is reflected in the effective sample sizes reported in the weight diagnostics:
+$\mathrm{ESS} \approx 2$--$3$ for PLR-IV and Wald-AIPW across all specifications,
+despite $N = 3{,}010$ observations.  Estimating a causal effect from the information
+content of two to three effectively independent units produces wide confidence intervals
+almost by construction.
+
+%----------------------------------------------------------------------
+\section{Empirical Pattern in the Results}
+%----------------------------------------------------------------------
+
+Table~\ref{tab:se_comparison} collects the estimates and standard errors from the four
+main DML specifications to illustrate the precision gap.
+
+\begin{table}[htbp]
+\centering
+\caption{Estimates and standard errors by estimator and specification}
+\label{tab:se_comparison}
+\smallskip
+\begin{tabular}{llcccc}
+\toprule
+ & & \multicolumn{2}{c}{Card specification}
+   & \multicolumn{2}{c}{Kitagawa specification} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Estimator & Target & $D_1$ (somecol) & $D_2$ (educ16)
+          & $D_1$ (somecol) & $D_2$ (educ16) \\
+\midrule
+PLR       & $\theta_0$ (structural)
+  & 0.239 (0.018) & 0.320 (0.019) & 0.113 (0.015) & 0.152 (0.018) \\
+AIPW-ATE  & ATE
+  & ---           & 0.342 (0.015) & 0.117 (0.015) & 0.172 (0.018) \\
+\midrule
+PLR-IV    & $\theta_0$ (structural, IV)
+  & 0.681 (0.289) & 1.140 (0.535) & 0.593 (0.340) & 1.030 (0.684) \\
+Wald-AIPW & LATE
+  & 0.279 (0.214) & 0.530 (0.398) & 0.292 (0.249) & 0.535 (0.462) \\
+\bottomrule
+\end{tabular}
+\smallskip\\
+\raggedright\small
+\textit{Notes:} Standard errors in parentheses.  $D_1 = \mathbf{1}\{\mathrm{educ}>12\}$,
+$D_2 = \mathbf{1}\{\mathrm{educ}\geq 16\}$.  The Card specification includes experience,
+experience squared, regional indicators, and race/location dummies.  The Kitagawa
+specification includes race and location dummies only.  DML estimates use 5-fold
+cross-fitting with tuned random forests.
+\end{table}
+
+\noindent Several patterns are immediately apparent.
+
+\medskip\noindent\textbf{SE ratios of 10--25$\times$.}
+Comparing IV to non-IV standard errors within the same specification, the ratio ranges
+from roughly 12$\times$ (PLR vs.\ PLR-IV, Card/$D_1$: $0.018$ vs.\ $0.289$) to 26$\times$
+(AIPW-ATE vs.\ Wald-AIPW, Kitagawa/$D_2$: $0.018$ vs.\ $0.462$).  This is not
+a marginal difference in precision; it is an order-of-magnitude change.
+
+\medskip\noindent\textbf{Significance disappears for IV estimators.}
+All non-IV estimators (PLR, AIPW-ATE, AIPW-ATT, AIPW-ATU) are significant at the
+0.1\% level across all specifications.  Among IV estimators, Wald-AIPW is not
+statistically significant in any specification.  PLR-IV reaches significance only in
+the Card specification (both $D_1$ and $D_2$) but not in the Kitagawa specification.
+This divergence in significance is entirely explained by the standard error gap; the
+point estimates are not zero and are economically meaningful.
+
+\medskip\noindent\textbf{IV point estimates are larger, not smaller.}
+A natural concern when IV standard errors are large is that the estimates themselves are
+implausible.  Here the opposite is true: IV estimates are consistently \emph{larger}
+than OLS/AIPW counterparts.  This is consistent with a downward ability bias in OLS ---
+individuals with higher ability sort into more education and also earn higher wages, but
+if ability is unobserved, OLS conflates the education effect with the ability selection,
+potentially biasing estimates \emph{upward} in the standard Mincer setup.  However, Card
+(1995) and subsequent work have argued that the return to education for compliers
+(near-college individuals induced into more schooling) may genuinely exceed the average,
+because compliers are on a margin where the education investment is particularly valuable.
+Both explanations are consistent with larger IV than OLS estimates; the data alone cannot
+distinguish them.
+
+\medskip\noindent\textbf{Wider confidence intervals but directionally consistent.}
+Despite lacking statistical significance, the Wald-AIPW confidence intervals are wide
+but centred on positive values that are directionally consistent across all four
+specifications (Card/$D_1$: 0.28; Card/$D_2$: 0.53; Kitagawa/$D_1$: 0.29;
+Kitagawa/$D_2$: 0.54).  The 95\% confidence interval for Wald-AIPW under
+Kitagawa/$D_2$, for instance, runs approximately $[-0.37,\, 1.44]$ --- it is wide, but
+it does not provide evidence \emph{against} a positive return to college completion.
+
+%----------------------------------------------------------------------
+\section{Implication for the Empirical Comparison}
+%----------------------------------------------------------------------
+
+The large standard errors of IV estimators should not be interpreted as a methodological
+failure.  They honestly reflect the limited first-stage variation available in the
+Card (1995) design.  The comparison between IV and non-IV estimators remains
+informative for two reasons.
+
+First, the point estimates suggest an upward correction when moving from OLS to IV,
+which is consistent with the theoretical prediction that IV corrects for endogeneity
+bias in the returns to education.  That the correction cannot be precisely estimated
+with this instrument is a limitation of the data and instrument, not of the estimators.
+
+Second, the precision comparison itself is a finding.  It illustrates that obtaining
+clean causal estimates in observational settings with endogenous treatment requires
+strong instruments.  The college proximity instrument of Card (1995) is historically
+important and widely used, but it provides limited statistical power for precisely
+estimating the LATE in the modern DML framework with flexible nuisance estimation.
+This motivates reporting both the IV and non-IV estimates jointly: together they bound
+the plausible range of causal effects while making the endogeneity concern and its cost
+in precision transparent.
+
+%----------------------------------------------------------------------
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}

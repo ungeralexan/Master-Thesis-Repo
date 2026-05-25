@@ -1,0 +1,217 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath,amssymb,amsfonts,mathtools}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[round,authoryear]{natbib}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\tY}{\widetilde{Y}}
+\newcommand{\tD}{\widetilde{D}}
+\newcommand{\tZ}{\widetilde{Z}}
+
+\title{\textbf{PLR-IV versus LATE Estimators:\\A Comparison of Estimands}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section*{Overview}
+
+This note clarifies what the Partially Linear IV (PLR-IV) estimator targets and how it
+differs from LATE estimators such as Wald-AIPW and kappa-weighting.  The distinction
+matters for comparing estimates across the two families: they solve different moment
+conditions and are consistent for different population parameters.
+
+% ------------------------------------------------------------------
+\section{The LATE Target}
+% ------------------------------------------------------------------
+
+Under the standard IV assumptions---conditional instrument independence, exclusion
+restriction, instrument relevance, overlap, and monotonicity---the local average treatment
+effect is
+\begin{align}
+  \tau_{\mathrm{LATE}}
+  \;=\;
+  \E\!\left[Y_i(1)-Y_i(0)\;\middle|\;D_i(1)>D_i(0)\right].
+  \label{eq:late}
+\end{align}
+This is the average treatment effect for \emph{compliers}, i.e.\ those whose treatment
+status is switched by the instrument.  Both the Wald-AIPW estimator and kappa-based
+weighting estimators \citep{abadie2003semiparametric} target $\tau_{\mathrm{LATE}}$
+directly, relying on Abadie's (2003) result that any feature of the joint complier
+distribution is identified through the kappa weight
+\begin{align}
+  \kappa_i
+  \;=\;
+  1
+  -\frac{D_i(1-Z_i)}{1-p(X_i)}
+  -\frac{(1-D_i)Z_i}{p(X_i)},
+  \qquad
+  p(X_i)=\E[Z_i\mid X_i],
+\end{align}
+so that $\tau_{\mathrm{LATE}} = \E[\kappa_i Y_i(1)]/\E[\kappa_i] -
+\E[\kappa_i Y_i(0)]/\E[\kappa_i]$.  The key point is that the LATE is a
+\emph{subpopulation average}: it averages heterogeneous individual effects over the
+complier group.
+
+% ------------------------------------------------------------------
+\section{The PLR-IV Estimand}
+% ------------------------------------------------------------------
+
+The PLR-IV estimator is built on a structural model rather than a subpopulation average.
+The outcome is assumed to follow a \emph{partially linear} equation with a
+\emph{constant} treatment coefficient:
+\begin{align}
+  Y_i = D_i\,\theta_0 + g_0(X_i) + U_i,
+  \qquad
+  \E[U_i\mid X_i,Z_i]=0.
+  \label{eq:pliv}
+\end{align}
+The function $g_0(X_i)$ is left unrestricted (estimated nonparametrically), so the model
+is partially linear.  The instrument enters through the conditional exogeneity condition
+$\E[U_i\mid X_i,Z_i]=0$, which replaces the endogeneity assumption on $D_i$.
+
+Define the nuisance functions
+\[
+  \ell_0(X_i)=\E[Y_i\mid X_i],\quad
+  r_0(X_i)=\E[D_i\mid X_i],\quad
+  m_0(X_i)=\E[Z_i\mid X_i],
+\]
+and the corresponding residuals $\tY_i=Y_i-\ell_0(X_i)$,
+$\tD_i=D_i-r_0(X_i)$, $\tZ_i=Z_i-m_0(X_i)$.
+Substituting \eqref{eq:pliv} into the moment condition $\E[U_i\,\tZ_i]=0$ yields the
+Neyman-orthogonal score of \citet{chernozhukov2018double}:
+\begin{align}
+  \psi(W_i;\theta,\eta)
+  \;=\;
+  \bigl(\tY_i - \theta\,\tD_i\bigr)\tZ_i
+  \;\stackrel{!}{=}\; 0.
+  \label{eq:pliv_score}
+\end{align}
+Solving for $\theta_0$ gives the population ratio
+\begin{align}
+  \theta_0
+  \;=\;
+  \frac{\E[\tZ_i\,\tY_i]}{\E[\tZ_i\,\tD_i]},
+  \label{eq:pliv_ratio}
+\end{align}
+provided $\E[\tZ_i\,\tD_i]\neq 0$ (residualized relevance condition).  The DML
+estimator replaces $\ell_0,r_0,m_0$ with cross-fitted ML estimates $\hat\ell,\hat
+r,\hat m$:
+\begin{align}
+  \hat\theta_{\mathrm{PLR\text{-}IV}}
+  \;=\;
+  \frac{
+    \sum_{i=1}^{N}(Z_i-\hat m(X_i))(Y_i-\hat\ell(X_i))
+  }{
+    \sum_{i=1}^{N}(Z_i-\hat m(X_i))(D_i-\hat r(X_i))
+  }.
+  \label{eq:pliv_dml}
+\end{align}
+Under product-rate conditions
+$\|\hat m - m_0\|_{P,2}(\|\hat r-r_0\|_{P,2}+\|\hat\ell-\ell_0\|_{P,2})=o(N^{-1/2})$,
+cross-fitting, and Neyman orthogonality, $\hat\theta_{\mathrm{PLR\text{-}IV}}$ is
+root-$N$ consistent and asymptotically normal for $\theta_0$.
+
+% ------------------------------------------------------------------
+\section{Why They Differ}
+% ------------------------------------------------------------------
+
+The ratio in \eqref{eq:pliv_ratio} has a Wald-type form, but it is \emph{not} the LATE
+Wald estimand.  The following proposition makes the distinction precise.
+
+\begin{proposition}[PLR-IV versus LATE]
+\label{prop:pliv_late}
+Suppose both the PLIV model \eqref{eq:pliv} and the standard IV assumptions hold.
+Then
+\begin{enumerate}
+  \item[\normalfont(i)] $\theta_0$ as defined in \eqref{eq:pliv_ratio} is the unique
+        scalar satisfying the moment condition \eqref{eq:pliv_score}.  It is the
+        structural coefficient in the constant-effect linear model.
+  \item[\normalfont(ii)] $\tau_{\mathrm{LATE}}$ as defined in \eqref{eq:late} is the
+        average treatment effect for compliers.  It does not require effect homogeneity.
+  \item[\normalfont(iii)] $\theta_0 = \tau_{\mathrm{LATE}}$ if and only if treatment
+        effects are homogeneous, i.e.\ $Y_i(1)-Y_i(0)=c$ a.s.\ for some constant
+        $c\in\mathbb{R}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+\textit{Part (i).}  By construction, \eqref{eq:pliv_ratio} is the unique solution to
+$\E[(\tY_i-\theta\tD_i)\tZ_i]=0$ when $\E[\tZ_i\tD_i]\neq 0$.
+
+\textit{Part (ii).}  Under the standard IV assumptions, Imbens and Angrist (1994) show
+that the standard Wald ratio $\E[Y_i\mid Z_i=1]-\E[Y_i\mid Z_i=0]$ divided by the
+first-stage $\E[D_i\mid Z_i=1]-\E[D_i\mid Z_i=0]$ equals $\tau_{\mathrm{LATE}}$.  This
+identification result holds without any constant-effect assumption.
+
+\textit{Part (iii).}  If $Y_i(1)-Y_i(0)=c$ for all $i$, then the structural model
+\eqref{eq:pliv} holds with $\theta_0=c=\tau_{\mathrm{ATE}}=\tau_{\mathrm{LATE}}$.
+Conversely, if treatment effects are heterogeneous, $\theta_0$ is the unique solution to
+\eqref{eq:pliv_score}, which need not equal the complier average $\tau_{\mathrm{LATE}}$.
+To see this, expand the PLIV moment condition at the true parameter.  Under
+heterogeneous effects write $Y_i=D_i\tau_i+g_0(X_i)+\varepsilon_i$.  Then
+$\tY_i-\theta_0\tD_i=\tD_i(\tau_i-\theta_0)+\tilde\varepsilon_i$ and the moment
+condition $\E[(\tau_i-\theta_0)\tD_i\tZ_i]=0$ pins down $\theta_0$ as a
+covariance-weighted average of individual effects $\tau_i$, with weights proportional to
+$\tD_i\tZ_i$, not the kappa-complier weights.  This weighted average does not, in
+general, equal the unweighted complier mean $\tau_{\mathrm{LATE}}$.
+\end{proof}
+
+% ------------------------------------------------------------------
+\section{Implications for Comparison}
+% ------------------------------------------------------------------
+
+Proposition~\ref{prop:pliv_late} has two direct consequences for the empirical analysis.
+
+\medskip\noindent\textbf{Different targets under heterogeneity.}
+In settings with heterogeneous treatment effects---which both the Card (1995) and
+Kitagawa (2015) specifications implicitly allow---PLR-IV and LATE estimators are
+consistent for distinct parameters.  Numerical differences between them therefore reflect
+genuine estimand differences, not estimation noise.
+
+\medskip\noindent\textbf{PLR-IV as a structural benchmark.}
+PLR-IV is nonetheless informative.  It shares the residualized pseudo-IV structure with
+Wald-AIPW \citep[cf.][]{knaus2024double} and admits an outcome-weight representation.
+Including it allows one to assess the sensitivity of IV estimates to the constant-effect
+restriction.  A large gap between PLR-IV and Wald-AIPW is direct evidence that effect
+homogeneity is violated.
+
+\begin{remark}
+Both PLR-IV and Wald-AIPW use Double ML nuisance estimation---$\hat\ell,\hat r,\hat m$
+estimated via cross-fitted machine learning---and both residualize $Y$, $D$, and $Z$ on
+$X$.  Their difference lies solely in the moment condition: PLR-IV imposes
+$\E[(\tY_i-\theta_0\tD_i)\tZ_i]=0$ under a constant-effect structural model, whereas
+Wald-AIPW targets $\tau_{\mathrm{LATE}}$ through an augmented Wald score that allows
+heterogeneous effects.
+\end{remark}
+
+\medskip\noindent\textbf{Reporting recommendation.}
+PLR-IV results are reported as a separate \emph{structural DML-IV benchmark} rather than
+as a LATE estimator.  Direct numerical comparisons to kappa or Wald-AIPW estimates
+should acknowledge the distinct estimands.  If the two families yield similar estimates,
+this is consistent with approximate effect homogeneity; if they diverge substantially,
+the PLR-IV coefficient should not be interpreted as the complier average effect.
+
+% ------------------------------------------------------------------
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}
