@@ -1,0 +1,782 @@
+\documentclass[12pt,a4paper]{article}
+
+% ------------------------------------------------------------
+% Encoding, language, typography
+% ------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ------------------------------------------------------------
+% Page layout
+% ------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ------------------------------------------------------------
+% Mathematics
+% ------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{bbm}
+
+% ------------------------------------------------------------
+% Tables, lists, links
+% ------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+% ------------------------------------------------------------
+% Citations
+% ------------------------------------------------------------
+\usepackage[round,authoryear]{natbib}
+
+% ------------------------------------------------------------
+% Theorem-style environments
+% ------------------------------------------------------------
+\usepackage{amsthm}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% ------------------------------------------------------------
+% Useful math commands
+% ------------------------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\En}{\mathbb{E}_N}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbbm{1}}
+
+\title{Wald AIPW and Double Machine Learning}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{The Wald-AIPW Estimator}
+
+\subsection{Assumptions}
+\label{subsec:wald_aipw_assumptions}
+
+The Wald-AIPW estimator requires a set of assumptions that are strictly stronger than the
+unconfoundedness conditions underlying the plain AIPW estimator, because the treatment
+$D_i$ may be endogenous and identification now relies on a binary instrument $Z_i$.
+
+\begin{assumption}[Conditional instrument independence]
+\label{ass:ci_independence}
+$Z_i \perp\!\!\!\perp \{Y_i(d,z),\, D_i(z)\} \mid X_i$ for all $d \in \{0,1\}$, $z \in \{0,1\}$.
+\end{assumption}
+
+The instrument is as good as randomly assigned once we condition on the observed
+covariates $X_i$. This is the IV analogue of the strong ignorability condition and replaces the
+unconfoundedness assumption on the treatment; in contrast to the AIPW setting, no
+analogous restriction is placed on $D_i$ directly.
+
+\begin{assumption}[Exclusion restriction]
+\label{ass:exclusion}
+$Y_i(d,z) = Y_i(d)$ for all $d,z \in \{0,1\}$.
+\end{assumption}
+
+The instrument affects the outcome $Y_i$ only through its effect on treatment uptake $D_i$,
+not through any direct channel. Combined with Assumption~\ref{ass:ci_independence}, this
+ensures that comparing instrument groups isolates a causal effect that runs through $D_i$
+alone.
+
+\begin{assumption}[First-stage relevance]
+\label{ass:relevance}
+$\E[D_i \mid Z_i = 1, X_i] \neq \E[D_i \mid Z_i = 0, X_i]$ almost surely.
+\end{assumption}
+
+The instrument must shift treatment probability after conditioning on $X_i$. In the notation
+used for estimation below, this requires the first-stage pseudo-outcome $\widetilde{D}^{\,\mathrm{FS}}$
+to have a non-zero sample mean, which serves as the denominator of the Wald ratio.
+
+\begin{assumption}[Monotonicity]
+\label{ass:monotonicity}
+$D_i(1) \geq D_i(0)$ for all $i$.
+\end{assumption}
+
+No individual reduces treatment uptake in response to the instrument being switched on.
+This rules out defiers. Together with the previous assumptions, monotonicity ensures that
+the identified parameter is the local average treatment effect (LATE) for compliers---those
+whose treatment status is changed by the instrument---rather than an uninterpretable mixture
+\citep[Theorem~1]{angrist1995identification}.
+
+\begin{assumption}[Overlap]
+\label{ass:overlap}
+$0 < \Pr(Z_i = 1 \mid X_i = x) < 1$ for all $x$ in the support of $X_i$.
+\end{assumption}
+
+Both values of the instrument must be possible at every covariate value. This is the IV
+analogue of the common-support condition in the unconfoundedness literature and is
+necessary to avoid dividing by zero in the propensity-score weights constructed below.
+
+\begin{remark}
+Assumptions~\ref{ass:ci_independence}--\ref{ass:overlap} together imply that the LATE
+$\tau_{\mathrm{LATE}} = \E[Y_i(1) - Y_i(0) \mid D_i(1) > D_i(0)]$ is nonparametrically
+identified from the observed data distribution, without imposing any functional form on
+the outcome or treatment equations
+\citep[Section~2]{tan2006regression}.
+\end{remark}
+
+% ------------------------------------------------------------------
+\subsection{From the Wald Ratio to Covariate Adjustment}
+\label{subsec:wald_motivation}
+% ------------------------------------------------------------------
+
+Under Assumptions~\ref{ass:ci_independence}--\ref{ass:overlap}, the LATE is
+nonparametrically identified. Before developing the doubly-robust estimator, it is useful to
+trace the logical steps from the simplest possible IV estimator to the fully augmented version,
+since each step addresses a concrete limitation of its predecessor.
+
+\paragraph{The canonical Wald estimator.}
+
+In the absence of covariates, or when $Z_i$ is unconditionally independent of potential
+outcomes, identification is immediate. The intent-to-treat (ITT) effect of the instrument on
+the outcome and the first-stage effect of the instrument on treatment uptake are both
+identified as simple differences in group means:
+\begin{align}
+    \widehat{\mathrm{ITT}}_Y
+    &= \En[Y_i \mid Z_i = 1] - \En[Y_i \mid Z_i = 0], \\[4pt]
+    \widehat{\mathrm{ITT}}_D
+    &= \En[D_i \mid Z_i = 1] - \En[D_i \mid Z_i = 0].
+\end{align}
+The Wald estimator \citep{wald1940fitting} divides the two:
+\begin{align}
+    \hat{\tau}_{\mathrm{Wald}}
+    =
+    \frac{\En[Y_i \mid Z_i = 1] - \En[Y_i \mid Z_i = 0]}
+         {\En[D_i \mid Z_i = 1] - \En[D_i \mid Z_i = 0]}.
+    \label{eq:wald_estimator}
+\end{align}
+This estimator is entirely nonparametric in the sense that it imposes no functional form on
+the outcome or treatment equations. Its limitation is precisely that it performs no
+covariate adjustment. When instrument independence holds only conditionally on $X_i$
+(Assumption~\ref{ass:ci_independence}), the raw group means confound the causal effect of
+$Z_i$ with differences in covariate distributions across instrument groups, and the Wald
+estimator is inconsistent for the LATE.
+
+\paragraph{Why covariate adjustment is necessary.}
+
+The conditional independence assumption states that $Z_i$ is as good as randomly assigned
+\emph{within} cells defined by $X_i$, but not marginally. A concrete example is
+\citet{card1993using}, where the instrument---proximity to a four-year college---is as good as randomly assigned with respect to potential earnings after controlling for family background and
+location characteristics, but unconditionally it is correlated with these same variables
+because colleges tend to be located in areas with higher average education levels. Ignoring
+$X_i$ would attribute part of the geographical earnings premium to the college-proximity
+instrument, biasing the LATE estimate upward.
+
+More formally, because $Z_i \not\perp\!\!\!\perp \{Y_i(d,z)\}$ marginally, the sample split
+$\{Z_i = 1\}$ versus $\{Z_i = 0\}$ compares individuals who differ not only in their
+instrument value but also in the distribution of $X_i$. Covariate-adjusted variants of the
+Wald estimator are therefore needed whenever Assumption~\ref{ass:ci_independence} holds
+only conditionally.
+
+\paragraph{Wald-RA: the regression-adjustment benchmark.}
+
+The simplest covariate-adjusted extension replaces the raw group means with outcome
+predictions from regression models that condition on both $Z_i$ and $X_i$. Define
+\begin{align}
+    \hat{Y}(z, X_i) &= \widehat{\E}[Y_i \mid Z_i = z,\, X_i], \\[2pt]
+    \hat{D}(z, X_i) &= \widehat{\E}[D_i \mid Z_i = z,\, X_i],
+\end{align}
+for $z \in \{0,1\}$. The Wald regression-adjustment (Wald-RA) estimator then takes the form
+\begin{align}
+    \hat{\tau}_{\mathrm{Wald\text{-}RA}}
+    =
+    \frac{
+        \En\bigl[\hat{Y}(1, X_i) - \hat{Y}(0, X_i)\bigr]
+    }{
+        \En\bigl[\hat{D}(1, X_i) - \hat{D}(0, X_i)\bigr]
+    }.
+    \label{eq:wald_ra}
+\end{align}
+Wald-RA is consistent if both outcome models $\hat{Y}(z, \cdot)$ and treatment models
+$\hat{D}(z, \cdot)$ are correctly specified. This is a strong requirement: a single
+misspecified model---even if the other is correct---introduces first-order bias. In
+high-dimensional settings or when the functional form of the outcome or treatment equation
+is unknown, this fragility is a serious concern.
+
+\paragraph{The role of propensity score weighting.}
+
+An alternative approach adjusts for confounding not through the outcome model but through
+the propensity score of the instrument,
+$e(X_i) = \Pr(Z_i = 1 \mid X_i)$.
+The key insight introduced by \citet{tan2006regression}, is that reweighting
+observations by the inverse of their instrument propensity score can recover the counterfactual
+group means without specifying any outcome or treatment model. Specifically, under
+Assumptions~\ref{ass:ci_independence} and~\ref{ass:overlap},
+\begin{align}
+    \E\!\left[\frac{\ind\{Z_i = z\}\, Y_i}{e_z(X_i)}\right]
+    =
+    \E[Y_i(z, D_i(z))],
+    \qquad
+    z \in \{0,1\},
+    \label{eq:ipw_id}
+\end{align}
+where $e_1(X_i) = e(X_i)$ and $e_0(X_i) = 1 - e(X_i)$. This identification result follows
+by the same argument as in the unconfoundedness AIPW case but with $Z_i$ playing the
+role of the treatment \citep[Proposition~1]{tan2006regression}. The resulting
+Wald-IPW estimator is consistent if $e(X_i)$ is correctly specified, and is generally
+inconsistent if the propensity score model is wrong.
+
+% ------------------------------------------------------------------
+\subsection{Double Robustness and the Wald-AIPW Estimator}
+\label{subsec:wald_aipw_dr}
+% ------------------------------------------------------------------
+
+Both Wald-RA and Wald-IPW achieve consistent estimation under \emph{one} correctly
+specified nuisance model: the outcome model for Wald-RA, and the propensity score model
+for Wald-IPW. The augmented inverse probability weighting approach of
+\citet{tan2006regression} combines the two strategies in a way that inherits consistency
+from whichever component is correctly specified---a property known as double robustness.
+
+\paragraph{Identification via AIPW.}
+
+For each instrument value $z \in \{0,1\}$, define the conditional average potential
+outcome (CAPO) by
+\begin{align}
+    \E[Y_i(z,D_i(z)) \mid X_i]
+    &= \E[Y_i \mid Z_i = z,\, X_i]
+    \;=:\; \mu_Y(z, X_i).
+    \label{eq:capo_y}
+\end{align}
+Similarly, define $\mu_D(z, X_i) = \E[D_i \mid Z_i = z,\, X_i]$.
+Under Assumptions~\ref{ass:ci_independence}--\ref{ass:overlap},
+the CAPOs can be written in three equivalent ways---as a regression, as an IPW
+expression, or as the augmented combination:
+\begin{align}
+    \E[Y_i(z,D_i(z)) \mid X_i]
+    &= \mu_Y(z, X_i)
+    \label{eq:id_ra} \\
+    &= \E\!\left[
+        \frac{\ind\{Z_i = z\}\, Y_i}{e_z(X_i)}
+        \;\Big|\; X_i
+    \right]
+    \label{eq:id_ipw} \\
+    &= \E\!\left[
+        \mu_Y(z, X_i)
+        +
+        \frac{\ind\{Z_i = z\}\bigl(Y_i - \mu_Y(z, X_i)\bigr)}{e_z(X_i)}
+        \;\Big|\; X_i
+    \right].
+    \label{eq:id_aipw}
+\end{align}
+The representation in \eqref{eq:id_aipw} is the doubly-robust form: it equals
+$\E[Y_i(z,D_i(z)) \mid X_i]$ whenever either $\mu_Y(z, \cdot)$ or $e(\cdot)$ is correctly
+specified, because a misspecification error in one nuisance is multiplied by the residual of
+the other \citep[Section~4]{tan2006regression}. The same three representations hold for
+$\mu_D(z, X_i)$ with $D_i$ in place of $Y_i$.
+
+\paragraph{What double robustness means.}
+
+To see why the augmented form \eqref{eq:id_aipw} is doubly robust, note that it can be
+rewritten as
+\begin{align}
+    \mu_Y(z, X_i)
+    +
+    \frac{\ind\{Z_i = z\}\bigl(Y_i - \mu_Y(z, X_i)\bigr)}{e_z(X_i)}
+    =
+    \mu_Y(z, X_i)
+    +
+    \underbrace{
+        \frac{\ind\{Z_i = z\} - e_z(X_i)}{e_z(X_i)}
+    }_{\text{IPW correction weight}}
+    \cdot
+    \bigl(Y_i - \mu_Y(z, X_i)\bigr).
+    \label{eq:dr_decomp}
+\end{align}
+If the outcome model is correct, $\E[Y_i - \mu_Y(z,X_i) \mid X_i] = 0$, so the IPW
+correction term vanishes in expectation regardless of $e(\cdot)$. If instead the propensity
+score is correct, $\E[\ind\{Z_i=z\} - e_z(X_i) \mid X_i] = 0$, so the correction term
+vanishes regardless of the outcome model. Consistency therefore requires only one of the
+two models to be correctly specified, not both simultaneously.
+
+% ------------------------------------------------------------------
+\subsection{The Pseudo-Outcome Construction}
+\label{subsec:wald_aipw_pseudo}
+% ------------------------------------------------------------------
+
+The identification results of Section~\ref{subsec:wald_aipw_dr} directly suggest a
+feasible estimator. Let $\hat{\mu}_Y(z, X_i)$, $\hat{\mu}_D(z, X_i)$, and $\hat{e}(X_i)$
+denote first-step estimates of the nuisance parameters, and define the instrument-group
+inverse probability weights
+\begin{align}
+    \hat{\lambda}^z_{1,i} = \frac{Z_i}{\hat{e}(X_i)},
+    \qquad
+    \hat{\lambda}^z_{0,i} = \frac{1 - Z_i}{1 - \hat{e}(X_i)}.
+    \label{eq:lambda_z}
+\end{align}
+
+\paragraph{Reduced-form pseudo-outcome.}
+
+The AIPW representation in \eqref{eq:id_aipw} applied to the outcome $Y_i$ motivates
+the following individual-level pseudo-outcome:
+\begin{align}
+    \widetilde{Y}^{\,\mathrm{RF}}_i
+    &=
+    \underbrace{
+        \hat{\mu}_Y(1, X_i) - \hat{\mu}_Y(0, X_i)
+    }_{\text{outcome model contrast}}
+    +
+    \underbrace{
+        \hat{\lambda}^z_{1,i}
+        \bigl(Y_i - \hat{\mu}_Y(1, X_i)\bigr)
+        -
+        \hat{\lambda}^z_{0,i}
+        \bigl(Y_i - \hat{\mu}_Y(0, X_i)\bigr)
+    }_{\text{IPW residual correction}}.
+    \label{eq:rf_pseudo}
+\end{align}
+The sample mean $\En[\widetilde{Y}^{\,\mathrm{RF}}_i]$ consistently estimates the
+reduced-form effect of $Z_i$ on $Y_i$, i.e.\ the intent-to-treat effect, after covariate
+adjustment.
+
+\paragraph{First-stage pseudo-outcome.}
+
+By the exact same construction applied to the treatment variable $D_i$:
+\begin{align}
+    \widetilde{D}^{\,\mathrm{FS}}_i
+    &=
+    \underbrace{
+        \hat{\mu}_D(1, X_i) - \hat{\mu}_D(0, X_i)
+    }_{\text{treatment model contrast}}
+    +
+    \underbrace{
+        \hat{\lambda}^z_{1,i}
+        \bigl(D_i - \hat{\mu}_D(1, X_i)\bigr)
+        -
+        \hat{\lambda}^z_{0,i}
+        \bigl(D_i - \hat{\mu}_D(0, X_i)\bigr)
+    }_{\text{IPW residual correction}}.
+    \label{eq:fs_pseudo}
+\end{align}
+The sample mean $\En[\widetilde{D}^{\,\mathrm{FS}}_i]$ consistently estimates the
+first-stage effect of $Z_i$ on $D_i$.
+
+\paragraph{The Wald-AIPW estimator.}
+
+The Wald-AIPW estimator \citep{tan2006regression} takes the ratio of the two
+pseudo-outcome means:
+\begin{align}
+    \hat{\tau}_{\mathrm{Wald\text{-}AIPW}}
+    =
+    \frac{
+        \En\!\left[\widetilde{Y}^{\,\mathrm{RF}}_i\right]
+    }{
+        \En\!\left[\widetilde{D}^{\,\mathrm{FS}}_i\right]
+    }
+    =
+    \frac{
+        \frac{1}{N}\sum_{i=1}^{N}
+        \left[
+            \hat{\mu}_Y(1,X_i) - \hat{\mu}_Y(0,X_i)
+            + \hat{\lambda}^z_{1,i}(Y_i - \hat{\mu}_Y(1,X_i))
+            - \hat{\lambda}^z_{0,i}(Y_i - \hat{\mu}_Y(0,X_i))
+        \right]
+    }{
+        \frac{1}{N}\sum_{i=1}^{N}
+        \left[
+            \hat{\mu}_D(1,X_i) - \hat{\mu}_D(0,X_i)
+            + \hat{\lambda}^z_{1,i}(D_i - \hat{\mu}_D(1,X_i))
+            - \hat{\lambda}^z_{0,i}(D_i - \hat{\mu}_D(0,X_i))
+        \right]
+    }.
+    \label{eq:wald_aipw_estimator}
+\end{align}
+
+The structure of \eqref{eq:wald_aipw_estimator} makes the parallel to the canonical
+Wald ratio in \eqref{eq:wald_estimator} transparent: numerator and denominator both
+have the same AIPW form, differing only in whether $Y_i$ or $D_i$ appears as the
+response variable. In the absence of covariates, with a known propensity score of
+$\hat{e}(X_i) = 1/2$, and with constant outcome and treatment predictions, the
+Wald-AIPW reduces exactly to \eqref{eq:wald_estimator}.
+
+\begin{remark}[Double robustness of the Wald-AIPW]
+\label{rem:wald_aipw_dr}
+The Wald-AIPW estimator in \eqref{eq:wald_aipw_estimator} is doubly robust in the
+following sense: both the reduced-form numerator $\En[\widetilde{Y}^{\,\mathrm{RF}}_i]$ and
+the first-stage denominator $\En[\widetilde{D}^{\,\mathrm{FS}}_i]$ are individually consistent
+if either the respective outcome or treatment model \emph{or} the instrument propensity
+score $e(X_i)$ is correctly specified. Consistency of the ratio then requires that both
+numerator and denominator converge to their respective population quantities, which holds
+if, for each component, at least one of the two nuisance models is correctly specified.
+This distinguishes Wald-AIPW from Wald-RA (consistent only if both outcome and
+treatment models are correct) and from Wald-IPW (consistent only if the propensity
+score is correct).
+\end{remark}
+
+% ------------------------------------------------------------------
+\subsection{Comparison of the Three Wald Estimator Variants}
+\label{subsec:wald_comparison}
+% ------------------------------------------------------------------
+
+To fix ideas, Table~\ref{tab:wald_comparison} summarizes the three estimators and the
+conditions under which each is consistent.
+
+\begin{table}[h!]
+\centering
+\caption{Wald estimator variants and their consistency requirements}
+\label{tab:wald_comparison}
+\smallskip
+\begin{tabular}{lccc}
+\toprule
+\textbf{Estimator} & \textbf{Uses $\hat{\mu}$} & \textbf{Uses $\hat{e}$}
+    & \textbf{Consistent if} \\
+\midrule
+Wald-RA   & \checkmark & $\times$
+    & both $\hat{\mu}_Y$ and $\hat{\mu}_D$ correct \\[2pt]
+Wald-IPW  & $\times$   & \checkmark
+    & $\hat{e}$ correct \\[2pt]
+Wald-AIPW & \checkmark & \checkmark
+    & $\hat{\mu}$ \emph{or} $\hat{e}$ correct (per component) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The double-robustness of Wald-AIPW provides important insurance in practice. When the
+functional form of the outcome or treatment model is uncertain---as is typical with a rich
+covariate vector $X_i$---the propensity score model for $Z_i$ may be much simpler and more
+reliably estimated, since the instrument is often near-randomly assigned by design. Conversely,
+in settings with imperfect overlap (propensity scores close to 0 or 1), the outcome model
+provides an alternative route to consistent estimation.
+
+Moreover, the AIPW structure confers an additional statistical advantage: the score function
+underlying \eqref{eq:wald_aipw_estimator} is semiparametrically efficient, meaning that no
+regular estimator can achieve a smaller asymptotic variance when the true data-generating
+process belongs to the nonparametric model defined by
+Assumptions~\ref{ass:ci_independence}--\ref{ass:overlap}
+\citep[Theorem~1]{tan2006distributional}.
+
+
+
+
+
+
+% ------------------------------------------------------------------
+\section{Inference via Double Machine Learning}
+\label{subsec:wald_aipw_dml}
+% ------------------------------------------------------------------
+ 
+The estimator in \eqref{eq:wald_aipw_estimator} requires four nuisance functions---
+$\mu_Y(1,\cdot)$, $\mu_Y(0,\cdot)$, $\mu_D(1,\cdot)$, $\mu_D(0,\cdot)$---and the
+instrument propensity score $e(\cdot)$. \citet{tan2006regression} establishes
+consistency under parametric nuisance models, but parametric specifications impose
+functional form restrictions on how the instrument shifts outcomes and treatment
+probabilities as a function of $X_i$. In applications with many covariates or unknown
+interaction structures, such restrictions can produce systematic bias in the nuisance
+estimates and, consequently, in the final LATE estimate, even under the double-robustness
+property of Section~\ref{subsec:wald_aipw_dr}.
+ 
+The Double Machine Learning (DML) framework of \citet{chernozhukov2018double} resolves
+this tension. It shows that the nuisance functions can be estimated with flexible,
+nonparametric machine learning methods---random forests, gradient boosting, neural
+networks, Lasso---while still obtaining $\sqrt{N}$-consistent, asymptotically normal,
+and semiparametrically efficient inference on the LATE, provided two conditions are met:
+the estimating score must be \emph{Neyman orthogonal}, and the nuisance estimates must be
+obtained by \emph{cross-fitting}. The remainder of this section develops each condition
+and explains why both are indispensable.
+ 
+\subsubsection{Why Plug-in Estimation Fails with Machine Learning}
+\label{subsubsec:plugin_fails}
+ 
+To understand why standard plug-in estimation breaks down, consider replacing the true
+nuisance functions with ML estimates $\hat{\mu}_Y$, $\hat{\mu}_D$, $\hat{e}$ in
+\eqref{eq:wald_aipw_estimator} without any further correction. The nuisance estimation
+error enters the score as an additive first-order term. A generic ML estimator converges
+at a rate slower than $N^{-1/2}$: many methods achieve rates of order $N^{-2/5}$ or
+$N^{-1/3}$ under smoothness conditions on the regression function. This means the
+contamination from nuisance errors does not vanish fast enough to be absorbed into the
+$\sqrt{N}$ asymptotic approximation, and the resulting estimator for the LATE is
+asymptotically biased.
+ 
+\citet[p.\ C8]{chernozhukov2018double} make this precise by noting that standard
+Donsker-class conditions, which would allow plug-in estimation to work, are violated in
+high-dimensional settings where the nuisance parameter spaces grow with $N$---ruling out
+even simple linear models with many regressors. The solution is to design the estimating
+equation so that nuisance errors enter only in second order.
+ 
+\subsubsection{Neyman Orthogonality}
+\label{subsubsec:neyman_orth}
+ 
+\begin{definition}[Neyman orthogonality, \citealp{chernozhukov2018double}]
+\label{def:neyman_orth}
+A score function $\psi(W_i;\, \tau,\, \eta)$, where $\tau$ is the parameter of interest
+and $\eta = (\mu_Y, \mu_D, e)$ collects the nuisance parameters, is \emph{Neyman
+orthogonal} at the true values $(\tau_0, \eta_0)$ if the Gateaux derivative of the
+expected score with respect to the nuisance parameter is zero:
+\begin{align}
+    \partial_r\,
+    \E\!\left[\psi\!\left(W_i;\, \tau_0,\, \eta_0 + r(\tilde\eta - \eta_0)\right)\right]
+    \Big|_{r=0}
+    = 0
+    \qquad
+    \text{for all } \tilde\eta \in \mathcal{T},
+    \label{eq:neyman_orth}
+\end{align}
+where $\mathcal{T}$ is the nuisance realization set.
+\end{definition}
+ 
+Condition \eqref{eq:neyman_orth} states that perturbing the nuisance parameters away
+from their true values in any direction has no first-order effect on the expected score.
+Intuitively, the score is locally insensitive to nuisance misspecification: the bias from
+estimating $\eta$ by $\hat\eta$ enters the estimating equation only through
+second-order products of nuisance errors, which vanish at the product rate
+$\|\hat\eta - \eta_0\|^2$ rather than the level rate $\|\hat\eta - \eta_0\|$.
+ 
+\paragraph{Neyman orthogonality of the Wald-AIPW score.}
+ 
+The Wald-AIPW score can be written compactly as
+\begin{align}
+    \psi(W_i;\, \tau,\, \eta)
+    =
+    \underbrace{
+        \widetilde{Y}^{\,\mathrm{RF}}_i(\eta)
+    }_{\text{reduced form}}
+    -
+    \tau \cdot
+    \underbrace{
+        \widetilde{D}^{\,\mathrm{FS}}_i(\eta)
+    }_{\text{first stage}},
+    \label{eq:wald_aipw_score}
+\end{align}
+where $\widetilde{Y}^{\,\mathrm{RF}}_i$ and $\widetilde{D}^{\,\mathrm{FS}}_i$ are
+defined in \eqref{eq:rf_pseudo} and \eqref{eq:fs_pseudo} respectively.
+\citet[Section~5.2, p.~C37]{chernozhukov2018double} verify that this score satisfies
+the moment condition $\E[\psi(W_i;\tau_0,\eta_0)]=0$ and the orthogonality condition
+\eqref{eq:neyman_orth}.
+ 
+The orthogonality follows from the same argument that establishes double robustness in
+identification. A perturbation of the outcome model $\mu_Y(z,\cdot)$ in direction
+$\tilde\mu_Y - \mu_Y$ contributes a term proportional to
+$\E[(\tilde\mu_Y - \mu_Y)(Z_i - e(X_i))/e(X_i)]$, which is zero by the law of iterated
+expectations under Assumption~\ref{ass:ci_independence}:
+\begin{align}
+    \E\!\left[
+        \frac{(\tilde\mu_Y - \mu_Y)(z, X_i)\cdot
+        (\ind\{Z_i = z\} - e_z(X_i))}{e_z(X_i)}
+    \right]
+    =
+    \E\!\left[
+        (\tilde\mu_Y - \mu_Y)(z, X_i)\cdot
+        \E\!\left[
+            \frac{\ind\{Z_i = z\} - e_z(X_i)}{e_z(X_i)}
+            \,\Big|\, X_i
+        \right]
+    \right]
+    = 0,
+    \label{eq:orth_mu}
+\end{align}
+since $\E[\ind\{Z_i = z\} - e_z(X_i) \mid X_i] = 0$ by definition of the propensity
+score. Symmetrically, a perturbation of the propensity score contributes a term
+proportional to $\E[(Y_i - \mu_Y(z,X_i))(\tilde e - e)/e^2]$, which is zero because
+$\E[Y_i - \mu_Y(z,X_i) \mid X_i] = 0$ at the true outcome model. The same argument
+applies to each nuisance in the first-stage component $\widetilde{D}^{\,\mathrm{FS}}_i$.
+ 
+The practical consequence is that if each nuisance function is estimated at a rate $r_N$
+(for example $r_N = N^{-2/5}$ for a nonparametric regression estimator under a smoothness
+condition), the bias in the final LATE estimate is of order $r_N^2$, not $r_N$. The
+condition for valid $\sqrt{N}$ inference is therefore only that
+\begin{align}
+    r_N^2 = o(N^{-1/2}),
+    \qquad \text{i.e.} \qquad
+    r_N = o(N^{-1/4}),
+    \label{eq:rate_cond}
+\end{align}
+a much weaker requirement than the $o(N^{-1/2})$ rate that would be needed for direct
+plug-in \citep[Assumption~3.2, p.~C25]{chernozhukov2018double}. Random forests and
+gradient boosting satisfy \eqref{eq:rate_cond} under mild smoothness or sparsity
+conditions on the true nuisance functions, making them suitable for estimating
+$\hat\mu_Y$, $\hat\mu_D$, and $\hat e$.
+ 
+\begin{remark}[Comparison with PLR-IV]
+\label{rem:orth_vs_plriv}
+The Neyman-orthogonal score for the PLR-IV estimator (equation~\eqref{eq:pliv_robinson_score})
+also satisfies \eqref{eq:neyman_orth} and requires the same product-rate condition
+\eqref{eq:pliv_product_rate}. The Wald-AIPW score in \eqref{eq:wald_aipw_score} imposes
+the stronger interactive IV structure of \eqref{ass:ci_independence} rather than the
+partially linear outcome equation, allowing for fully nonparametric covariate adjustment
+in both the reduced form and the first stage. This is what enables consistent LATE
+estimation under unrestricted effect heterogeneity, at the cost of estimating two
+additional nuisance functions ($\mu_D(1,\cdot)$ and $\mu_D(0,\cdot)$) relative to
+PLR-IV.
+\end{remark}
+ 
+\subsubsection{Cross-Fitting}
+\label{subsubsec:cross_fitting}
+ 
+Neyman orthogonality alone is not sufficient for valid ML-based inference. Even if
+the score is locally insensitive to nuisance errors, the nuisance estimates and the
+outcome data must not be from the same sample, or else overfitting creates a
+dependence between $\hat\eta$ and the score evaluation that invalidates the central
+limit theorem argument.
+ 
+Cross-fitting, introduced formally by \citet[Definitions~3.1--3.2, p.~C23--C24]{chernozhukov2018double},
+resolves this by splitting the sample into $K$ folds of roughly equal size $n = N/K$.
+For each fold $k \in \{1,\ldots,K\}$, the nuisance functions are estimated on the
+complementary $K-1$ folds, producing cross-fitted estimates
+$\hat\eta^{(-k)} = (\hat\mu_Y^{(-k)},\, \hat\mu_D^{(-k)},\, \hat e^{(-k)})$ that
+are independent of the observations in fold $k$. The pseudo-outcomes are then
+constructed using $\hat\eta^{(-k)}$ only for observations in fold $k$:
+\begin{align}
+    \widetilde{Y}^{\,\mathrm{RF}}_i
+    &=
+    \hat\mu_Y^{(-k(i))}(1, X_i) - \hat\mu_Y^{(-k(i))}(0, X_i)
+    +
+    \hat\lambda^{z,(-k(i))}_{1,i}
+    \bigl(Y_i - \hat\mu_Y^{(-k(i))}(1,X_i)\bigr)
+    -
+    \hat\lambda^{z,(-k(i))}_{0,i}
+    \bigl(Y_i - \hat\mu_Y^{(-k(i))}(0,X_i)\bigr),
+    \label{eq:rf_pseudo_cf}
+\end{align}
+where $k(i)$ denotes the fold containing observation $i$. The final estimator averages
+over all folds:
+\begin{align}
+    \hat\tau_{\mathrm{Wald\text{-}AIPW}}
+    =
+    \frac{
+        \frac{1}{N}\sum_{k=1}^{K}\sum_{i \in I_k}
+        \widetilde{Y}^{\,\mathrm{RF}}_i
+    }{
+        \frac{1}{N}\sum_{k=1}^{K}\sum_{i \in I_k}
+        \widetilde{D}^{\,\mathrm{FS}}_i
+    }.
+    \label{eq:wald_aipw_cf}
+\end{align}
+ 
+Cross-fitting serves two functions. First, the out-of-sample nuisance predictions
+$\hat\eta^{(-k)}$ are statistically independent of the fold-$k$ observations, which
+allows the empirical process terms in the central limit theorem argument to be controlled
+without Donsker-class conditions on the nuisance estimators
+\citep[p.~C8]{chernozhukov2018double}. Second, cross-fitting uses the full sample for
+both nuisance estimation and score evaluation---unlike a single train/test split, which
+would discard half the data---so there is no loss of sample efficiency.
+ 
+\citet[Remark~3.1, p.~C24]{chernozhukov2018double} recommend $K = 4$ or $K = 5$ folds
+based on simulation evidence and empirical practice; they note that larger $K$ provides
+more training observations for the harder nuisance estimation problem, while the
+asymptotic results are valid for any fixed $K \geq 2$.
+ 
+\subsubsection{The Main Inference Result}
+\label{subsubsec:wald_aipw_theorem}
+ 
+Combining Neyman orthogonality with cross-fitting yields the central theoretical
+justification for using Wald-AIPW with machine learning nuisance estimators.
+ 
+\begin{proposition}[DML inference on the LATE, \citealp{chernozhukov2018double}]
+\label{prop:wald_aipw_clt}
+Let Assumptions~\ref{ass:ci_independence}--\ref{ass:overlap} hold, and suppose that the
+interactive IV model conditions of \citet[Assumption~5.2]{chernozhukov2018double} are
+satisfied, including the rate condition
+\begin{align}
+    \|\hat\mu_Y^{(-k)} - \mu_{Y,0}\|_{P,2}\,
+    \|\hat e^{(-k)} - e_0\|_{P,2}
+    +
+    \|\hat\mu_D^{(-k)} - \mu_{D,0}\|_{P,2}\,
+    \|\hat e^{(-k)} - e_0\|_{P,2}
+    = o(N^{-1/2}).
+    \label{eq:wald_aipw_rate}
+\end{align}
+Then the DML estimator $\hat\tau_{\mathrm{Wald\text{-}AIPW}}$ in \eqref{eq:wald_aipw_cf}
+satisfies
+\begin{align}
+    \hat\sigma^{-1}\sqrt{N}
+    \bigl(\hat\tau_{\mathrm{Wald\text{-}AIPW}} - \tau_{\mathrm{LATE}}\bigr)
+    \;\xrightarrow{d}\;
+    \mathcal{N}(0,1),
+    \label{eq:wald_aipw_clt}
+\end{align}
+uniformly over $P \in \mathcal{P}$, where
+$\hat\sigma^2 = (\En[\widetilde{D}^{\,\mathrm{FS}}_i])^{-2}\,
+\En[(\widetilde{Y}^{\,\mathrm{RF}}_i - \hat\tau_{\mathrm{Wald\text{-}AIPW}}\,
+\widetilde{D}^{\,\mathrm{FS}}_i)^2]$ is a consistent variance estimator.
+Confidence intervals $\hat\tau_{\mathrm{Wald\text{-}AIPW}} \pm
+\Phi^{-1}(1-\alpha/2)\hat\sigma/\sqrt{N}$ have uniform asymptotic validity.
+\end{proposition}
+ 
+\noindent
+The rate condition \eqref{eq:wald_aipw_rate} requires that \emph{products} of nuisance
+estimation errors converge at rate $o(N^{-1/2})$. If each of the five nuisance functions
+is estimated at a rate $N^{-1/4+\epsilon}$ for some $\epsilon > 0$---a condition satisfied
+by random forests under smoothness assumptions \citep[p.~C26]{chernozhukov2018double}---then
+the product rate condition is met. This is the operational sense in which Neyman orthogonality
+enables the use of machine learning: it demotes the nuisance estimation problem from a
+$\sqrt{N}$-rate bottleneck to a nuisance that can be handled by any sufficiently consistent
+nonparametric method.
+ 
+The uniformity statement in \eqref{eq:wald_aipw_clt} over $P \in \mathcal{P}$ is
+important and distinguishes the DML result from pointwise asymptotic claims.
+\citet[p.~C27]{chernozhukov2018double} note that uniformity holds precisely because the
+score is Neyman orthogonal: confidence intervals constructed from \eqref{eq:wald_aipw_clt}
+remain valid under sequences of data-generating processes that drift within $\mathcal{P}$,
+making them robust to local misspecification in a way that is impossible for estimators
+based on non-orthogonal scores.
+ 
+\begin{remark}[No bias correction needed]
+\label{rem:no_bias_correction}
+A direct consequence of Proposition~\ref{prop:wald_aipw_clt} is that no bias-correction
+or undersmoothing of the nuisance estimators is required. Standard $t$-tests and
+confidence intervals can be applied to $\hat\tau_{\mathrm{Wald\text{-}AIPW}}$ without
+modification, because the second-order nuisance bias is $o(N^{-1/2})$ and therefore
+negligible relative to the $\sqrt{N}$ fluctuations of the estimator. This contrasts with
+direct plug-in estimators, for which the bias is first-order and must be removed
+explicitly.
+\end{remark}
+ 
+\subsubsection{Summary: Why Wald-AIPW is the Natural DML Estimator for the LATE}
+\label{subsubsec:wald_aipw_summary}
+ 
+The properties developed in this section collectively explain why Wald-AIPW, embedded in
+the DML framework, is the preferred estimator for the LATE in the presence of rich
+covariate information. Table~\ref{tab:wald_aipw_properties} collects the key advantages
+relative to the other Wald variants and to the PLR-IV estimator.
+ 
+\begin{table}[h!]
+\centering
+\caption{Properties of IV estimators used in this thesis}
+\label{tab:wald_aipw_properties}
+\smallskip
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Property} & \textbf{Wald} & \textbf{Wald-RA} & \textbf{PLR-IV} & \textbf{Wald-AIPW} \\
+\midrule
+Allows effect heterogeneity  & \checkmark & \checkmark & $\times$ & \checkmark \\
+Covariate adjustment         & $\times$   & \checkmark & \checkmark & \checkmark \\
+Doubly robust                & $\times$   & $\times$   & $\times$   & \checkmark \\
+Neyman orthogonal score      & $\times$   & $\times$   & \checkmark & \checkmark \\
+ML nuisance estimation valid & $\times$   & $\times$   & \checkmark & \checkmark \\
+Semiparametrically efficient & $\times$   & $\times$   & $\times$   & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+The Wald estimator performs no covariate adjustment and is therefore inconsistent under
+conditional instrument independence. Wald-RA adjusts for covariates but is fragile to
+outcome model misspecification and its score is not Neyman orthogonal, so ML-based
+nuisance estimation introduces a first-order bias. PLR-IV has a Neyman-orthogonal score
+and supports ML estimation, but requires a partially linear outcome equation and therefore
+restricts effect heterogeneity to zero---targeting the structural IV coefficient
+$\theta_0$ rather than the LATE. The Wald-AIPW combines covariate adjustment,
+double robustness, Neyman orthogonality, and compatibility with arbitrary nonparametric
+ML estimators, and under the interactive IV model of \citet{chernozhukov2018double} it
+achieves the semiparametric efficiency bound for the LATE. These are the properties that
+motivate its use as the DML estimator in this thesis.
+ 
+ 
+% ------------------------------------------------------------------
+\bibliographystyle{apalike}
+\bibliography{references}
+% ------------------------------------------------------------------
+\end{document}

@@ -1,0 +1,635 @@
+\documentclass[12pt,a4paper]{article}
+
+% ------------------------------------------------------------
+% Encoding, language, typography
+% ------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ------------------------------------------------------------
+% Page layout
+% ------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ------------------------------------------------------------
+% Mathematics
+% ------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{bbm}
+
+% ------------------------------------------------------------
+% Tables, lists, links, colour
+% ------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+% colour for the shaded remark boxes
+\usepackage{tcolorbox}
+\tcbuselibrary{skins}
+\definecolor{remarkbg}{RGB}{245,247,250}
+\definecolor{remarkframe}{RGB}{180,195,215}
+
+% ------------------------------------------------------------
+% Citations
+% ------------------------------------------------------------
+\usepackage[round,authoryear]{natbib}
+
+% ------------------------------------------------------------
+% Theorem-style environments
+% ------------------------------------------------------------
+\usepackage{amsthm}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+% ------------------------------------------------------------
+% Useful math commands
+% ------------------------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\En}{\mathbb{E}_N}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbbm{1}}
+\newcommand{\muY}{\mu_Y}
+\newcommand{\muD}{\mu_D}
+\newcommand{\muYhat}{\hat{\mu}_Y}
+\newcommand{\muDhat}{\hat{\mu}_D}
+\newcommand{\ehat}{\hat{e}}
+\newcommand{\YRF}{\widetilde{Y}^{\,\mathrm{RF}}}
+\newcommand{\DFS}{\widetilde{D}^{\,\mathrm{FS}}}
+
+% ------------------------------------------------------------
+% Shaded intuition box
+% ------------------------------------------------------------
+\newenvironment{intuition}[1]{%
+  \begin{tcolorbox}[
+    enhanced,
+    colback=remarkbg,
+    colframe=remarkframe,
+    arc=3pt,
+    boxrule=0.6pt,
+    left=8pt, right=8pt, top=6pt, bottom=6pt,
+    title={\small\textit{Intuition: #1}},
+    fonttitle=\bfseries\small,
+    coltitle=black
+  ]
+  \small
+}{%
+  \end{tcolorbox}
+}
+
+% ------------------------------------------------------------
+\title{%
+  Double Robustness of the Wald-AIPW Estimator:\\
+  Derivation, Proofs, and Interpretation%
+}
+\author{}
+\date{}
+% ------------------------------------------------------------
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\vspace{1em}
+
+% ============================================================
+\section{Setup and Target}
+\label{sec:setup}
+% ============================================================
+
+Throughout, let $(Y_i, D_i, Z_i, X_i)_{i=1}^N$ be an i.i.d.\ sample where $Y_i$ is the
+outcome, $D_i \in \{0,1\}$ the endogenous binary treatment, $Z_i \in \{0,1\}$ a binary
+instrument, and $X_i$ a vector of pre-treatment covariates. The instrument is valid
+conditional on $X_i$ in the sense of Assumptions~1--5 of the main text.
+
+\paragraph{Target quantity.}
+Define the instrument-conditional conditional expectations
+\begin{align}
+  \muY(z, x) &:= \E[Y_i \mid Z_i = z,\, X_i = x], \label{eq:muY} \\
+  \muD(z, x) &:= \E[D_i \mid Z_i = z,\, X_i = x], \label{eq:muD} \\
+  e(x)        &:= \Pr(Z_i = 1 \mid X_i = x). \label{eq:e}
+\end{align}
+The reduced-form and first-stage causal effects of the instrument are
+\begin{align}
+  \gamma_Y &:= \E[\muY(1, X_i) - \muY(0, X_i)], \label{eq:gammaY} \\
+  \gamma_D &:= \E[\muD(1, X_i) - \muD(0, X_i)], \label{eq:gammaD}
+\end{align}
+and the LATE is the ratio $\tau_{\mathrm{LATE}} = \gamma_Y / \gamma_D$
+\citep{imbens1994identification, tan2006distributional}.
+
+\paragraph{The estimation problem.}
+All three nuisance functions $\muY$, $\muD$, $e$ are unknown. Any estimator of
+$\gamma_Y$ or $\gamma_D$ must therefore use estimated nuisance parameters
+$\muYhat$, $\muDhat$, $\ehat$ in place of the truth. The central question is: what
+happens to the estimate when these replacements are imperfect?
+
+% ============================================================
+\section{Three Strategies for Estimating the Reduced Form}
+\label{sec:three_strategies}
+% ============================================================
+
+It is sufficient to focus on $\gamma_Y$; the treatment of $\gamma_D$ is identical
+with $D_i$ replacing $Y_i$ throughout. There are three natural strategies, each
+relying on a different nuisance parameter.
+
+% ------------------------------------------------------------
+\subsection{Strategy 1: Regression Adjustment (Wald-RA)}
+\label{subsec:ra}
+% ------------------------------------------------------------
+
+\paragraph{Estimator.}
+The regression-adjustment (RA) estimator predicts the potential outcome for each
+individual under each instrument value using the outcome model, then averages the
+contrast:
+\begin{align}
+  \hat{\gamma}_Y^{\,\mathrm{RA}}
+  = \frac{1}{N} \sum_{i=1}^{N}
+    \Bigl[\muYhat(1, X_i) - \muYhat(0, X_i)\Bigr].
+  \label{eq:ra_estimator}
+\end{align}
+
+\paragraph{What it relies on.}
+For each individual $i$, the estimator asks: given their covariate profile $X_i$, what
+does the model predict their outcome would be under $Z=1$ versus $Z=0$? The prediction
+$\muYhat(z, X_i)$ is a fitted value from a model trained on observations with $Z_i = z$.
+The individual-level contrast $\muYhat(1,X_i) - \muYhat(0,X_i)$ is then a model-based
+imputation of the counterfactual difference.
+
+\paragraph{Identification: why it works when the model is correct.}
+Under the conditional independence assumption $Z_i \perp\!\!\!\perp Y_i(z) \mid X_i$,
+\begin{align}
+  \E[\muY(1, X_i) - \muY(0, X_i)]
+  = \E\bigl[\E[Y_i \mid Z_i=1, X_i] - \E[Y_i \mid Z_i=0, X_i]\bigr]
+  = \gamma_Y.
+  \label{eq:ra_id}
+\end{align}
+Hence $\hat{\gamma}_Y^{\,\mathrm{RA}} \xrightarrow{p} \gamma_Y$ whenever
+$\muYhat(z,\cdot) \xrightarrow{p} \muY(z,\cdot)$ for both $z \in \{0,1\}$.
+
+\paragraph{Failure mode: model misspecification.}
+Suppose the true outcome surface is nonlinear but $\muYhat$ is a linear model. Let
+$b(z, x) := \muYhat(z,x) - \muY(z,x)$ denote the pointwise bias of the model. Then
+\begin{align}
+  \hat{\gamma}_Y^{\,\mathrm{RA}}
+  \;\xrightarrow{p}\;
+  \E\bigl[\muY(1,X_i) - \muY(0,X_i)\bigr]
+  + \underbrace{\E\bigl[b(1,X_i) - b(0,X_i)\bigr]}_{\text{model bias} \;\neq\; 0}.
+  \label{eq:ra_bias}
+\end{align}
+The bias $\E[b(1,X_i) - b(0,X_i)]$ does \emph{not} shrink to zero with sample size
+if the model is structurally misspecified. More data does not help: the estimator
+consistently estimates the wrong quantity.
+
+\begin{intuition}{Why a linear model for a curved surface goes wrong}
+Imagine $Y_i$ and $X_i$ have a U-shaped relationship: outcomes are high for low-$X$
+and high-$X$ individuals, but low in the middle. If the Z=1 group happens to contain
+more high-$X$ individuals (because $Z$ is only conditionally random), a linear model
+overpredicts $\muY(1,X)$ in the tails and underpredicts in the middle. The bias in the
+Z=1 surface and the Z=0 surface do not cancel, so the contrast $\muYhat(1,X) -
+\muYhat(0,X)$ is wrong everywhere. Averaging over $X_i$ does not fix this.
+\end{intuition}
+
+% ------------------------------------------------------------
+\subsection{Strategy 2: Inverse Probability Weighting (Wald-IPW)}
+\label{subsec:ipw}
+% ------------------------------------------------------------
+
+\paragraph{Estimator.}
+Rather than modelling the outcome, the IPW estimator reweights the observed outcomes
+by the inverse of the instrument propensity score:
+\begin{align}
+  \hat{\gamma}_Y^{\,\mathrm{IPW}}
+  = \frac{1}{N} \sum_{i=1}^{N}
+    \left[
+      \frac{Z_i\, Y_i}{\ehat(X_i)}
+      -
+      \frac{(1-Z_i)\, Y_i}{1 - \ehat(X_i)}
+    \right].
+  \label{eq:ipw_estimator}
+\end{align}
+
+\paragraph{What it relies on.}
+The weights $1/e(X_i)$ and $1/(1-e(X_i))$ rebalance the two instrument groups so
+that, after reweighting, both groups have the same marginal distribution over $X_i$.
+This removes the confounding from the covariate imbalance between $\{Z_i=1\}$ and
+$\{Z_i=0\}$ without ever modelling the outcome surface.
+
+\paragraph{Identification: why it works when the propensity score is correct.}
+For the $Z=1$ term, conditioning on $X_i$ and using
+$\E[\ind\{Z_i=1\} \mid X_i] = e(X_i)$:
+\begin{align}
+  \E\!\left[\frac{Z_i\, Y_i}{e(X_i)}\right]
+  &= \E\!\left[\frac{\E[Z_i\, Y_i \mid X_i]}{e(X_i)}\right]
+  = \E\!\left[\frac{e(X_i)\,\E[Y_i \mid Z_i=1, X_i]}{e(X_i)}\right]
+  = \E[\muY(1, X_i)].
+  \label{eq:ipw_id_z1}
+\end{align}
+The $e(X_i)$ cancels exactly. An identical argument gives
+$\E[(1-Z_i)Y_i/(1-e(X_i))] = \E[\muY(0,X_i)]$, so
+$\E[\hat{\gamma}_Y^{\,\mathrm{IPW}}] = \gamma_Y$ when $\ehat = e$.
+
+\paragraph{Failure mode: propensity score misspecification.}
+If $\ehat(x) \neq e(x)$, the cancellation in \eqref{eq:ipw_id_z1} is broken. Define
+$\delta(x) := \ehat(x) - e(x)$ as the pointwise propensity score error. Then
+\begin{align}
+  \E\!\left[\frac{Z_i\, Y_i}{\ehat(X_i)}\right]
+  = \E\!\left[\frac{e(X_i)\,\muY(1, X_i)}{\ehat(X_i)}\right]
+  = \E\!\left[\muY(1,X_i)\cdot\frac{e(X_i)}{e(X_i)+\delta(X_i)}\right]
+  \;\neq\; \E[\muY(1,X_i)]
+  \label{eq:ipw_bias}
+\end{align}
+whenever $\delta \not\equiv 0$. The bias is the covariance between $\muY(1,X_i)$ and
+the ratio $e(X_i)/\ehat(X_i)$: if the model underestimates $e(X_i)$ precisely for
+high-$Y$ individuals, the upward bias in their weights produces an upward bias in the
+estimate.
+
+There is a second, more dangerous failure mode: \emph{weight instability}. When
+$\ehat(X_i) \approx 0$ or $\ehat(X_i) \approx 1$, the weights
+$1/\ehat(X_i)$ or $1/(1-\ehat(X_i))$ explode, amplifying small outcome values
+to enormous scale. A single observation with a badly estimated propensity score can
+dominate the entire sample average.
+
+\begin{intuition}{Why wrong propensity scores are hard to detect}
+Consider a near-randomised experiment where $e(X_i) = 0.03$ for a small group.
+A logistic regression predicts $\ehat(X_i) = 0.05$ instead---a difference of only
+0.02 in probability. But the IPW weight is $1/0.03 \approx 33$ with the true score
+and $1/0.05 = 20$ with the estimated score---a 40\% difference in weight. Multiplied
+by the outcome value, even a moderate outcome observation can shift the sample mean
+substantially. The propensity score model may look excellent by any standard fit
+statistic ($R^2$, Brier score) yet produce large weight distortions where it matters most.
+\end{intuition}
+
+% ============================================================
+\section{The Augmented IPW: Combining Both Strategies}
+\label{sec:aipw}
+% ============================================================
+
+% ------------------------------------------------------------
+\subsection{Construction of the Pseudo-Outcome}
+\label{subsec:pseudo}
+% ------------------------------------------------------------
+
+The AIPW estimator \citep{tan2006distributional} augments the outcome model prediction
+with an IPW-weighted residual correction. Define the \emph{reduced-form pseudo-outcome}
+for each individual as
+\begin{align}
+  \YRF_i
+  &:=
+  \underbrace{
+    \muYhat(1, X_i) - \muYhat(0, X_i)
+  }_{\text{(A) outcome model contrast}}
+  \;+\;
+  \underbrace{
+    \frac{Z_i\bigl(Y_i - \muYhat(1, X_i)\bigr)}{\ehat(X_i)}
+    -
+    \frac{(1-Z_i)\bigl(Y_i - \muYhat(0, X_i)\bigr)}{1 - \ehat(X_i)}
+  }_{\text{(B) IPW-weighted residual correction}}.
+  \label{eq:rf_pseudo_main}
+\end{align}
+
+Term (A) is exactly the Wald-RA contribution: the model-predicted contrast at the
+individual's covariate value. Term (B) is the correction: it takes the residual
+$Y_i - \muYhat(Z_i, X_i)$ --- the part of the outcome that the model missed ---
+and reweights it by the inverse instrument propensity score. The AIPW estimator
+of the reduced form is then simply
+\begin{align}
+  \hat{\gamma}_Y^{\,\mathrm{AIPW}}
+  = \frac{1}{N}\sum_{i=1}^{N} \YRF_i.
+  \label{eq:aipw_estimator}
+\end{align}
+
+\paragraph{Algebraic rearrangement.}
+It is instructive to rewrite Term~(B) by adding and subtracting $\ehat(X_i)$
+in the numerators:
+\begin{align}
+  \text{(B)}
+  &=
+  \frac{Z_i - \ehat(X_i)}{\ehat(X_i)}\bigl(Y_i - \muYhat(1,X_i)\bigr)
+  +
+  \frac{(1-Z_i) - (1-\ehat(X_i))}{1-\ehat(X_i)}\bigl(Y_i - \muYhat(0,X_i)\bigr)
+  \cdot(-1)
+  \notag \\
+  &=
+  \frac{Z_i - \ehat(X_i)}{\ehat(X_i)(1-\ehat(X_i))}
+  \bigl(Y_i - \muYhat(Z_i, X_i)\bigr).
+  \label{eq:B_rewrite}
+\end{align}
+In this form, Term~(B) is the product of two residuals:
+\begin{align}
+  \underbrace{Z_i - \ehat(X_i)}_{\text{instrument residual}}
+  \quad \times \quad
+  \underbrace{Y_i - \muYhat(Z_i,X_i)}_{\text{outcome residual}},
+  \label{eq:product_residuals}
+\end{align}
+scaled by $[\ehat(X_i)(1-\ehat(X_i))]^{-1}$. The double-robustness argument reduces
+to showing that this product has zero expectation if either factor has zero conditional
+mean.
+
+% ------------------------------------------------------------
+\subsection{Proof of Double Robustness: Case 1}
+\label{subsec:dr_case1}
+% ------------------------------------------------------------
+
+\begin{proposition}[Case~1: Outcome model correct, propensity score possibly wrong]
+\label{prop:dr_case1}
+Suppose $\muYhat(z,x) = \muY(z,x)$ for all $z \in \{0,1\}$ and all $x$ in the
+support of $X_i$, but allow $\ehat(x) \neq e(x)$ arbitrarily. Then
+$\hat{\gamma}_Y^{\,\mathrm{AIPW}} \xrightarrow{p} \gamma_Y$.
+\end{proposition}
+
+\begin{proof}
+Since $\muYhat = \muY$ by assumption, the outcome residual in Term~(B) satisfies
+\begin{align}
+  Y_i - \muYhat(Z_i, X_i)
+  = Y_i - \muY(Z_i, X_i)
+  =: \varepsilon_i,
+  \label{eq:case1_residual}
+\end{align}
+where by definition of $\muY$ we have $\E[\varepsilon_i \mid Z_i, X_i] = 0$. Now
+compute the expectation of Term~(B) using the law of iterated expectations:
+\begin{align}
+  \E\!\left[
+    \frac{Z_i - \ehat(X_i)}{\ehat(X_i)(1-\ehat(X_i))}\,\varepsilon_i
+  \right]
+  &= \E\!\left[
+      \frac{Z_i - \ehat(X_i)}{\ehat(X_i)(1-\ehat(X_i))}
+      \underbrace{\E[\varepsilon_i \mid Z_i, X_i]}_{=\,0}
+    \right]
+  = 0.
+  \label{eq:case1_zero}
+\end{align}
+The second step uses the fact that $\ehat(X_i)$ is a function of $X_i$ alone, so it
+is measurable with respect to the conditioning sigma-algebra. Hence Term~(B) has
+zero expectation regardless of $\ehat$, and
+\begin{align}
+  \E[\YRF_i]
+  = \E[\muY(1,X_i) - \muY(0,X_i)] + 0
+  = \gamma_Y.
+  \label{eq:case1_result}
+\end{align}
+The sample average $\hat{\gamma}_Y^{\,\mathrm{AIPW}} = \En[\YRF_i]$ therefore
+converges in probability to $\gamma_Y$ by the law of large numbers.
+\end{proof}
+
+\begin{intuition}{What happens when the outcome model is perfect}
+When $\muYhat = \muY$ exactly, the outcome residual $Y_i - \muYhat(Z_i,X_i)$ is
+pure noise with mean zero conditional on any function of $(Z_i,X_i)$, including
+$\ehat(X_i)$. The IPW correction term is therefore multiplying a mean-zero variable
+by a weight, and the product averages to zero regardless of what the weights are.
+The Wald-AIPW collapses to the Wald-RA, which is consistent. The propensity score
+\emph{drops out entirely}.
+\end{intuition}
+
+% ------------------------------------------------------------
+\subsection{Proof of Double Robustness: Case 2}
+\label{subsec:dr_case2}
+% ------------------------------------------------------------
+
+\begin{proposition}[Case~2: Propensity score correct, outcome model possibly wrong]
+\label{prop:dr_case2}
+Suppose $\ehat(x) = e(x)$ for all $x$ in the support of $X_i$, but allow
+$\muYhat(z,x) \neq \muY(z,x)$ arbitrarily. Then
+$\hat{\gamma}_Y^{\,\mathrm{AIPW}} \xrightarrow{p} \gamma_Y$.
+\end{proposition}
+
+\begin{proof}
+We evaluate the full pseudo-outcome $\YRF_i$ in expectation. Start with the
+$Z=1$ component of Term~(B):
+\begin{align}
+  \E\!\left[
+    \frac{Z_i\bigl(Y_i - \muYhat(1,X_i)\bigr)}{e(X_i)}
+  \right]
+  &=
+  \E\!\left[
+    \frac{1}{e(X_i)}
+    \E\!\bigl[Z_i\bigl(Y_i - \muYhat(1,X_i)\bigr) \;\big|\; X_i\bigr]
+  \right].
+  \label{eq:case2_step1}
+\end{align}
+Conditioning on $X_i$, we use $\E[Z_i \mid X_i] = e(X_i)$ and---crucially---the
+fact that $\muYhat(1,X_i)$ depends only on $X_i$, so it factors out:
+\begin{align}
+  \E\!\bigl[Z_i\bigl(Y_i - \muYhat(1,X_i)\bigr) \;\big|\; X_i\bigr]
+  &= \E[Z_i Y_i \mid X_i] - \muYhat(1,X_i)\,\E[Z_i \mid X_i]
+  \notag \\
+  &= \E[Z_i Y_i \mid X_i] - \muYhat(1,X_i)\,e(X_i).
+  \label{eq:case2_step2}
+\end{align}
+Next, decompose $\E[Z_i Y_i \mid X_i]$ by conditioning further on $Z_i$:
+\begin{align}
+  \E[Z_i Y_i \mid X_i]
+  &= \Pr(Z_i=1\mid X_i)\,\E[Y_i \mid Z_i=1, X_i]
+  + \Pr(Z_i=0\mid X_i)\,\E[Y_i\cdot 0 \mid Z_i=0, X_i]
+  \notag \\
+  &= e(X_i)\,\muY(1,X_i).
+  \label{eq:case2_step3}
+\end{align}
+Substituting \eqref{eq:case2_step3} into \eqref{eq:case2_step2} and then into
+\eqref{eq:case2_step1}:
+\begin{align}
+  \E\!\left[
+    \frac{Z_i\bigl(Y_i - \muYhat(1,X_i)\bigr)}{e(X_i)}
+  \right]
+  &=
+  \E\!\left[
+    \frac{e(X_i)\,\muY(1,X_i) - \muYhat(1,X_i)\,e(X_i)}{e(X_i)}
+  \right]
+  \notag \\
+  &=
+  \E\!\left[\muY(1,X_i) - \muYhat(1,X_i)\right].
+  \label{eq:case2_step4}
+\end{align}
+The $e(X_i)$ cancels exactly. An identical argument for the $Z=0$ component gives
+\begin{align}
+  \E\!\left[
+    \frac{(1-Z_i)\bigl(Y_i - \muYhat(0,X_i)\bigr)}{1-e(X_i)}
+  \right]
+  =
+  \E\!\left[\muY(0,X_i) - \muYhat(0,X_i)\right].
+  \label{eq:case2_step5}
+\end{align}
+Now assemble the full expected pseudo-outcome by combining Term~(A) with the
+two components of Term~(B):
+\begin{align}
+  \E[\YRF_i]
+  &=
+  \underbrace{\E\bigl[\muYhat(1,X_i) - \muYhat(0,X_i)\bigr]}_{\text{Term (A)}}
+  \notag \\
+  &\quad
+  +
+  \underbrace{
+    \E\bigl[\muY(1,X_i) - \muYhat(1,X_i)\bigr]
+  }_{\text{correction for $Z=1$ bias}}
+  -
+  \underbrace{
+    \E\bigl[\muY(0,X_i) - \muYhat(0,X_i)\bigr]
+  }_{\text{correction for $Z=0$ bias}}
+  \notag \\
+  &=
+  \E\bigl[\muYhat(1,X_i)\bigr]
+  + \E\bigl[\muY(1,X_i) - \muYhat(1,X_i)\bigr]
+  \notag \\
+  &\quad
+  -\E\bigl[\muYhat(0,X_i)\bigr]
+  - \E\bigl[\muY(0,X_i) - \muYhat(0,X_i)\bigr]
+  \notag \\
+  &=
+  \E\bigl[\muY(1,X_i)\bigr] - \E\bigl[\muY(0,X_i)\bigr]
+  = \gamma_Y.
+  \label{eq:case2_result}
+\end{align}
+The model bias $\E[\muYhat(z,X_i) - \muY(z,X_i)]$ is exactly measured and removed by
+the IPW correction term, for both $z=0$ and $z=1$. Consistency follows by the law of
+large numbers.
+\end{proof}
+
+\begin{intuition}{What the correction term is measuring when the propensity score is correct}
+Term~(B) is doing something remarkable. It takes the outcome residual
+$Y_i - \muYhat(Z_i,X_i)$ --- the part of $Y_i$ that the model missed for the
+individual's actual instrument value --- and reweights it to represent what the
+model would have missed on average across the whole covariate distribution. Specifically,
+$\E[Z_i(Y_i - \muYhat(1,X_i))/e(X_i)]$ equals $\E[\muY(1,X_i) - \muYhat(1,X_i)]$
+--- precisely the average bias of the outcome model at $z=1$. Adding this correction
+to Term~(A) cancels the model bias term by term. The IPW weights play an essential
+role: without them, the residuals $Z_i(Y_i-\muYhat(1,X_i))$ would average only over
+the subgroup $\{Z_i=1\}$, which may have a different covariate distribution. The
+weights scale each residual up by $1/e(X_i)$ to represent the full population.
+\end{intuition}
+
+% ============================================================
+\section{The Double Robustness Property: Summary}
+\label{sec:dr_summary}
+% ============================================================
+
+Propositions~\ref{prop:dr_case1} and~\ref{prop:dr_case2} together establish the
+following central result.
+
+\begin{corollary}[Double robustness of the AIPW reduced form]
+\label{cor:dr}
+Let $\hat{\gamma}_Y^{\,\mathrm{AIPW}} = \En[\YRF_i]$ with $\YRF_i$ defined in
+\eqref{eq:rf_pseudo_main}. Then
+\begin{align}
+  \hat{\gamma}_Y^{\,\mathrm{AIPW}} \;\xrightarrow{p}\; \gamma_Y
+\end{align}
+if \emph{either} $\muYhat(z,\cdot) \xrightarrow{p} \muY(z,\cdot)$ for $z \in \{0,1\}$,
+\emph{or} $\ehat(\cdot) \xrightarrow{p} e(\cdot)$, or both.
+\end{corollary}
+
+The same double robustness holds for the first-stage pseudo-outcome $\DFS_i$,
+which is defined identically to \eqref{eq:rf_pseudo_main} with $D_i$ replacing $Y_i$
+and $\muDhat$ replacing $\muYhat$. Since the Wald-AIPW estimator is the ratio
+$\hat{\tau}_{\mathrm{Wald\text{-}AIPW}} = \En[\YRF_i] / \En[\DFS_i]$, and both
+numerator and denominator are doubly robust, consistency of the ratio follows whenever
+each component is consistent.
+
+\paragraph{A concise view of what cancels.}
+
+Table~\ref{tab:dr_summary} gives a compact overview of the double-robustness argument.
+
+\begin{table}[h!]
+\centering
+\caption{What cancels in each robustness case}
+\label{tab:dr_summary}
+\smallskip
+\begin{tabular}{lllp{6.5cm}}
+\toprule
+\textbf{Case} & $\muYhat$ correct? & $\ehat$ correct? & \textbf{Why consistent} \\
+\midrule
+Wald-RA only   & \checkmark & $\times$
+  & Term (B) $\to 0$ because outcome residual
+    $\E[\varepsilon_i \mid Z_i,X_i] = 0$ kills it. \\[4pt]
+Wald-IPW only  & $\times$ & \checkmark
+  & Term (B) exactly measures and subtracts the
+    bias of Term (A); the $e(X_i)$ cancel in \eqref{eq:case2_step4}. \\[4pt]
+Both correct   & \checkmark & \checkmark
+  & Both mechanisms operate; no bias from either source. \\[4pt]
+Neither correct & $\times$ & $\times$
+  & No cancellation; estimator is generally inconsistent. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Comparison with the Single-Model Alternatives}
+\label{sec:comparison}
+% ============================================================
+
+\subsection{Why Wald-RA Fails When the Model Is Wrong}
+\label{subsec:ra_failure}
+
+Returning to \eqref{eq:ra_bias}: the Wald-RA estimator converges to
+$\gamma_Y + \E[b(1,X_i) - b(0,X_i)]$ where $b(z,x) = \muYhat(z,x) - \muY(z,x)$.
+This bias is a population-level property of the model misspecification: it is not
+reduced by increasing $N$, and it cannot be diagnosed easily because the true
+$\muY(z,\cdot)$ is unobserved. In the AIPW estimator, exactly this quantity
+$\E[\muYhat(z,X_i) - \muY(z,X_i)]$ is measured and removed by Term~(B) whenever
+$\ehat$ is correct (see \eqref{eq:case2_step4}--\eqref{eq:case2_result}).
+
+\subsection{Why Wald-IPW Fails When the Propensity Score Is Wrong}
+\label{subsec:ipw_failure}
+
+From \eqref{eq:ipw_bias}, the Wald-IPW estimator converges to
+$\E[\muY(1,X_i) \cdot e(X_i)/\ehat(X_i)] - \E[\muY(0,X_i) \cdot (1-e(X_i))/(1-\ehat(X_i))]$.
+This differs from $\gamma_Y$ whenever the ratio $e(X_i)/\ehat(X_i)$ is correlated
+with $\muY(1,X_i)$ across the covariate distribution, which is generically the case.
+In the AIPW estimator, the role of the outcome model is to dampen this sensitivity:
+because Term~(A) already captures the systematic variation in $Y_i$ as a function of
+$X_i$, the residual $Y_i - \muYhat(Z_i,X_i)$ that enters Term~(B) has smaller
+variance than $Y_i$ itself. Even if $\ehat$ is slightly off, the weight distortion
+acts on a smaller, mean-zero quantity, limiting the damage.
+
+% ============================================================
+\section{Why This Matters for the Thesis}
+\label{sec:thesis_relevance}
+% ============================================================
+
+The double-robustness argument is not merely a theoretical curiosity. In the empirical
+applications considered in this thesis---\citet{angrist1990lifetime},
+\citet{card1995using}, \citet{angrist1998children}---the instrument propensity score
+$e(X_i) = \Pr(Z_i=1 \mid X_i)$ has a specific structure that makes it comparatively
+easy to estimate: the draft lottery number, sibling sex composition, and college
+proximity all have near-random variation conditional on $X_i$, so even a flexible
+nonparametric model should approximate $e(\cdot)$ well. The outcome equation
+$\muY(z,X_i) = \E[Y_i \mid Z_i=z, X_i]$ --- where $Y_i$ is log wages or labour force
+participation --- is a much harder object: it reflects the compound influence of family
+background, local labour markets, individual ability, and cohort effects, none of which
+enter in a simple additive or linear way.
+
+In this asymmetric setting, double robustness is practically valuable: even if the
+outcome model is imperfectly estimated, a well-estimated propensity score ensures
+that the correction in Term~(B) points in the right direction and removes the
+dominant part of the model bias. Conversely, the outcome model provides a low-variance
+baseline for Term~(A), reducing the reliance on extreme IPW weights in regions where
+$e(X_i)$ is close to zero or one.
+
+Furthermore, the DML implementation of the Wald-AIPW \citep{chernozhukov2018double}
+replaces both parametric models with cross-fitted machine learning estimators. This
+simultaneously reduces the risk of structural misspecification in either nuisance model
+and---by virtue of the Neyman-orthogonality of the AIPW score---preserves valid
+$\sqrt{N}$-based inference. The combination of double robustness (protection against
+a misspecified model) and Neyman orthogonality (protection against slow ML convergence
+rates) is what distinguishes the Wald-AIPW from its single-model alternatives and
+motivates its use as the primary DML-based LATE estimator in this thesis.
+
+% ============================================================
+% Bibliography
+% ============================================================
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}
