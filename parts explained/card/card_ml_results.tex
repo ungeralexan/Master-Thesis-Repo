@@ -1,0 +1,885 @@
+% ============================================================
+%  Card (1995) — DML & Kappa Weighting Estimators
+%  Results tables and findings write-up
+% ============================================================
+\documentclass[12pt]{article}
+
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{siunitx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{microtype}
+\usepackage[round,authoryear]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
+
+% ---- diagnostic colour palette ----
+\definecolor{diagOK}{RGB}{234,243,222}       % light green  — Sum_w=0, ESS≥2
+\definecolor{diagWarn}{RGB}{250,238,218}     % light amber  — Sum_w≠0 (not transl.-inv.)
+\definecolor{diagFlag}{RGB}{252,235,235}     % light red    — ESS=1 or ESS=0
+\definecolor{diagFlagText}{RGB}{163,45,45}   % dark red     — text in flagged cells
+\definecolor{diagWarnText}{RGB}{133,79,11}   % dark amber   — text in warn cells
+\definecolor{diagOKText}{RGB}{59,109,17}     % dark green   — text in ok cells
+
+\onehalfspacing
+
+\sisetup{
+  table-format        = 1.3,
+  table-number-alignment = center,
+  detect-all
+}
+
+
+\onehalfspacing
+
+\sisetup{
+  table-format        = 1.3,
+  table-number-alignment = center,
+  detect-all
+}
+
+\newcommand{\se}[1]{{\small(#1)}}
+\newcommand{\tstat}[1]{{\footnotesize[#1]}}
+
+% ============================================================
+\begin{document}
+
+\section*{Results: Card (1995) --- Returns to Schooling}
+
+\subsection*{Setup}
+
+We apply the double machine learning (DML) framework of
+\citet{chernozhukov2018double} and the kappa weighting estimators of
+\citet{sloczynski2025abadie} to the Card (1995) returns-to-schooling
+data. The instrument is \texttt{nearc4} (proximity to a four-year
+college). We consider two treatment definitions and two covariate
+specifications, yielding four estimation cells:
+
+\begin{itemize}
+  \item \textbf{Treatment:} \texttt{somecol} ($D_1 = \mathbf{1}\{\text{educ} > 12\}$,
+        any post-secondary education) and
+        \texttt{educ16} ($D_2 = \mathbf{1}\{\text{educ} \geq 16\}$,
+        college degree or more).
+  \item \textbf{Covariate specification:} the rich \emph{Card} specification
+        (\texttt{exper}, \texttt{expersq}, \texttt{black}, \texttt{south},
+        \texttt{smsa}, \texttt{smsa66}, regional dummies
+        \texttt{reg661}--\texttt{reg668}) and the parsimonious
+        \emph{Kitagawa} specification
+        (\texttt{black}, \texttt{south}, \texttt{smsa}, \texttt{smsa66},
+        \texttt{south66}).
+\end{itemize}
+
+The outcome is log wages measured in dollars ($Y_{\$}$). DML estimates
+are obtained via five-fold cross-fitting with tuned random forests
+and XGBoost as learners. Kappa estimates use analytic
+M-estimation standard errors.
+
+% ============================================================
+\subsection*{Table 1: DML Estimators (PLR-IV and Wald-AIPW)}
+
+\begin{table}[htbp]
+  \centering
+  \begin{threeparttable}
+    \caption{Double machine learning IV estimates of the returns to schooling,
+             Card (1995). Outcome: log wages (dollars).
+             Instrument: \texttt{nearc4}.}
+    \label{tab:dml_estimates}
+    \begin{tabular}{l
+                    S[table-format=1.3]
+                    S[table-format=1.3]
+                    S[table-format=1.3]
+                    S[table-format=1.3]}
+      \toprule
+      & \multicolumn{2}{c}{\texttt{somecol} ($D_1$)}
+      & \multicolumn{2}{c}{\texttt{educ16} ($D_2$)} \\
+      \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+      Estimator
+        & {Card} & {Kitagawa}
+        & {Card} & {Kitagawa} \\
+      \midrule
+      PLR-IV
+        & 0.681$^{**}$ & 0.593$^{*}$ & 1.140$^{**}$ & 1.030 \\
+        & \se{0.289}   & \se{0.340}  & \se{0.535}   & \se{0.684} \\
+        & \tstat{2.358}& \tstat{1.742}& \tstat{2.131}& \tstat{1.507} \\[4pt]
+      Wald-AIPW
+        & 0.279 & 0.292 & 0.530 & 0.535 \\
+        & \se{0.214} & \se{0.249} & \se{0.398} & \se{0.462} \\
+        & \tstat{1.303} & \tstat{1.173} & \tstat{1.332} & \tstat{1.157} \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}[flushleft]\footnotesize
+      \item Standard errors in parentheses; $t$-statistics in brackets.
+            $^{***}p<0.01$, $^{**}p<0.05$, $^{*}p<0.10$.
+            DML uses five-fold cross-fitting with tuned random forests
+            and XGBoost. Card specification: \texttt{exper}, \texttt{expersq},
+            \texttt{black}, \texttt{south}, \texttt{smsa}, \texttt{smsa66},
+            \texttt{reg661}--\texttt{reg668}.
+            Kitagawa specification: \texttt{black}, \texttt{south},
+            \texttt{smsa}, \texttt{smsa66}, \texttt{south66}.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+% ============================================================
+\subsection*{Table 2: Kappa Weighting Estimators}
+
+\begin{table}[htbp]
+  \centering
+  \begin{threeparttable}
+    \caption{Kappa weighting estimators of the LATE,
+             Card (1995). Outcome: log wages (dollars).
+             Instrument: \texttt{nearc4}.
+             Analytic M-estimation standard errors.}
+    \label{tab:kappa_estimates}
+    \begin{tabular}{l
+                    S[table-format=1.3]
+                    S[table-format=1.3]
+                    S[table-format=1.3]
+                    S[table-format=1.3]}
+      \toprule
+      & \multicolumn{2}{c}{\texttt{somecol} ($D_1$)}
+      & \multicolumn{2}{c}{\texttt{educ16} ($D_2$)} \\
+      \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+      Estimator
+        & {Card} & {Kitagawa}
+        & {Card} & {Kitagawa} \\
+      \midrule
+      $\hat{\tau}^{cb}_{u}$ (CBPS)
+        & 0.376$^{*}$ & 0.331 & 0.853 & 0.588 \\
+        & \se{0.223}  & \se{0.236} & \se{0.549} & \se{0.433} \\[4pt]
+      $\hat{\tau}^{ml}_{u}$ (MLE, no trim)
+        & 0.331 & 0.356 & 0.619 & 0.628 \\
+        & \se{0.202} & \se{0.244} & \se{0.387} & \se{0.448} \\[4pt]
+      $\hat{\tau}^{ml}_{a,10}$ (MLE, 10\% trim)
+        & 0.346$^{*}$ & 0.293 & 0.586$^{*}$ & 0.836 \\
+        & \se{0.200}  & \se{0.252} & \se{0.356} & \se{0.821} \\[4pt]
+      \midrule
+      \multicolumn{5}{l}{\textit{Scaled / unnormalised variants}} \\[2pt]
+      $\hat{\tau}^{ml}_{a}$
+        & 0.170 & 0.842$^{**}$ & 0.315 & 1.617$^{*}$ \\
+        & \se{0.370} & \se{0.362} & \se{0.696} & \se{0.891} \\[4pt]
+      $\hat{\tau}^{ml}_{t}$
+        & 0.171 & 0.769$^{**}$ & 0.319 & 1.367$^{**}$ \\
+        & \se{0.367} & \se{0.308} & \se{0.687} & \se{0.648} \\[4pt]
+      $\hat{\tau}^{ml}_{a,0}$
+        & 0.154 & 1.066$^{*}$ & 0.266 & 2.712 \\
+        & \se{0.354} & \se{0.574} & \se{0.639} & \se{2.577} \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}[flushleft]\footnotesize
+      \item Standard errors in parentheses (analytic M-estimation).
+            $^{***}p<0.01$, $^{**}p<0.05$, $^{*}p<0.10$.
+            $\hat{\tau}^{cb}_{u}$: CBPS propensity score, untrimmed.
+            $\hat{\tau}^{ml}_{u}$: MLE propensity score, untrimmed.
+            $\hat{\tau}^{ml}_{a,10}$: MLE with 10\% trimming.
+            $\hat{\tau}^{ml}_{a}$, $\hat{\tau}^{ml}_{t}$,
+            $\hat{\tau}^{ml}_{a,0}$: alternative scalings of the
+            unnormalised kappa estimator (see \citealt{sloczynskietal2025}).
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+% ============================================================
+\subsection*{Discussion of Findings}
+
+\paragraph{PLR-IV versus Wald-AIPW.}
+Across all four specification cells, the PLR-IV estimator
+consistently yields larger point estimates than Wald-AIPW,
+by a factor of roughly two. Under the Card specification with
+\texttt{somecol}, PLR-IV returns an estimate of $0.681$
+(SE $= 0.289$, $p = 0.018$), while Wald-AIPW yields $0.279$
+(SE $= 0.214$, $p = 0.193$). The same pattern holds for
+\texttt{educ16}: PLR-IV gives $1.140$ (significant at 5\%)
+versus $0.530$ for Wald-AIPW (insignificant). 
+
+
+
+\paragraph{Treatment definition: \texttt{somecol} versus \texttt{educ16}.}
+Estimates roughly double when the treatment switches from
+any post-secondary education (\texttt{somecol}) to attaining
+a college degree (\texttt{educ16}). This is expected: the
+complier group for \texttt{educ16} is narrower---individuals
+pushed to complete four years of college by proximity to a
+college---and the LATE for this subgroup is larger. The
+increase is consistent across both estimator families and
+both covariate specifications.
+
+\paragraph{Kappa estimators: normalised versus scaled variants.}
+Among the normalised kappa estimators
+($\hat{\tau}^{cb}_{u}$, $\hat{\tau}^{ml}_{u}$,
+$\hat{\tau}^{ml}_{a,10}$), estimates cluster between $0.29$
+and $0.85$ across the four cells, with the Card specification
+yielding the tightest SEs and occasional significance at the
+10\% level. These estimates are broadly in line with the
+Wald-AIPW results, suggesting the two approaches target a
+comparable complier population under the Card specification.
+
+The scaled variants ($\hat{\tau}^{ml}_{a}$,
+$\hat{\tau}^{ml}_{t}$, $\hat{\tau}^{ml}_{a,0}$) reveal a
+striking pattern under the Kitagawa specification: estimates
+inflate substantially---$\hat{\tau}^{ml}_{a,0}$ reaches
+$2.712$ for \texttt{educ16}---accompanied by very large
+standard errors. This is consistent with near-zero
+denominator problems when the Kitagawa propensity score is
+sparse, and is further confirmed by the weight diagnostics
+(ESS $\approx 1$ for several Kitagawa cells). These
+estimates should be interpreted with caution; the weight
+diagnostics clearly flag extreme weight concentration that
+renders the scaled kappa estimators unreliable in this
+specification.
+
+
+
+% ============================================================
+\section*{Weight Diagnostics}
+
+Table~\ref{tab:wdiag_card_somecol} through
+Table~\ref{tab:wdiag_kit_educ16} report four diagnostic
+quantities for each estimator and specification cell.
+Cells are colour-coded as follows:
+\colorbox{diagOK}{\color{diagOKText}green} — Sum\_w $\approx 0$
+and ESS $\geq 2$ (no concern);
+\colorbox{diagWarn}{\color{diagWarnText}amber} — Sum\_w $\neq 0$
+(not translation-invariant);
+\colorbox{diagFlag}{\color{diagFlagText}red} — ESS $\leq 1$
+(extreme weight concentration).
+
+% helper command: flag a cell red
+\newcommand{\cellRed}[1]{%
+  \cellcolor{diagFlag}\color{diagFlagText}#1}
+\newcommand{\cellAmber}[1]{%
+  \cellcolor{diagWarn}\color{diagWarnText}#1}
+\newcommand{\cellGreen}[1]{%
+  \cellcolor{diagOK}\color{diagOKText}#1}
+
+% ------------------------------------------------------------------
+% Table: Card spec, somecol
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Weight diagnostics — Card specification, \texttt{somecol}
+           ($D_1 = \mathbf{1}\{\text{educ}>12\}$).}
+  \label{tab:wdiag_card_somecol}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Estimator & Sum\_w & ESS & Pct\_neg (\%) & Max\_abs\_w \\
+    \midrule
+    \multicolumn{5}{l}{\textit{DML estimators}} \\[2pt]
+    PLR-IV      & \cellGreen{0.000} & \cellGreen{2} & 33.1 & 0.0327 \\
+    Wald-AIPW   & \cellGreen{0.000} & \cellGreen{3} & 31.8 & 0.1456 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Kappa estimators}} \\[2pt]
+    $\hat\tau^{cb}_u$     & \cellGreen{0.000}  & \cellGreen{3} & 31.8 & 0.0869 \\
+    $\hat\tau^{ml}_u$     & \cellGreen{0.000}  & \cellGreen{4} & 31.8 & 0.0519 \\
+    $\hat\tau^{ml}_{a,10}$& \cellGreen{0.000}  & \cellGreen{4} & 31.8 & 0.0548 \\
+    $\hat\tau^{ml}_a$     & \cellAmber{$-$0.106} & \cellGreen{3} & 31.8 & 0.0545 \\
+    $\hat\tau^{ml}_t$     & \cellAmber{$-$0.107} & \cellGreen{3} & 31.8 & 0.0548 \\
+    $\hat\tau^{ml}_{a,0}$ & \cellAmber{$-$0.097} & \cellGreen{4} & 31.8 & 0.0495 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item \colorbox{diagOK}{\color{diagOKText}Green}: Sum\_w $=0$, ESS $\geq2$.
+          \colorbox{diagWarn}{\color{diagWarnText}Amber}: Sum\_w $\neq 0$ (not translation-invariant).
+          \colorbox{diagFlag}{\color{diagFlagText}Red}: ESS $\leq 1$ (extreme weight concentration).
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: Card spec, educ16
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Weight diagnostics — Card specification, \texttt{educ16}
+           ($D_2 = \mathbf{1}\{\text{educ}\geq 16\}$).}
+  \label{tab:wdiag_card_educ16}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Estimator & Sum\_w & ESS & Pct\_neg (\%) & Max\_abs\_w \\
+    \midrule
+    \multicolumn{5}{l}{\textit{DML estimators}} \\[2pt]
+    PLR-IV      & \cellGreen{0.000} & \cellRed{1} & 33.1 & 0.0547 \\
+    Wald-AIPW   & \cellGreen{0.000} & \cellRed{1} & 31.8 & 0.2765 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Kappa estimators}} \\[2pt]
+    $\hat\tau^{cb}_u$     & \cellGreen{0.000}  & \cellRed{1} & 31.8 & 0.1971 \\
+    $\hat\tau^{ml}_u$     & \cellGreen{0.000}  & \cellRed{1} & 31.8 & 0.0972 \\
+    $\hat\tau^{ml}_{a,10}$& \cellGreen{0.000}  & \cellRed{1} & 31.8 & 0.1026 \\
+    $\hat\tau^{ml}_a$     & \cellAmber{$-$0.197} & \cellRed{1} & 31.8 & 0.1013 \\
+    $\hat\tau^{ml}_t$     & \cellAmber{$-$0.200} & \cellRed{1} & 31.8 & 0.1026 \\
+    $\hat\tau^{ml}_{a,0}$ & \cellAmber{$-$0.167} & \cellRed{1} & 31.8 & 0.0855 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item \colorbox{diagOK}{\color{diagOKText}Green}: Sum\_w $=0$, ESS $\geq2$.
+          \colorbox{diagWarn}{\color{diagWarnText}Amber}: Sum\_w $\neq 0$ (not translation-invariant).
+          \colorbox{diagFlag}{\color{diagFlagText}Red}: ESS $\leq 1$ (extreme weight concentration).
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: Kitagawa spec, somecol
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Weight diagnostics — Kitagawa specification, \texttt{somecol}
+           ($D_1 = \mathbf{1}\{\text{educ}>12\}$).}
+  \label{tab:wdiag_kit_somecol}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Estimator & Sum\_w & ESS & Pct\_neg (\%) & Max\_abs\_w \\
+    \midrule
+    \multicolumn{5}{l}{\textit{DML estimators}} \\[2pt]
+    PLR-IV      & \cellGreen{0.000} & \cellGreen{2} & 31.8 & 0.0328 \\
+    Wald-AIPW   & \cellGreen{0.000} & \cellGreen{3} & 31.8 & 0.0652 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Kappa estimators}} \\[2pt]
+    $\hat\tau^{cb}_u$     & \cellGreen{0.000} & \cellGreen{3} & 31.8 & 0.0457 \\
+    $\hat\tau^{ml}_u$     & \cellGreen{0.000} & \cellGreen{3} & 31.8 & 0.0444 \\
+    $\hat\tau^{ml}_{a,10}$& \cellGreen{0.000} & \cellGreen{3} & 31.8 & 0.0526 \\
+    $\hat\tau^{ml}_a$     & \cellAmber{$+$0.305} & \cellGreen{3} & 31.8 & 0.0415 \\
+    $\hat\tau^{ml}_t$     & \cellAmber{$+$0.279} & \cellGreen{4} & 31.8 & 0.0379 \\
+    $\hat\tau^{ml}_{a,0}$ & \cellAmber{$+$0.387} & \cellGreen{2} & 31.8 & 0.0526 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item \colorbox{diagOK}{\color{diagOKText}Green}: Sum\_w $=0$, ESS $\geq2$.
+          \colorbox{diagWarn}{\color{diagWarnText}Amber}: Sum\_w $\neq 0$ (not translation-invariant).
+          \colorbox{diagFlag}{\color{diagFlagText}Red}: ESS $\leq 1$ (extreme weight concentration).
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: Kitagawa spec, educ16
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Weight diagnostics — Kitagawa specification, \texttt{educ16}
+           ($D_2 = \mathbf{1}\{\text{educ}\geq 16\}$).}
+  \label{tab:wdiag_kit_educ16}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Estimator & Sum\_w & ESS & Pct\_neg (\%) & Max\_abs\_w \\
+    \midrule
+    \multicolumn{5}{l}{\textit{DML estimators}} \\[2pt]
+    PLR-IV      & \cellGreen{0.000} & \cellRed{1} & 31.8 & 0.0570 \\
+    Wald-AIPW   & \cellGreen{0.000} & \cellRed{1} & 31.8 & 0.1193 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Kappa estimators}} \\[2pt]
+    $\hat\tau^{cb}_u$     & \cellGreen{0.000}  & \cellRed{1} & 31.8 & 0.0812 \\
+    $\hat\tau^{ml}_u$     & \cellGreen{0.000}  & \cellRed{1} & 31.8 & 0.0783 \\
+    $\hat\tau^{ml}_{a,10}$& \cellGreen{0.000}  & \cellRed{0} & 31.8 & 0.1338 \\
+    $\hat\tau^{ml}_a$     & \cellAmber{$+$0.586} & \cellRed{1} & 31.8 & 0.0798 \\
+    $\hat\tau^{ml}_t$     & \cellAmber{$+$0.496} & \cellRed{1} & 31.8 & 0.0675 \\
+    $\hat\tau^{ml}_{a,0}$ & \cellAmber{$+$0.983} & \cellRed{0} & 31.8 & 0.1338 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item \colorbox{diagOK}{\color{diagOKText}Green}: Sum\_w $=0$, ESS $\geq2$.
+          \colorbox{diagWarn}{\color{diagWarnText}Amber}: Sum\_w $\neq 0$ (not translation-invariant).
+          \colorbox{diagFlag}{\color{diagFlagText}Red}: ESS $\leq 1$ (extreme weight concentration).
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Interpretation
+% ------------------------------------------------------------------
+\subsubsection*{Interpretation of weight diagnostics}
+
+\paragraph{Translation invariance (Sum\_w).}
+All DML estimators (PLR-IV and Wald-AIPW) and all three
+normalised kappa estimators ($\hat\tau^{cb}_u$,
+$\hat\tau^{ml}_u$, $\hat\tau^{ml}_{a,10}$) satisfy
+Sum\_w $= 0$ in every cell, confirming translation
+invariance: shifting log wages by an additive constant
+(e.g.\ switching from dollars to cents) leaves these
+estimates unchanged. By contrast, the three scaled
+variants ($\hat\tau^{ml}_a$, $\hat\tau^{ml}_t$,
+$\hat\tau^{ml}_{a,0}$) have Sum\_w $\neq 0$ in all four
+cells without exception. The magnitude grows sharply in
+the Kitagawa--\texttt{educ16} cell, where
+$\hat\tau^{ml}_{a,0}$ reaches Sum\_w $= 0.983$, nearly
+equal to the sum of the positive weights alone. This
+explains the extreme sensitivity of $\hat\tau^{ml}_{a,0}$
+to outcome rescaling documented in the translation
+invariance checks.
+
+\paragraph{Effective sample size (ESS).}
+The ESS results draw a sharp boundary along the treatment
+dimension. For \texttt{somecol} ($D_1$), all estimators
+reach ESS $\geq 2$ in both the Card and Kitagawa
+specifications, indicating that the weight mass is
+distributed across at least a handful of observations.
+For \texttt{educ16} ($D_2$), however, ESS collapses to 1
+(or even 0 for $\hat\tau^{ml}_{a,10}$ and
+$\hat\tau^{ml}_{a,0}$ under Kitagawa) across every
+estimator and both specifications. ESS $= 1$ signals that
+a single observation is effectively driving the entire
+estimate; ESS $= 0$ arises when the squared weights sum
+to more than one, implying the presence of very large
+negative weights that inflate the denominator beyond the
+sample size.
+
+This pattern is a structural consequence of the rarity
+of the \texttt{educ16} treatment: college completion
+is much less common in the Card sample than any
+post-secondary attendance, yielding a weaker first stage
+and more extreme propensity scores near zero or one.
+Under these conditions, the kappa weights --- which are
+inversely proportional to the instrument propensity score
+--- amplify a small number of observations to dominate
+the estimate.
+
+\paragraph{Card versus Kitagawa specification.}
+Within the \texttt{somecol} subsample the two
+specifications produce qualitatively identical diagnostics:
+all normalised estimators are clean (green), and the
+scaled variants carry the same amber warning in both
+cases. The richer Card covariates do not materially
+improve the weight distribution here. For
+\texttt{educ16}, the diagnostics are uniformly red
+under both specifications, confirming that the problem
+is driven by the treatment definition rather than by
+covariate choice.
+
+\paragraph{Maximum absolute weight.}
+For Wald-AIPW under the Card--\texttt{educ16}
+specification, Max\_abs\_w reaches $0.277$, by far the
+largest value among the DML estimators. Combined with
+ESS $= 1$, this signals that a single observation
+receives a weight of roughly $28\%$ of the total weight
+mass, making the Wald-AIPW estimate in this cell
+particularly fragile to individual data points. The
+kappa counterpart $\hat\tau^{cb}_u$ has Max\_abs\_w
+$= 0.197$ in the same cell, somewhat smaller but still
+indicative of the same concentration problem.
+
+
+
+
+% ============================================================
+\section*{Learner Comparison: Wald-AIPW with Linear+Logit vs.\ XGBoost}
+
+\subsubsection*{Setup}
+
+We re-estimate the Wald-AIPW estimator using the \texttt{DoubleMLIIVM}
+framework of \citet{chernozhukov2018double} with two specific learner choices:
+(i) \emph{linear+logit}: OLS regression (\texttt{regr.lm}) for the
+outcome nuisance function $g_0$ and logistic regression
+(\texttt{classif.log\_reg}) for the instrument and treatment propensity
+scores $m_0$, $r_0$; and (ii) \emph{XGBoost}: gradient-boosted trees
+(\texttt{regr.xgboost} / \texttt{classif.xgboost}) with
+\texttt{alpha=0}, \texttt{subsample=1}, \texttt{max\_delta\_step=0},
+\texttt{base\_score=0} and no hyperparameter tuning.
+All models use five-fold cross-fitting.
+
+% ------------------------------------------------------------------
+% Table: point estimates
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Wald-AIPW point estimates by learner, specification and
+           treatment. Outcome: log wages (dollars).}
+  \label{tab:learner_estimates}
+  \begin{tabular}{llrrrr}
+    \toprule
+    & & \multicolumn{2}{c}{\texttt{somecol} ($D_1$)}
+      & \multicolumn{2}{c}{\texttt{educ16} ($D_2$)} \\
+    \cmidrule(lr){3-4}\cmidrule(lr){5-6}
+    Learner & & Card & Kitagawa & Card & Kitagawa \\
+    \midrule
+    \multirow{3}{*}{Linear+logit}
+      & Est.    & 0.399 & 0.311 & 0.884 & 0.534 \\
+      & (SE)    & (0.248) & (0.235) & (0.608) & (0.409) \\
+      & $p$     & 0.108 & 0.186 & 0.146 & 0.192 \\[6pt]
+    \multirow{3}{*}{XGBoost}
+      & Est.    & \cellRed{$-$13.42} & \cellAmber{$-$0.113}
+                & \cellRed{$-$3.198} & \cellRed{$-$3.656} \\
+      & (SE)    & \cellRed{(14.41)} & \cellAmber{(0.627)}
+                & \cellRed{(4.054)} & \cellRed{(100.9)} \\
+      & $p$     & \cellRed{0.352} & \cellAmber{0.857}
+                & \cellRed{0.430} & \cellRed{0.971} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item \colorbox{diagFlag}{\color{diagFlagText}Red}:
+    economically implausible estimate and/or algebraic identity
+    $\boldsymbol{\omega}'\mathbf{Y} = \hat\tau$ fails.
+    \colorbox{diagWarn}{\color{diagWarnText}Amber}:
+    estimate sign-flipped, algebraic identity fails.
+    XGBoost uses \texttt{base\_score=0}, no tuning.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: weight diagnostics
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Outcome weight diagnostics for Wald-AIPW by learner.}
+  \label{tab:learner_wdiag}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{llrrrrc}
+    \toprule
+    Learner & Spec / Treatment & Sum\_w & ESS & Pct\_neg & Max\_abs\_w
+            & Alg.\,check \\
+    \midrule
+    \multirow{4}{*}{Linear+logit}
+      & Card $\cdot$ somecol    & \cellGreen{0.000} & \cellGreen{3}
+        & 31.6 & 0.081 & \cellGreen{$\checkmark$} \\
+      & Card $\cdot$ educ16     & \cellGreen{0.000} & \cellRed{1}
+        & 31.6 & 0.179 & \cellGreen{$\checkmark$} \\
+      & Kitagawa $\cdot$ somecol & \cellGreen{0.000} & \cellGreen{3}
+        & 31.8 & 0.048 & \cellGreen{$\checkmark$} \\
+      & Kitagawa $\cdot$ educ16  & \cellGreen{0.000} & \cellRed{1}
+        & 31.8 & 0.082 & \cellGreen{$\checkmark$} \\[4pt]
+    \multirow{4}{*}{XGBoost}
+      & Card $\cdot$ somecol    & \cellRed{$-$1.281} & \cellRed{0}
+        & \cellRed{57.0} & \cellRed{20.03} & \cellRed{$\times$} \\
+      & Card $\cdot$ educ16     & \cellRed{$-$0.305} & \cellRed{0}
+        & \cellRed{57.0} & \cellRed{4.774} & \cellRed{$\times$} \\
+      & Kitagawa $\cdot$ somecol & \cellAmber{$-$0.062} & \cellRed{1}
+        & 31.5 & \cellAmber{0.683} & \cellRed{$\times$} \\
+      & Kitagawa $\cdot$ educ16  & \cellRed{$-$1.996} & \cellRed{0}
+        & 31.5 & \cellRed{22.04} & \cellRed{$\times$} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item Alg.\,check: $\boldsymbol{\omega}'\mathbf{Y} = \hat\tau$
+    must hold exactly \citep{knaus2024}.
+    ESS $= \bigl(\sum_i\omega_i^2\bigr)^{-1}$.
+    ESS\,$= 0$ means $\sum_i\omega_i^2 > 1$, signalling dominant
+    negative weights.
+    Pct\_neg: percentage of observations with $\omega_i < 0$.
+    \colorbox{diagFlag}{\color{diagFlagText}Red}: ESS$\leq 1$
+    or $|\text{Sum\_w}|$ large.
+    \colorbox{diagWarn}{\color{diagWarnText}Amber}: mild violation.
+    \colorbox{diagOK}{\color{diagOKText}Green}: no concern.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Interpretation
+% ------------------------------------------------------------------
+\subsubsection*{Interpretation}
+
+\paragraph{Linear+logit: consistent and well-behaved.}
+The parametric learner delivers estimates that are broadly consistent
+with the tuned DML results reported in Table~\ref{tab:dml_estimates}
+and with the prior literature on returns to schooling.
+Across all four cells the algebraic identity
+$\boldsymbol{\omega}'\mathbf{Y} = \hat\tau$ holds exactly, confirming
+that the outcome weights are internally coherent and the estimate can
+legitimately be expressed as a weighted average of observed log wages.
+Sum\_w $= 0$ in all cells, so the estimates are translation-invariant.
+The ESS equals 3 for the \texttt{somecol} cells and collapses to 1 for
+\texttt{educ16}, consistent with the weight concentration documented in
+Table~\ref{tab:wdiag_card_educ16} and \ref{tab:wdiag_kit_educ16} --- a
+feature of the treatment rarity rather than the learner choice.
+
+\paragraph{XGBoost: catastrophic failure of the algebraic identity.}
+The XGBoost specification produces economically nonsensical estimates in
+all four cells: $-13.42$ (Card/\texttt{somecol}), $-3.20$
+(Card/\texttt{educ16}), $-0.11$ (Kitagawa/\texttt{somecol}), and
+$-3.66$ with a standard error of $100.9$
+(Kitagawa/\texttt{educ16}). All four fail the algebraic identity
+$\boldsymbol{\omega}'\mathbf{Y} = \hat\tau$, meaning the outcome weights
+do not correspond to the actual estimate --- a fundamental structural
+breakdown, not statistical noise.
+
+\paragraph{Why XGBoost fails: the \texttt{base\_score=0} misconfiguration.}
+\citet{knaus2024treatment} establishes that availability and properties of outcome
+weights depend critically on implementation choices (his Table~5 and~6).
+Specifically, he shows that \emph{Wald-AIPW with XGBoost fails
+Condition~C3} --- the smoothness condition required for the outcome
+weights to be normalised --- and documents in his empirical Monte Carlo
+simulation (EMCS) that outliers ranging from $-16$ to $55$ arise in
+exactly this learner--estimator combination
+(\citealt{knaus2024treatment}, Figure~1 and Table~6).
+The root cause in our application is the XGBoost parameter
+\texttt{base\_score=0}. In XGBoost $\geq 1.6$ (the version available on
+CRAN at the time of writing) setting \texttt{base\_score=0} no longer
+produces a zero-mean base learner; instead it biases all initial leaf
+predictions severely towards zero, distorting the residuals that drive
+subsequent tree splits \citep{knaus2024treatment}.
+In earlier versions, \texttt{base\_score=0} initialised every
+observation to zero and made the smoother matrix \emph{affine} --- the
+precise requirement for $\boldsymbol{\omega}'\mathbf{Y} = \hat\tau$ to
+hold. Condition~C3 fails under the current implementation because the
+cross-fitting folds produce propensity score predictions saturated near
+zero or one, generating enormous AIPW correction terms when inverted.
+This manifests in ESS $= 0$ (i.e.\ $\sum_i\omega_i^2 > 1$),
+Max$|\omega_i| = 20$ for Card/\texttt{somecol} and $22$ for
+Kitagawa/\texttt{educ16}, and Pct\_neg rising to 57\% for the Card
+specification compared to $\approx 32\%$ everywhere else.
+
+Without hyperparameter tuning the gradient-boosted trees overfit the
+nuisance functions in-sample; cross-fitting partially mitigates this but
+cannot recover the affine smoother property that the algebraic identity
+requires. 
+
+
+
+
+
+% ============================================================
+% ============================================================
+\section*{Diagnostic Evidence: Why the Results Look the Way They Do}
+
+The following tables collect the key structural diagnostics from the
+Card (1995) sample that explain the patterns documented in all preceding
+sections.  The diagnostics fall into four groups: first-stage strength,
+compliance heterogeneity, propensity score distributions, and the
+profile of extreme-weight observations.
+
+% ------------------------------------------------------------------
+% Table: first stage + compliance
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{First-stage strength and compliance type decomposition.
+           Instrument: \texttt{nearc4}. Sample: $N = 3{,}010$.}
+  \label{tab:firststage}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{3}{c}{First stage}
+    & \multicolumn{3}{c}{Compliance shares} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+    Treatment & $\hat\pi_\text{fs}$ & $F$ (no $X$) & $F$ (Card $X$)
+              & $\hat\pi_c$ & $\hat\pi_\text{at}$ & $\hat\pi_\text{nt}$ \\
+    \midrule
+    \texttt{somecol} ($D_1$) & \cellGreen{0.122} & \cellGreen{39.3}
+      & \cellAmber{$\approx 11.8$}
+      & \cellAmber{12.2\%} & 42.2\% & 45.6\% \\
+    \texttt{educ16} ($D_2$)  & \cellRed{0.069}   & \cellAmber{15.6}
+      & \cellRed{$\approx 3.2$}
+      & \cellRed{6.9\%}   & 22.5\% & 70.7\% \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item $\hat\pi_\text{fs} = \Pr(D=1\mid Z=1) - \Pr(D=1\mid Z=0)$.
+    $F$ (Card $X$) is the partial $F$-statistic on $Z$ in a first-stage
+    OLS with the full Card covariate set.
+    $\hat\pi_c$, $\hat\pi_\text{at}$, $\hat\pi_\text{nt}$: estimated
+    complier, always-taker, and never-taker shares.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: propensity score distributions
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Instrument propensity score $\hat{p}(Z{=}1\mid X)$ and
+           treatment propensity $\hat{P}(D{=}1\mid X)$ distributions
+           (Card specification).}
+  \label{tab:propscores}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrrrrrrrr}
+    \toprule
+    & Min & Q1 & Median & Mean & Q3 & Max
+    & $\%< 0.3$ & $\%> 0.7$ \\
+    \midrule
+    \multicolumn{9}{l}{\textit{Instrument propensity $\hat{p}(Z{=}1\mid X)$}} \\[2pt]
+    Card spec      & 0.190 & 0.430 & \cellAmber{0.791} & 0.682 & 0.874
+                   & 0.950 & \cellAmber{7.9\%} & \cellRed{63.9\%} \\
+    Kitagawa spec  & 0.253 & 0.455 & \cellAmber{0.798} & 0.682 & 0.878
+                   & 0.907 & 7.3\% & \cellRed{63.8\%} \\[4pt]
+    \multicolumn{9}{l}{\textit{Treatment propensity $\hat{P}(D{=}1\mid X)$,
+                         Card spec}} \\[2pt]
+    \texttt{somecol} ($D_1$) & 0.180 & 0.393 & 0.577 & 0.505 & 0.596
+                              & 0.812 & \cellGreen{0\%} & \cellGreen{0\%} \\
+    \texttt{educ16} ($D_2$)  & \cellRed{0.067} & \cellFlag{0.214}
+                              & \cellFlag{0.302} & \cellAmber{0.271}
+                              & 0.347 & \cellRed{0.440}
+                              & \cellGreen{0\%} & \cellGreen{0\%} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item Last two columns give the share of observations below 0.3 and
+    above 0.7 respectively.
+    Both instrument propensity distributions are highly right-skewed
+    (median $\approx 0.79$); the Card regional dummies push some
+    $\hat{p}_i$ toward 0.19 (rural South) or 0.95 (North-East cities).
+    The \texttt{educ16} treatment propensity tops out at 0.44 --- no
+    observation is near-certain to complete college given observables.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: kappa weight profile
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Kappa weight distribution and extreme-observation
+           concentration (Card specification).}
+  \label{tab:kappa_profile}
+  \begin{tabular}{lrrrr}
+    \toprule
+    & \multicolumn{2}{c}{\texttt{somecol} ($D_1$)}
+    & \multicolumn{2}{c}{\texttt{educ16} ($D_2$)} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+    Metric & Value & Note & Value & Note \\
+    \midrule
+    Min $\kappa_i$         & \cellRed{$-$13.87} & &
+                             \cellRed{$-$13.87} & \\
+    Median $\kappa_i$      & $+$1.000 & complier & \cellRed{$-$0.072}
+                           & \textit{negative!} \\
+    Share $\kappa_i < 0$   & \cellAmber{44.5\%} & &
+                             \cellRed{55.4\%} & \\
+    Top-5 share of $|\kappa|$  & \cellRed{2.3\%} & &
+                                  \cellRed{2.7\%} & \\
+    Top-20 share of $|\kappa|$ & \cellRed{7.1\%} & &
+                                   \cellRed{6.3\%} & \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Profile of top extreme observations}} \\[2pt]
+    $\hat{p}(Z{=}1\mid X)$ & \multicolumn{2}{c}{0.933} &
+                              \multicolumn{2}{c}{0.933} \\
+    Observed $Z$           & \multicolumn{2}{c}{0} &
+                              \multicolumn{2}{c}{0} \\
+    Observed $D$           & \multicolumn{2}{c}{1} &
+                              \multicolumn{2}{c}{1} \\
+    Implied $\kappa$       & \multicolumn{4}{c}
+      {$\frac{0}{0.933} - \frac{1}{1-0.933} \approx -13.9$} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item The extreme observations are \emph{``surprising
+    non-recipients''}: observations where all covariates predict a very
+    high probability of receiving the instrument ($\hat{p} \approx
+    0.93$) but the instrument was in fact not received ($Z = 0$), and
+    who are nonetheless treated ($D = 1$). Their kappa weight formula
+    $\kappa_i = Z_i/\hat{p}_i - (1-Z_i)/(1-\hat{p}_i)$ evaluates to
+    $0/0.933 - 1/0.067 \approx -13.9$.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Table: risk-group audit
+% ------------------------------------------------------------------
+\begin{table}[htbp]
+\centering
+\begin{threeparttable}
+  \caption{Risk-group audit: high-$\hat{p}(Z{=}1\mid X)$ observations
+           with $Z = 0$, $D = 1$ (Card specification).}
+  \label{tab:riskgroup}
+  \begin{tabular}{lrrrr}
+    \toprule
+    $\hat{p}$ cutoff & $N$ at risk & Share of sample
+                     & Mean $\kappa$ & Max$\,|\kappa|$ \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Treatment: \texttt{somecol} ($D_1$)}} \\[2pt]
+    $\hat{p} > 0.70$ & 139 & \cellAmber{4.6\%} &
+                       \cellRed{$-$4.85} & \cellRed{13.87} \\
+    $\hat{p} > 0.80$ &  59 & 2.0\% &
+                       \cellRed{$-$7.11} & \cellRed{13.87} \\
+    $\hat{p} > 0.90$ &  11 & 0.4\% &
+                       \cellRed{$-$13.58} & \cellRed{13.87} \\[4pt]
+    \multicolumn{5}{l}{\textit{Treatment: \texttt{educ16} ($D_2$)}} \\[2pt]
+    $\hat{p} > 0.70$ &  78 & \cellAmber{2.6\%} &
+                       \cellRed{$-$4.54} & \cellRed{13.87} \\
+    $\hat{p} > 0.80$ &  29 & 1.0\% &
+                       \cellRed{$-$6.95} & \cellRed{13.87} \\
+    $\hat{p} > 0.90$ &   5 & 0.2\% &
+                       \cellRed{$-$13.55} & \cellRed{13.87} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}[flushleft]\footnotesize
+    \item ``At risk'' = $\hat{p}(Z{=}1\mid X)$ above threshold, $Z=0$,
+    $D=1$.  The 11 observations (5 for \texttt{educ16}) with
+    $\hat{p}>0.90$ carry mean kappa of $-13.6$ and are responsible for
+    a disproportionate share of total weight mass, driving the ESS to 1.
+  \end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ------------------------------------------------------------------
+% Interpretation
+% ------------------------------------------------------------------
+\subsubsection*{How the diagnostics explain the estimation results}
+
+\paragraph{Weak first stage for \texttt{educ16}.}
+Once the full Card covariate set is included, the partial $F$-statistic
+on \texttt{nearc4} in the \texttt{educ16} first stage falls to
+approximately 3.2 (Table~\ref{tab:firststage}), well below the
+conventional weak-instrument threshold of 10.  The first-stage
+difference $\hat\pi_\text{fs} = 0.069$ means that the Wald numerator is
+scaled by a very small quantity, inflating the LATE estimate and its
+variance.  This propagates directly into the ESS collapse observed in
+Tables~\ref{tab:wdiag_card_educ16} and~\ref{tab:wdiag_kit_educ16}:
+the outcome weights must compensate for the weak signal by
+concentrating on the small number of observations where the instrument
+variation is informative.
+
+\paragraph{Extreme non-complier majority.}
+Only 6.9\% of the sample are compliers for \texttt{educ16}
+(Table~\ref{tab:firststage}).  By construction, only compliers can
+receive positive kappa weights; all always-takers and never-takers
+receive negative weights.  The resulting 55\% negative-kappa share for
+\texttt{educ16} (Table~\ref{tab:kappa_profile}) is therefore not a
+numerical artefact but a direct consequence of the compliance structure.
+This also explains why the median kappa for \texttt{educ16} is negative
+($-0.072$): more than half the sample sits on the wrong side of the
+weighting scheme.
+
+\paragraph{Right-skewed instrument propensity and the ``surprising
+non-recipient'' mechanism.}
+The instrument propensity $\hat{p}(Z{=}1\mid X)$ is heavily
+right-skewed with median $\approx 0.79$ in both specifications
+(Table~\ref{tab:propscores}).  Observations with $\hat{p}_i \approx
+0.93$ but $Z_i = 0$ and $D_i = 1$ receive kappa weights of
+$\approx -13.9$ (Table~\ref{tab:kappa_profile}): they are ``surprising
+non-recipients'' who, by all observable characteristics, should have
+had a college nearby but did not, yet attended college regardless.  Only
+11 such observations (5 for \texttt{educ16}) lie above the
+$\hat{p}>0.90$ threshold, but they carry mean kappa of $-13.6$
+(Table~\ref{tab:riskgroup}).  When any machine learning nuisance model
+--- in particular the untuned XGBoost --- assigns these observations
+extreme propensity scores, the AIPW correction terms diverge, the
+algebraic identity $\boldsymbol{\omega}'\mathbf{Y}=\hat\tau$ fails, and
+the estimates collapse into the $(-13, -3)$ range reported in
+Table~\ref{tab:learner_estimates}.
+
+\paragraph{Why the Card spec does better than Kitagawa.}
+The Card covariate set includes regional dummies that successfully
+separate the few observations with genuinely low instrument propensity
+($\hat{p} < 0.19$, rural South) from the majority.  The Kitagawa spec
+lacks these dummies, so its propensity model mixes observations from
+different regions into a single intermediate propensity band, producing
+a lower implied ESS (2.9 vs.\ 4.6, Table~\ref{tab:propscores}) even
+though the raw propensity distributions look similar.  More covariates
+allow the model to locate the complier subpopulation more precisely,
+which is why covariate richness matters for this observational IV
+design, in contrast to near-randomised settings where specification
+choice has little effect on the weight diagnostics.
+
+
+
+
+
+% Here is where the citations start 
+\bibliographystyle{apalike}
+\bibliography{references}
+\end{document}

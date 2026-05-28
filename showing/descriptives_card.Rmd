@@ -4,7 +4,7 @@ author: "Alexander Unger"
 date: "2026-05-24"
 output: html_document
 ---
-```{r}
+```{r, include=FALSE}
 # ==============================================================================
 #
 # Descriptive analysis of the Card (1995) dataset.
@@ -63,7 +63,7 @@ N <- nrow(card_clean)
 
 
 
-```{r}
+```{r, include=FALSE}
 # ==============================================================================
 # BLOCK A — Sample overview and variable distributions
 # ==============================================================================
@@ -292,7 +292,7 @@ for (treatment in c("D1", "D2")) {
 ```
 
 
-```{r}
+```{r, include=FALSE}
 
 # ==============================================================================
 # BLOCK D — Complier covariate profiles vs. full sample
@@ -1259,7 +1259,7 @@ cat("Done.\n")
 
 
 
-```{r}
+```{r setup, include=FALSE}
 # ==============================================================================
 # BLOCK G2 — Covariate-adjusted first-stage heterogeneity
 # ==============================================================================
@@ -1563,6 +1563,207 @@ cat("  especially when N_Z0 or N_Z1 is small.\n")
 cat("  Ratio_to_overall_adj compares the region-specific first stage to the overall adjusted first stage.\n")
 cat("  Values above 1 mean the region contributes more strongly to the complier margin than average.\n")
 cat("  Values below 1 mean it contributes less strongly than average.\n")
+
+```
+
+
+
+```{r}
+# Plotting the extreme Kappa 
+#  WHERE TO PLUG IN:
+#    Place this script in the same section as BLOCK E (weight diagnostics)
+#    in card_22_double_ml_extended.Rmd, after the kappa_weights_bundle()
+#    calls and before the Love plots (BLOCK F).
+#    The objects it needs — card_clean, pZ_card, kappa_somecol_card,
+#    kappa_educ16_card — are all created in that block.
+#
+#  REQUIRED OBJECTS (already in workspace by BLOCK E):
+#    card_clean           — the full cleaned data frame (N=3010)
+#    pZ_card              — P(Z=1|X) from logit MLE, Card spec
+#    kappa_somecol_card   — kappa weights for D1=somecol, Card spec
+#    kappa_educ16_card    — kappa weights for D1=educ16, Card spec
+# =============================================================================
+ 
+library(ggplot2)
+library(patchwork)   # install.packages("patchwork") if needed
+library(dplyr)
+ 
+# --------------------------------------------------------------------------
+# 0.  Build the plotting data frame
+# --------------------------------------------------------------------------
+plot_df <- card_clean %>%
+  mutate(
+    pZ          = pZ_card,
+    kappa_d1    = kappa_somecol_card,
+    kappa_d2    = kappa_educ16_card,
+    Z           = nearc4,
+    D1          = somecol,
+    D2          = educ16,
+    # Classify each observation for the scatter overlay
+    group_d1 = case_when(
+      pZ > 0.70 & Z == 0 & D1 == 1 ~ "High p̂, Z=0, D=1\n(surprising non-recipient)",
+      pZ < 0.30 & Z == 1 & D1 == 0 ~ "Low p̂, Z=1, D=0\n(surprising recipient)",
+      TRUE                          ~ "Other"
+    ),
+    group_d2 = case_when(
+      pZ > 0.70 & Z == 0 & D2 == 1 ~ "High p̂, Z=0, D=1\n(surprising non-recipient)",
+      pZ < 0.30 & Z == 1 & D2 == 0 ~ "Low p̂, Z=1, D=0\n(surprising recipient)",
+      TRUE                          ~ "Other"
+    )
+  )
+ 
+# Colour palette (colourblind-friendly)
+cols <- c(
+  "Other"                                           = "#CCCCCC",
+  "High p̂, Z=0, D=1\n(surprising non-recipient)"   = "#A32D2D",
+  "Low p̂, Z=1, D=0\n(surprising recipient)"        = "#185FA5"
+)
+ 
+alpha_vals <- c("Other" = 0.25,
+                "High p̂, Z=0, D=1\n(surprising non-recipient)" = 0.95,
+                "Low p̂, Z=1, D=0\n(surprising recipient)"      = 0.95)
+ 
+size_vals  <- c("Other" = 0.6,
+                "High p̂, Z=0, D=1\n(surprising non-recipient)" = 2.0,
+                "Low p̂, Z=1, D=0\n(surprising recipient)"      = 2.0)
+ 
+# --------------------------------------------------------------------------
+# 1.  Panel A — p(Z=1|X) distribution with risk groups annotated
+# --------------------------------------------------------------------------
+pa <- ggplot(plot_df, aes(x = pZ)) +
+  geom_histogram(binwidth = 0.03, fill = "#B4B2A9", colour = "white",
+                 linewidth = 0.2) +
+  geom_vline(xintercept = c(0.30, 0.70, 0.90), linetype = "dashed",
+             colour = c("#185FA5", "#A32D2D", "#A32D2D"),
+             linewidth = 0.6) +
+  annotate("text", x = 0.28, y = Inf, label = "p̂ < 0.30",
+           hjust = 1, vjust = 1.5, size = 3, colour = "#185FA5") +
+  annotate("text", x = 0.72, y = Inf, label = "p̂ > 0.70",
+           hjust = 0, vjust = 1.5, size = 3, colour = "#A32D2D") +
+  annotate("text", x = 0.92, y = Inf, label = "p̂ > 0.90",
+           hjust = 0, vjust = 3.5, size = 3, colour = "#A32D2D") +
+  scale_x_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
+  labs(x = expression(hat(p)(Z==1~"|"~X)~"  (Card spec)"),
+       y = "Count",
+       title = "A  Instrument propensity distribution",
+       subtitle = "Dashed lines mark risk thresholds") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", size = 11),
+        panel.grid.minor = element_blank())
+ 
+# --------------------------------------------------------------------------
+# 2.  Panel B — scatter: p(Z=1|X) vs kappa, coloured by risk group — D1
+# --------------------------------------------------------------------------
+pb <- ggplot(plot_df %>% arrange(group_d1),
+             aes(x = pZ, y = kappa_d1,
+                 colour = group_d1,
+                 alpha  = group_d1,
+                 size   = group_d1)) +
+  geom_point(shape = 16) +
+  geom_hline(yintercept = 0, linetype = "dotted", colour = "#444441",
+             linewidth = 0.5) +
+  scale_colour_manual(values = cols, name = NULL) +
+  scale_alpha_manual(values = alpha_vals, name = NULL) +
+  scale_size_manual(values = size_vals,   name = NULL) +
+  scale_x_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
+  coord_cartesian(ylim = c(-15, 2)) +
+  labs(x = expression(hat(p)(Z==1~"|"~X)),
+       y = expression(kappa[i]~"(somecol, Card spec)"),
+       title = "B  κ vs p̂(Z=1|X)  —  somecol (D₁)",
+       subtitle = "Red = high p̂ but Z=0, D=1 (surprising non-recipients)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title   = element_text(face = "bold", size = 11),
+        legend.position = "bottom",
+        legend.text  = element_text(size = 8),
+        panel.grid.minor = element_blank()) +
+  guides(colour = guide_legend(override.aes = list(size = 3, alpha = 1)))
+ 
+# --------------------------------------------------------------------------
+# 3.  Panel C — same scatter for D2 = educ16
+# --------------------------------------------------------------------------
+pc <- ggplot(plot_df %>% arrange(group_d2),
+             aes(x = pZ, y = kappa_d2,
+                 colour = group_d2,
+                 alpha  = group_d2,
+                 size   = group_d2)) +
+  geom_point(shape = 16) +
+  geom_hline(yintercept = 0, linetype = "dotted", colour = "#444441",
+             linewidth = 0.5) +
+  scale_colour_manual(values = cols, name = NULL) +
+  scale_alpha_manual(values = alpha_vals, name = NULL) +
+  scale_size_manual(values = size_vals,   name = NULL) +
+  scale_x_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
+  coord_cartesian(ylim = c(-15, 2)) +
+  labs(x = expression(hat(p)(Z==1~"|"~X)),
+       y = expression(kappa[i]~"(educ16, Card spec)"),
+       title = "C  κ vs p̂(Z=1|X)  —  educ16 (D₂)",
+       subtitle = "Red = high p̂ but Z=0, D=1 (surprising non-recipients)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title   = element_text(face = "bold", size = 11),
+        legend.position = "bottom",
+        legend.text  = element_text(size = 8),
+        panel.grid.minor = element_blank()) +
+  guides(colour = guide_legend(override.aes = list(size = 3, alpha = 1)))
+ 
+# --------------------------------------------------------------------------
+# 4.  Panel D — zoomed strip plot: kappa for the extreme group only
+#               shows the 11 / 5 obs that dominate the weight mass
+# --------------------------------------------------------------------------
+extreme_d1 <- plot_df %>% filter(pZ > 0.90, Z == 0, D1 == 1) %>%
+  mutate(treat = "somecol")
+extreme_d2 <- plot_df %>% filter(pZ > 0.90, Z == 0, D2 == 1) %>%
+  mutate(treat = "educ16")
+extreme    <- bind_rows(
+  extreme_d1 %>% select(pZ, kappa = kappa_d1, treat),
+  extreme_d2 %>% select(pZ, kappa = kappa_d2, treat)
+)
+ 
+pd <- ggplot(extreme, aes(x = pZ, y = kappa, colour = treat)) +
+  geom_point(size = 3, alpha = 0.9) +
+  geom_hline(yintercept = 0, linetype = "dotted",
+             colour = "#444441", linewidth = 0.5) +
+  scale_colour_manual(values = c("somecol" = "#A32D2D",
+                                  "educ16"  = "#712B13"),
+                      name = "Treatment") +
+  scale_x_continuous(limits = c(0.88, 0.96)) +
+  coord_cartesian(ylim = c(-15, 0)) +
+  labs(x = expression(hat(p)(Z==1~"|"~X)~"  [zoom: p̂ > 0.90]"),
+       y = expression(kappa[i]),
+       title = "D  Zoom: extreme observations (p̂ > 0.90, Z=0, D=1)",
+       subtitle = paste0("N = ", nrow(extreme_d1), " (somecol), ",
+                         nrow(extreme_d2), " (educ16)")) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title   = element_text(face = "bold", size = 11),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+ 
+# --------------------------------------------------------------------------
+# 5.  Assemble and save (2×2 layout)
+# --------------------------------------------------------------------------
+fig <- (pa | pd) / (pb | pc) +
+  plot_annotation(
+    title   = "Extreme kappa weights: the 'surprising non-recipient' mechanism",
+    subtitle = paste0(
+      "Card (1995) data, N = 3,010. ",
+      "Kappa weights ω_i = Z_i/p̂_i − (1−Z_i)/(1−p̂_i). ",
+      "Observations with high p̂(Z=1|X), Z=0, D=1 receive κ ≈ −14."
+    ),
+    theme = theme(
+      plot.title    = element_text(face = "bold", size = 13),
+      plot.subtitle = element_text(size = 9, colour = "grey40")
+    )
+  )
+ 
+ggsave("extreme_kappa_plot.pdf", fig,
+       width = 12, height = 9, device = cairo_pdf)
+ggsave("extreme_kappa_plot.png", fig,
+       width = 12, height = 9, dpi = 200)
+ 
+cat("Saved: extreme_kappa_plot.pdf and extreme_kappa_plot.png\n")
+cat(sprintf(
+  "Extreme group sizes: somecol (p>.9,Z=0,D=1) = %d; educ16 = %d\n",
+  nrow(extreme_d1), nrow(extreme_d2)
+))
 
 ```
 
