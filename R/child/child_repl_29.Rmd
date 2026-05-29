@@ -1,0 +1,555 @@
+---
+title: "child_bearing_replication"
+author: "Alexander Unger"
+date: "2026-05-29"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# Angrist & Evans (1998): Childbearing and Labor Supply
+# SUW Table replication — kappa estimators, blockwise procedure
+#
+# Design:
+#   Z = samesex  (1 if first two children same sex — near-random instrument)
+#   D = morekids (1 if mother had a third child)
+#   Y = workedm  (LFP, binary) and lincomem (log income)
+#
+# Near one-sided noncompliance: almost no always-takers (a mother who
+# would have a third child regardless of child sexes is very rare).
+# This makes the Abadie kappa near Proposition 3.3 territory and creates
+# the most dramatic translation-invariance failure in the thesis.
+#
+
+ 
+# ==============================================================================
+# §0  PACKAGES
+# ==============================================================================
+# haven     : read Stata .dta files
+# AER       : ivreg() for 2SLS benchmark
+# sandwich  : HC1 robust variance for 2SLS
+# lmtest    : coeftest() for robust 2SLS standard errors
+ 
+library(haven)
+library(AER)
+library(sandwich)
+library(lmtest)
+
+# ==============================================================================
+# §1  DATA LOADING AND PREPARATION
+# ==============================================================================
+# The replication uses ae98.dta from the SUW replication package.
+# Set data_path to the folder containing ae98.dta.
+#
+# Key variable definitions (Angrist & Evans 1998 Census data):
+#   workedm    : 1 if mother worked in year prior to Census (LFP outcome)
+#   incomem    : mother's annual income (in dollars)
+#   morekids   : 1 if mother had three or more children (endogenous treatment)
+#   samesex    : 1 if first two children are the same sex (instrument)
+#   agem       : mother's age
+#   agefstm    : mother's age at first birth
+#   sexk       : sex of first child (1 = boy)
+#   sex2nd     : sex of second child (1 = boy)
+#   blackm     : 1 if Black
+#   hispm      : 1 if Hispanic
+#   othracem   : 1 if other race
+#
+# Translation-invariance test (mirrors SUW Stata script lines):
+#   Stata creates: workedm_21 = workedm + 1   (shift by +1)
+#                  workedm_01 = -(workedm - 1) = 1 - workedm   (recentred)
+#                  lincomem_cnt = ln(100 * incomem)  (shift by ln(100))
+#                  lincomem_ths = ln(incomem / 1000) (shift by -ln(1000))
+#                  lincomem_hths= ln(incomem / 100000)
+#   These shifts are the cents/dollars analog for the AE design.
+#   Translation-invariant estimators (tau_u, tau_a10) must give identical
+#   estimates across all income scales; unnormalized estimators (tau_a, etc.)
+#   will diverge dramatically — the most extreme failure in the thesis.
+# ==============================================================================
+ 
+data_path <- "/Users/alexung/Desktop/master_thesis/code/"   # <--- USER: set this path
+ae98 <- read_dta(file.path(data_path, "ae98.dta"))
+ 
+# --- Sample restriction ---
+# Use the full sample as distributed (Stata do-file drops a pre-existing
+# lincomem variable and recreates it, so we replicate that here).
+ 
+ae98 <- ae98[!is.na(ae98$workedm) & !is.na(ae98$morekids) & !is.na(ae98$samesex), ]
+ 
+# --- Outcome variables ---
+# LFP (binary)
+ae98$workedm_21  <- ae98$workedm + 1         # shift +1 (translation test)
+ae98$workedm_01  <- 1 - ae98$workedm         # re-centring (translation test)
+ 
+# Log income — drop and recreate to match Stata do-file exactly
+# The raw incomem variable is in dollars; income = 0 causes log issues.
+# Following SUW: keep observations where incomem > 0 for income regressions
+# (LFP regressions use the full sample).
+ae98$lincomem      <- log(ae98$incomem)
+ae98$lincomem_cnt  <- log(100  * ae98$incomem)   # shift by +ln(100)
+ae98$lincomem_ths  <- log(ae98$incomem / 1000)   # shift by -ln(1000)
+ae98$lincomem_hths <- log(ae98$incomem / 100000) # shift by -ln(100000)
+ 
+# Subsets: full sample for LFP, positive-income sample for income regressions
+ae98_lfp    <- ae98                               # N ~ 254,654
+ae98_income <- ae98[ae98$incomem > 0, ]           # N ~ subset with positive income
+ 
+cat("N (LFP sample):    ", nrow(ae98_lfp), "\n")
+cat("N (income sample): ", nrow(ae98_income), "\n")
+
+
+make_X_ae <- function(df) {
+  X <- model.matrix(~ agem + agefstm + sexk + sex2nd + blackm + hispm + othracem,
+                    data = df)
+  # model.matrix includes intercept by default (column "(Intercept)" = 1)
+  X
+}
+ 
+X_lfp    <- make_X_ae(ae98_lfp)
+X_income <- make_X_ae(ae98_income)
+ 
+cat("Covariate matrix dimensions (LFP):    ", dim(X_lfp), "\n")
+cat("Covariate matrix dimensions (income): ", dim(X_income), "\n")
+
+ 
+```
+ 
+```{r}
+ # ==============================================================================
+# §3  FUNCTIONS
+# ==============================================================================
+# Source the shared function file — identical to Card replication.
+# Functions used:
+#   safe_logit()              : clipped logistic (§3a)
+#   prep_design_for_mest()    : standardise X for M-estimation (§3b)
+#   logit_mle()               : MLE propensity score (§3c)
+#   fit_logit_alpha()         : MLE for sandwich (§3d)
+#   fit_cbps_alpha()          : CBPS propensity score (§3e)
+#   cbps() / get_cbps_p()     : CBPS wrappers (§3f)
+#   kappa_weights()           : kappa, kappa1, kappa0 (§3g)
+#   tau_u()                   : Uysal normalized (§3h)
+#   tau_a10()                 : Abadie-Cattaneo normalized (§3i)
+#   tau_unnorm()              : unnormalized estimators (§3j)
+#   kappa_outcome_weights()   : omega vectors (§3k)
+#   num_jacobian()            : numerical Jacobian (§3l)
+#   matrix_inverse_safe()     : robust matrix inverse (§3m)
+#   sandwich_se_mest()        : sandwich SE from stacked moments (§3n)
+#   alpha_moment_matrix()     : propensity score moment matrix (§3o)
+#   kappa_analytic_se_one()   : analytical SE for one estimator (§3p)
+#   safe_kappa_se()           : error-safe SE wrapper (§3q)
+#   kappa_analytic_se_all()   : all six estimates + SEs (§3r)
+#   run_2sls()                : 2SLS with HC1-robust SEs (§3s)
+#   weight_diag()             : weight diagnostics (§3t)
+#   check_weight_identity()   : algebraic check sum(w*Y) = tau (§3u)
+#   fmt()                     : output formatter with stars (§3v)
+# ==============================================================================
+ 
+functions_path <- "/Users/alexung/Desktop/master_thesis/showing/functions_card.R"  # <--- USER: set this path
+source(functions_path)
+
+```
+
+
+```{r}
+ 
+# ==============================================================================
+# §4  PROPENSITY SCORE ESTIMATION
+# ==============================================================================
+# Estimate p(Z=1|X) = P(samesex=1|X) once per sample.
+# CBPS is used for tau_cb_u; MLE for all other estimators.
+# Both methods use the same design matrix.
+# ==============================================================================
+ 
+cat("\n--- Estimating propensity scores ---\n")
+ 
+# LFP sample
+p_ml_lfp <- logit_mle(ae98_lfp$samesex, X_lfp)
+cat("LFP p_ml: range [", round(min(p_ml_lfp),4), ",", round(max(p_ml_lfp),4), "]\n")
+ 
+p_cb_lfp <- get_cbps_p(ae98_lfp$samesex, X_lfp)
+cat("LFP p_cb: range [", round(min(p_cb_lfp),4), ",", round(max(p_cb_lfp),4), "]\n")
+ 
+# Income sample
+p_ml_income <- logit_mle(ae98_income$samesex, X_income)
+cat("Income p_ml: range [", round(min(p_ml_income),4), ",", round(max(p_ml_income),4), "]\n")
+ 
+p_cb_income <- get_cbps_p(ae98_income$samesex, X_income)
+cat("Income p_cb: range [", round(min(p_cb_income),4), ",", round(max(p_cb_income),4), "]\n")
+ 
+# Propensity score summary: samesex is near-random (~50%), so p should
+# be very close to 0.5 for all observations — confirming near-random assignment.
+# This is the AE analog of the draft lottery: design dominates learner.
+ 
+```
+
+
+```{r}
+# ==============================================================================
+# §5  POINT ESTIMATES + STANDARD ERRORS
+# ==============================================================================
+# Helper: one-shot call for a given (Y, Z, D, X, p_ml, p_cb) combination.
+# Returns a named list: estimates (length 6) + se (length 6).
+# Wraps kappa_analytic_se_all() and adds 2SLS.
+# ==============================================================================
+ 
+run_block <- function(Y, Z, D, X, label = "") {
+  cat("\n--- Running block:", label, " (n =", length(Y), ") ---\n")
+  res <- kappa_analytic_se_all(Y, Z, D, X)
+  # 2SLS benchmark
+  X_df <- as.data.frame(X[, colnames(X) != "(Intercept)", drop = FALSE])
+  tsls <- run_2sls(Y, D, Z, X_df, endog_name = "D")
+  res$tsls_coef <- tsls$coef
+  res$tsls_se   <- tsls$se
+  res
+}
+ 
+# --- Block 1: workedm (LFP, original scale) ---
+blk_lfp_01 <- run_block(
+  Y = ae98_lfp$workedm,
+  Z = ae98_lfp$samesex,
+  D = ae98_lfp$morekids,
+  X = X_lfp,
+  label = "workedm (original)"
+)
+ 
+# --- Block 2: workedm + 1 (shift +1, translation test) ---
+blk_lfp_21 <- run_block(
+  Y = ae98_lfp$workedm_21,
+  Z = ae98_lfp$samesex,
+  D = ae98_lfp$morekids,
+  X = X_lfp,
+  label = "workedm + 1"
+)
+ 
+# --- Block 3: 1 - workedm (re-centred, translation test) ---
+blk_lfp_neg <- run_block(
+  Y = ae98_lfp$workedm_01,
+  Z = ae98_lfp$samesex,
+  D = ae98_lfp$morekids,
+  X = X_lfp,
+  label = "1 - workedm"
+)
+ 
+# --- Block 4: lincomem (log income, dollars) ---
+blk_inc_dollars <- run_block(
+  Y = ae98_income$lincomem,
+  Z = ae98_income$samesex,
+  D = ae98_income$morekids,
+  X = X_income,
+  label = "lincomem (dollars)"
+)
+ 
+# --- Block 5: lincomem_cnt (log income, cents = dollars * 100) ---
+blk_inc_cents <- run_block(
+  Y = ae98_income$lincomem_cnt,
+  Z = ae98_income$samesex,
+  D = ae98_income$morekids,
+  X = X_income,
+  label = "lincomem_cnt (cents)"
+)
+ 
+# --- Block 6: lincomem_ths (log income, thousands) ---
+blk_inc_ths <- run_block(
+  Y = ae98_income$lincomem_ths,
+  Z = ae98_income$samesex,
+  D = ae98_income$morekids,
+  X = X_income,
+  label = "lincomem_ths (thousands)"
+)
+ 
+# --- Block 7: lincomem_hths (log income, hundred-thousands) ---
+blk_inc_hths <- run_block(
+  Y = ae98_income$lincomem_hths,
+  Z = ae98_income$samesex,
+  D = ae98_income$morekids,
+  X = X_income,
+  label = "lincomem_hths (hundred-thousands)"
+)
+ 
+ 
+# ==============================================================================
+# §6  MAIN RESULTS TABLE
+# ==============================================================================
+# Replicates SUW Table structure for Angrist & Evans:
+#
+#   Panel A: 2SLS (HC1-robust)
+#   Panel B: Normalized kappa estimators
+#             Row 1: tau_cb_u  (CBPS, Uysal normalized)
+#             Row 2: tau_ml_u  (MLE,  Uysal normalized)
+#             Row 3: tau_ml_a10 (MLE, Abadie-Cattaneo normalized)
+#   Panel C: Unnormalized kappa estimators
+#             Row 4: tau_ml_a   (Abadie kappa denominator)
+#             Row 5: tau_ml_t   (kappa1 denominator = tau_t in SUW)
+#             Row 6: tau_ml_a0  (kappa0 denominator)
+#
+# Columns:
+#   (1) workedm          (2) workedm + 1     (3) 1 - workedm
+#   (4) lincomem dollars (5) lincomem cents  (6) lincomem thousands
+#   (7) lincomem hundred-thousands
+#
+# Translation invariance: columns (1)-(2)-(3) must give identical Panel B
+# values; columns (4)-(5)-(6)-(7) must give identical Panel B values.
+# Panel C will diverge wildly — this is the thesis's key finding.
+# ==============================================================================
+ 
+blocks_lfp    <- list(blk_lfp_01, blk_lfp_21, blk_lfp_neg)
+blocks_income <- list(blk_inc_dollars, blk_inc_cents, blk_inc_ths, blk_inc_hths)
+all_blocks    <- c(blocks_lfp, blocks_income)
+ 
+col_labels <- c(
+  "workedm", "workedm+1", "1-workedm",
+  "ln(income)", "ln(100*inc)", "ln(inc/1000)", "ln(inc/1e5)"
+)
+ 
+estimator_names <- c(
+  "tau_cb_u", "tau_ml_u", "tau_ml_a10",
+  "tau_ml_a", "tau_ml_t", "tau_ml_a0"
+)
+ 
+panel_labels <- c(
+  "Panel A: 2SLS",
+  "Panel B: Normalized kappa",
+  "  tau_cb_u  (CBPS, Uysal)",
+  "  tau_ml_u  (MLE,  Uysal)",
+  "  tau_ml_a10 (MLE, Abadie-Cattaneo)",
+  "Panel C: Unnormalized kappa",
+  "  tau_ml_a  (kappa denom)",
+  "  tau_ml_t  (kappa1 denom)",
+  "  tau_ml_a0 (kappa0 denom)"
+)
+ 
+cat("\n")
+cat(paste(rep("=", 110), collapse = ""), "\n")
+cat("ANGRIST & EVANS (1998) — Main Results Table\n")
+cat("Replication of SUW (2025) Table structure\n")
+cat("Z = samesex, D = morekids, X = {age, agefstm, sexk, sex2nd, blackm, hispm, othracem}\n")
+cat(paste(rep("=", 110), collapse = ""), "\n")
+ 
+# Print column headers
+hdr <- sprintf("%-38s", "")
+for (cl in col_labels) hdr <- paste0(hdr, sprintf("%15s", cl))
+cat(hdr, "\n")
+cat(paste(rep("-", 110 + 7*2), collapse = ""), "\n")
+ 
+# --- Panel A: 2SLS ---
+cat(sprintf("%-38s", "Panel A: 2SLS (HC1-robust)"), "\n")
+row_tsls <- sprintf("%-38s", "  2SLS")
+for (blk in all_blocks) {
+  row_tsls <- paste0(row_tsls,
+                     sprintf("%15s", fmt(blk$tsls_coef, blk$tsls_se)))
+}
+cat(row_tsls, "\n\n")
+ 
+# --- Panel B: Normalized ---
+cat(sprintf("%-38s", "Panel B: Normalized kappa"), "\n")
+for (est in c("tau_cb_u", "tau_ml_u", "tau_ml_a10")) {
+  lbl <- switch(est,
+    "tau_cb_u"   = "  tau_cb_u  (CBPS, Uysal)",
+    "tau_ml_u"   = "  tau_ml_u  (MLE,  Uysal)",
+    "tau_ml_a10" = "  tau_ml_a10 (Abadie-Cattaneo)"
+  )
+  row_est <- sprintf("%-38s", lbl)
+  for (blk in all_blocks) {
+    row_est <- paste0(row_est,
+                      sprintf("%15s", fmt(blk$estimates[est], blk$se[est])))
+  }
+  cat(row_est, "\n")
+}
+ 
+cat("\n")
+# --- Panel C: Unnormalized ---
+cat(sprintf("%-38s", "Panel C: Unnormalized kappa [NOT TI]"), "\n")
+for (est in c("tau_ml_a", "tau_ml_t", "tau_ml_a0")) {
+  lbl <- switch(est,
+    "tau_ml_a"  = "  tau_ml_a  (kappa denom)",
+    "tau_ml_t"  = "  tau_ml_t  (kappa1 denom)",
+    "tau_ml_a0" = "  tau_ml_a0 (kappa0 denom)"
+  )
+  row_est <- sprintf("%-38s", lbl)
+  for (blk in all_blocks) {
+    row_est <- paste0(row_est,
+                      sprintf("%15s", fmt(blk$estimates[est], blk$se[est])))
+  }
+  cat(row_est, "\n")
+}
+ 
+cat(paste(rep("=", 110 + 7*2), collapse = ""), "\n")
+cat("Note: *** p<0.01, ** p<0.05, * p<0.10. SE in parentheses (M-estimation sandwich).\n")
+cat("Panel B estimators are translation invariant: workedm/workedm+1/1-workedm columns\n")
+cat("should be IDENTICAL; lincomem columns should be IDENTICAL.\n")
+cat("Panel C estimators are NOT translation invariant: large divergence expected.\n\n")
+```
+
+
+```{r}
+#==============================================================================
+# §7  TRANSLATION-INVARIANCE VERIFICATION
+# ==============================================================================
+# Formally check: for Panel B, max |tau(Y+c) - tau(Y)| < tol for all shifts c.
+# For Panel C, report the range of values to show the divergence magnitude.
+# This is the core finding for Section 5.2 of the thesis.
+# ==============================================================================
+ 
+cat(paste(rep("-", 60), collapse = ""), "\n")
+cat("TRANSLATION-INVARIANCE CHECK\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+ 
+ti_check <- function(blk_list, label_group) {
+  cat("\n", label_group, "\n", sep = "")
+  for (est in estimator_names) {
+    vals <- sapply(blk_list, function(blk) blk$estimates[est])
+    rng  <- round(max(vals) - min(vals), 6)
+    ti   <- if (est %in% c("tau_cb_u", "tau_ml_u", "tau_ml_a10")) {
+      if (rng < 1e-4) "PASS (TI)" else "FAIL (TI)"
+    } else {
+      paste0("range = ", round(rng, 4), " [expected divergence]")
+    }
+    cat(sprintf("  %-18s: %s\n", est, ti))
+  }
+}
+ 
+ti_check(blocks_lfp,    "LFP outcomes (workedm, workedm+1, 1-workedm):")
+ti_check(blocks_income, "Income outcomes (dollars, cents, thousands, hundred-thousands):")
+#==============================================================================
+# §7  TRANSLATION-INVARIANCE VERIFICATION
+# ==============================================================================
+# Formally check: for Panel B, max |tau(Y+c) - tau(Y)| < tol for all shifts c.
+# For Panel C, report the range of values to show the divergence magnitude.
+# This is the core finding for Section 5.2 of the thesis.
+# ==============================================================================
+ 
+cat(paste(rep("-", 60), collapse = ""), "\n")
+cat("TRANSLATION-INVARIANCE CHECK\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+ 
+ti_check <- function(blk_list, label_group) {
+  cat("\n", label_group, "\n", sep = "")
+  for (est in estimator_names) {
+    vals <- sapply(blk_list, function(blk) blk$estimates[est])
+    rng  <- round(max(vals) - min(vals), 6)
+    ti   <- if (est %in% c("tau_cb_u", "tau_ml_u", "tau_ml_a10")) {
+      if (rng < 1e-4) "PASS (TI)" else "FAIL (TI)"
+    } else {
+      paste0("range = ", round(rng, 4), " [expected divergence]")
+    }
+    cat(sprintf("  %-18s: %s\n", est, ti))
+  }
+}
+ 
+ti_check(blocks_lfp,    "LFP outcomes (workedm, workedm+1, 1-workedm):")
+ti_check(blocks_income, "Income outcomes (dollars, cents, thousands, hundred-thousands):")
+```
+ 
+ 
+ 
+ 
+```{r}
+# ==============================================================================
+# §8  WEIGHT DIAGNOSTICS
+# ==============================================================================
+# Compute outcome weights for the primary outcome (workedm, lincomem) and
+# report the standard diagnostics: Sum_w, ESS, % negative, Max |w|.
+#
+# Key expected findings (thesis Section 5.2):
+#   - Near-random samesex instrument → p ≈ 0.5 everywhere
+#   - ESS similar across estimators (design dominates learner, as in Vietnam)
+#   - Near one-sided noncompliance → kappa0 weights near zero → ESS very large
+#     for tau_a0 (denominator ≈ 0 risk)
+# ==============================================================================
+ 
+cat("\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+cat("WEIGHT DIAGNOSTICS\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+ 
+compute_weight_diags <- function(Y, Z, D, p_ml, p_cb, label) {
+  cat("\n", label, "\n", sep = "")
+  ow_ml <- kappa_outcome_weights(Z, D, p_ml)
+  ow_cb <- kappa_outcome_weights(Z, D, p_cb)
+ 
+  diag_list <- list(
+    weight_diag(ow_cb$w_u,   "tau_cb_u  (CBPS)"),
+    weight_diag(ow_ml$w_u,   "tau_ml_u  (MLE)"),
+    weight_diag(ow_ml$w_a10, "tau_ml_a10"),
+    weight_diag(ow_ml$w_a,   "tau_ml_a"),
+    weight_diag(ow_ml$w_a1,  "tau_ml_t"),
+    weight_diag(ow_ml$w_a0,  "tau_ml_a0")
+  )
+  diag_df <- do.call(rbind, diag_list)
+  print(diag_df, row.names = FALSE)
+ 
+  # Algebraic check: sum(w * Y) = tau_hat (should hold to machine precision)
+  cat("\n  Algebraic check  sum(w * Y) == tau_hat:\n")
+  checks <- c(
+    tau_cb_u   = check_weight_identity(ow_cb$w_u,   Y, tau_u(Y, Z, D, p_cb)),
+    tau_ml_u   = check_weight_identity(ow_ml$w_u,   Y, tau_u(Y, Z, D, p_ml)),
+    tau_ml_a10 = check_weight_identity(ow_ml$w_a10, Y, tau_a10(Y, Z, D, p_ml)),
+    tau_ml_a   = check_weight_identity(ow_ml$w_a,   Y, tau_unnorm(Y, Z, D, p_ml, "a")),
+    tau_ml_t   = check_weight_identity(ow_ml$w_a1,  Y, tau_unnorm(Y, Z, D, p_ml, "a1")),
+    tau_ml_a0  = check_weight_identity(ow_ml$w_a0,  Y, tau_unnorm(Y, Z, D, p_ml, "a0"))
+  )
+  print(checks)
+}
+ 
+compute_weight_diags(
+  Y     = ae98_lfp$workedm,
+  Z     = ae98_lfp$samesex,
+  D     = ae98_lfp$morekids,
+  p_ml  = p_ml_lfp,
+  p_cb  = p_cb_lfp,
+  label = "LFP outcome (workedm)"
+)
+ 
+compute_weight_diags(
+  Y     = ae98_income$lincomem,
+  Z     = ae98_income$samesex,
+  D     = ae98_income$morekids,
+  p_ml  = p_ml_income,
+  p_cb  = p_cb_income,
+  label = "Income outcome (lincomem, dollars)"
+)
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# §9  COMPLIER SHARE AND PROPENSITY SCORE SUMMARY
+# ==============================================================================
+# The complier share = E[kappa] = E[D(1) > D(0)] is estimated as mean(kappa).
+# Under near one-sided noncompliance:
+#   mean(kappa)  ≈ mean(kappa1)  (almost no always-takers, so kappa ≈ kappa1)
+#   mean(kappa0) ≈ 0             (almost no untreated compliers in Z=0 group)
+#
+# This explains why tau_a0 has a near-zero denominator and explodes under
+# translation shifts — it is dividing by the near-zero always-taker share.
+# ==============================================================================
+ 
+cat("\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+cat("COMPLIER SHARE AND PROPENSITY SCORE SUMMARY\n")
+cat(paste(rep("-", 60), collapse = ""), "\n")
+ 
+kw_lfp    <- kappa_weights(ae98_lfp$samesex, ae98_lfp$morekids, p_ml_lfp)
+kw_income <- kappa_weights(ae98_income$samesex, ae98_income$morekids, p_ml_income)
+ 
+cat("\nLFP sample:\n")
+cat(sprintf("  mean(kappa)  = %8.4f  [complier share]\n", mean(kw_lfp$kappa)))
+cat(sprintf("  mean(kappa1) = %8.4f  [should ≈ kappa under one-sided NC]\n", mean(kw_lfp$kappa1)))
+cat(sprintf("  mean(kappa0) = %8.4f  [should ≈ 0 under one-sided NC]\n",  mean(kw_lfp$kappa0)))
+cat(sprintf("  p_ml mean    = %8.4f  [should be ≈ 0.5; samesex near-random]\n", mean(p_ml_lfp)))
+ 
+cat("\nIncome sample:\n")
+cat(sprintf("  mean(kappa)  = %8.4f\n", mean(kw_income$kappa)))
+cat(sprintf("  mean(kappa1) = %8.4f\n", mean(kw_income$kappa1)))
+cat(sprintf("  mean(kappa0) = %8.4f\n", mean(kw_income$kappa0)))
+cat(sprintf("  p_ml mean    = %8.4f\n", mean(p_ml_income)))
+ 
+cat("\n")
+cat("Near one-sided noncompliance confirmed if mean(kappa0) ≈ 0.\n")
+cat("This is Proposition 3.3 territory: tau_a0 unreliable; tau_u and tau_a10 preferred.\n")
+cat("Under near-random samesex, p ≈ 0.5 → ESS pattern mirrors Vietnam (design dominates).\n")
+cat(paste(rep("=", 60), collapse = ""), "\n")
+ 
+```
+
+

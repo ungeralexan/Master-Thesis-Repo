@@ -1,0 +1,135 @@
+\documentclass[12pt,a4paper]{article}
+
+% ------------------------------------------------------------
+% Encoding, language, typography
+% ------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ------------------------------------------------------------
+% Page layout
+% ------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ------------------------------------------------------------
+% Mathematics
+% ------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{bbm}
+
+% ------------------------------------------------------------
+% Tables, lists, links
+% ------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+% ------------------------------------------------------------
+% Citations
+% ------------------------------------------------------------
+\usepackage[round,authoryear]{natbib}
+
+% ------------------------------------------------------------
+% Theorem-style environments
+% ------------------------------------------------------------
+\usepackage{amsthm}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% ------------------------------------------------------------
+% Useful math commands
+% ------------------------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\En}{\mathbb{E}_N}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbbm{1}}
+
+\title{Wald AIPW and Double Machine Learning}
+\author{}
+\date{}
+
+\begin{document}
+
+
+
+
+% -----------------------------------------------------------------------------
+% SUW (2025) Childbearing and Labor Supply Application
+% Design outline for thesis section
+% -----------------------------------------------------------------------------
+
+\subsection{Childbearing and Labor Supply: Angrist and Evans Design in SUW}
+\label{subsec:suw_childbearing_design}
+
+The third empirical application in \citet{sloczynski2025abadie} revisits the fertility design of \citet{angrist1996children}. The original empirical question in \citet{angrist1996children} is whether an additional child causally affects parental labor supply. The design exploits quasi-random variation in the sex composition of the first two children: parents whose first two children are of the same sex are more likely to have an additional child, plausibly because of preferences for mixed-sex sibling composition. Hence, same-sex sibling composition can be used as an instrument for having a third child.
+\citet{sloczynski2025abadie} use this setting not primarily to produce new substantive evidence on fertility and labor supply, but to evaluate the finite-sample behavior of kappa-based LATE estimators.
+
+\paragraph{Sample.}
+The sample is based on a subsample of the 1980 U.S. Census, following the replication data used by \citet{farbmacher2018increasing}. The empirical sample consists of women aged 21--35 with at least two children. Restricting the sample to women with at least two children is necessary because the instrument is defined using the sex composition of the first two children. In the notation of the LATE framework, each observation corresponds to a woman indexed by $i$.
+
+\paragraph{Instrument.}
+The instrument is an indicator for whether the first two children are of the same sex:
+\begin{equation}
+    Z_i = \mathbbm{1}\{\text{first two children are both boys or both girls}\}.
+\end{equation}
+Equivalently, $Z_i=1$ if the first two children are two boys or two girls, and $Z_i=0$ if the first two children are one boy and one girl. The identifying intuition is that the sex of children is close to randomly assigned, while same-sex sibling composition increases the probability that parents have another child. Therefore, the instrument generates variation in family size that is plausibly unrelated to potential labor-supply outcomes, conditional on covariates.
+This application focuses on the sex-composition instrument. Although \citet{angrist1996children} also discuss twin births as an alternative source of exogenous variation in fertility, \citet{sloczynski2025abadie} restrict their analysis to the same-sex instrument.
+
+\paragraph{Treatment.}
+The treatment is an indicator for having more than two children:
+\begin{equation}
+    D_i = \mathbbm{1}\{\text{woman has at least three children}\}.
+\end{equation}
+Thus, the first stage compares the probability of having a third child between women whose first two children are of the same sex and women whose first two children are of mixed sex. 
+
+\paragraph{Outcomes.}
+The application considers two main outcome variables. The first is labor force participation, measured as whether the woman worked for pay in the preceding year:
+\begin{equation}
+    Y_i = \mathbbm{1}\{\text{worked for pay in the preceding year}\}.
+\end{equation}
+To study translation invariance, \citet{sloczynski2025abadie} also consider alternative codings of this binary outcome. For example, the same substantive outcome can be coded as $1$ for working and $0$ otherwise, or shifted to $2$ for working and $1$ otherwise. Since this transformation only adds a constant to the outcome, a translation-invariant estimator should not change except for the mechanical interpretation of the coding. The paper uses these recodings to show that unnormalized kappa estimators can change when the outcome is shifted.
+
+The second outcome is log annual income:
+\begin{equation}
+    Y_i = \log(\text{annual income}_i),
+\end{equation}
+with the analysis restricted to observations with positive reported income. For this outcome, \citet{sloczynski2025abadie} measure income in different units before taking logarithms, such as cents, dollars, thousands of dollars, and hundreds of thousands of dollars. Changing the unit before applying the logarithm adds a constant to the logged outcome. Hence, this exercise is again a test of whether estimators are invariant to outcome transformations that should not affect the estimated causal effect.
+
+\paragraph{Covariates.}
+The covariates enter through the instrument propensity score
+\begin{equation}
+    p(X_i) = \Pr(Z_i = 1 \mid X_i),
+\end{equation}
+which is required for the kappa-weighting estimators. The covariate vector contains maternal characteristics and child-sex indicators:
+\begin{equation}
+    X_i =
+    \left(
+    \text{age}_i,
+    \text{age at first birth}_i,
+    \text{sex of first child}_i,
+    \text{sex of second child}_i,
+    \text{Black}_i,
+    \text{Hispanic}_i,
+    \text{other race}_i
+    \right).
+\end{equation}
+In words, the covariates are the woman's age, her age at first birth, indicators for the sex of the first and second child, and race or ethnicity indicators. These variables are used to model the probability of receiving the instrument, that is, the probability that the first two children are of the same sex conditional on observed characteristics.
+
+
+
+\bibliographystyle{apalike}
+\bibliography{references}
+% ------------------------------------------------------------------
+\end{document}
