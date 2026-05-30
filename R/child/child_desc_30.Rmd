@@ -1,0 +1,1936 @@
+---
+title: "child_descr_30"
+author: "Alexander Unger"
+date: "2026-05-30"
+output: html_document
+---
+
+```{r}
+# ==============================================================================
+# DESCRIPTIVE BLOCK 1 — Setup, data loading, variable construction, sample overview
+# ==============================================================================
+# Angrist & Evans (1998) childbearing design, following SUW Table 4.
+#
+# Design:
+#   Z = samesex   : 1 if first two children have the same sex
+#   D = morekids  : 1 if mother has at least three children
+#
+# Outcomes:
+#   LFP sample:
+#     workedm      = 1 if worked for pay, 0 otherwise
+#     workedm_21   = workedm + 1
+#     workedm_01   = 1 - workedm
+#
+#   Positive-income sample:
+#     lincomem      = log income in dollars
+#     lincomem_cnt  = log income in cents
+#     lincomem_ths  = log income in thousands
+#     lincomem_hths = log income in hundred-thousands
+#
+# Covariates:
+#   agem, agefstm, sexk, sex2nd, blackm, hispm, othracem
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# 0. Packages
+# ------------------------------------------------------------------------------
+
+required_packages <- c(
+  "haven",
+  "knitr"
+)
+
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop(
+      sprintf(
+        "Package '%s' is required but not installed. Install it with install.packages('%s').",
+        pkg, pkg
+      )
+    )
+  }
+}
+
+library(haven)
+library(knitr)
+
+
+# ------------------------------------------------------------------------------
+# 1. User path
+# ------------------------------------------------------------------------------
+# Adjust this path if ae98.dta is stored somewhere else.
+
+data_path <- "/Users/alexung/Desktop/master_thesis/code/"
+ae98_file <- file.path(data_path, "ae98.dta")
+
+if (!file.exists(ae98_file)) {
+  stop(
+    paste0(
+      "Could not find ae98.dta at:\n",
+      ae98_file,
+      "\n\nPlease change data_path at the top of this block."
+    )
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Helper functions for readable output
+# ------------------------------------------------------------------------------
+
+show_desc_table <- function(x, caption = NULL, digits = 3) {
+  x_print <- as.data.frame(x)
+
+  num_cols <- sapply(x_print, is.numeric)
+  x_print[num_cols] <- lapply(x_print[num_cols], function(v) round(v, digits))
+
+  if (isTRUE(getOption("knitr.in.progress"))) {
+    knitr::kable(
+      x_print,
+      format = "html",
+      row.names = FALSE,
+      caption = caption
+    )
+  } else {
+    if (!is.null(caption)) {
+      cat("\n", caption, "\n", sep = "")
+    }
+    print(x_print, row.names = FALSE)
+    invisible(x_print)
+  }
+}
+
+binary_summary <- function(x) {
+  x <- as.numeric(x)
+
+  c(
+    N = sum(!is.na(x)),
+    Mean = mean(x, na.rm = TRUE),
+    Share_0 = mean(x == 0, na.rm = TRUE),
+    Share_1 = mean(x == 1, na.rm = TRUE),
+    Missing = sum(is.na(x))
+  )
+}
+
+continuous_summary <- function(x) {
+  x <- as.numeric(x)
+
+  c(
+    N = sum(!is.na(x)),
+    Mean = mean(x, na.rm = TRUE),
+    SD = sd(x, na.rm = TRUE),
+    Min = min(x, na.rm = TRUE),
+    Q25 = unname(quantile(x, 0.25, na.rm = TRUE)),
+    Median = median(x, na.rm = TRUE),
+    Q75 = unname(quantile(x, 0.75, na.rm = TRUE)),
+    Max = max(x, na.rm = TRUE),
+    Missing = sum(is.na(x))
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 3. Read raw data
+# ------------------------------------------------------------------------------
+
+ae98_raw <- haven::read_dta(ae98_file)
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 1 — Setup and sample construction\n")
+cat("============================================================\n\n")
+
+cat("Raw AE98 data loaded from:\n")
+cat("  ", ae98_file, "\n\n", sep = "")
+
+cat("Raw number of observations:", nrow(ae98_raw), "\n")
+cat("Raw number of variables:   ", ncol(ae98_raw), "\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Check required variables exist
+# ------------------------------------------------------------------------------
+
+required_vars <- c(
+  "workedm",
+  "morekids",
+  "samesex",
+  "incomem",
+  "agem",
+  "agefstm",
+  "sexk",
+  "sex2nd",
+  "blackm",
+  "hispm",
+  "othracem"
+)
+
+missing_vars <- setdiff(required_vars, names(ae98_raw))
+
+if (length(missing_vars) > 0) {
+  stop(
+    paste0(
+      "The following required variables are missing from ae98.dta:\n",
+      paste(missing_vars, collapse = ", ")
+    )
+  )
+}
+
+cat("All required variables found:\n")
+cat("  ", paste(required_vars, collapse = ", "), "\n\n", sep = "")
+
+
+# ------------------------------------------------------------------------------
+# 5. Main sample restriction
+# ------------------------------------------------------------------------------
+# We follow the replication logic:
+#   - LFP requires workedm, morekids, and samesex.
+#   - Income additionally requires incomem > 0 because log income is undefined
+#     for zero or negative income.
+
+ae98 <- ae98_raw[
+  !is.na(ae98_raw$workedm) &
+    !is.na(ae98_raw$morekids) &
+    !is.na(ae98_raw$samesex),
+]
+
+cat("After main LFP restriction:\n")
+cat("  N =", nrow(ae98), "\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Outcome construction
+# ------------------------------------------------------------------------------
+
+# Labor-force-participation recodings
+ae98$workedm_21 <- ae98$workedm + 1
+ae98$workedm_01 <- 1 - ae98$workedm
+
+# Log-income unit transformations
+# Note:
+#   lincomem variables are NA/Inf for non-positive income if computed directly.
+#   We construct them for the full object, but only use ae98_income for analysis.
+ae98$lincomem      <- ifelse(ae98$incomem > 0, log(ae98$incomem), NA_real_)
+ae98$lincomem_cnt  <- ifelse(ae98$incomem > 0, log(100 * ae98$incomem), NA_real_)
+ae98$lincomem_ths  <- ifelse(ae98$incomem > 0, log(ae98$incomem / 1000), NA_real_)
+ae98$lincomem_hths <- ifelse(ae98$incomem > 0, log(ae98$incomem / 100000), NA_real_)
+
+
+# ------------------------------------------------------------------------------
+# 7. Define analysis samples
+# ------------------------------------------------------------------------------
+
+ae98_lfp <- ae98
+
+ae98_income <- ae98[
+  !is.na(ae98$incomem) &
+    ae98$incomem > 0 &
+    !is.na(ae98$lincomem),
+]
+
+cat("Analysis samples:\n")
+cat("  N (LFP sample, ae98_lfp):          ", nrow(ae98_lfp), "\n", sep = "")
+cat("  N (income sample, ae98_income):    ", nrow(ae98_income), "\n", sep = "")
+cat("  Share retained for income sample:  ",
+    round(nrow(ae98_income) / nrow(ae98_lfp), 4), "\n\n", sep = "")
+
+
+# ------------------------------------------------------------------------------
+# 8. Covariate matrix construction
+# ------------------------------------------------------------------------------
+
+make_X_ae <- function(df) {
+  model.matrix(
+    ~ agem + agefstm + sexk + sex2nd + blackm + hispm + othracem,
+    data = df
+  )
+}
+
+X_lfp <- make_X_ae(ae98_lfp)
+X_income <- make_X_ae(ae98_income)
+
+cat("Covariate matrices:\n")
+cat("  dim(X_lfp):    ", paste(dim(X_lfp), collapse = " x "), "\n", sep = "")
+cat("  dim(X_income): ", paste(dim(X_income), collapse = " x "), "\n", sep = "")
+cat("  X columns:     ", paste(colnames(X_lfp), collapse = ", "), "\n\n", sep = "")
+
+
+# ------------------------------------------------------------------------------
+# 9. Sample construction overview table
+# ------------------------------------------------------------------------------
+
+sample_overview <- data.frame(
+  Sample = c(
+    "Raw AE98 data",
+    "LFP sample",
+    "Positive-income sample"
+  ),
+  Object = c(
+    "ae98_raw",
+    "ae98_lfp",
+    "ae98_income"
+  ),
+  Restriction = c(
+    "As loaded from ae98.dta",
+    "Non-missing workedm, morekids, and samesex",
+    "LFP sample restricted to incomem > 0"
+  ),
+  N = c(
+    nrow(ae98_raw),
+    nrow(ae98_lfp),
+    nrow(ae98_income)
+  ),
+  Share_of_LFP_sample = c(
+    NA_real_,
+    1,
+    nrow(ae98_income) / nrow(ae98_lfp)
+  ),
+  stringsAsFactors = FALSE
+)
+
+show_desc_table(
+  sample_overview,
+  caption = "Sample construction overview"
+)
+
+
+# ------------------------------------------------------------------------------
+# 10. Core design variables in both samples
+# ------------------------------------------------------------------------------
+
+core_lfp <- rbind(
+  samesex  = binary_summary(ae98_lfp$samesex),
+  morekids = binary_summary(ae98_lfp$morekids),
+  workedm  = binary_summary(ae98_lfp$workedm)
+)
+
+core_lfp <- data.frame(
+  Sample = "LFP sample",
+  Variable = rownames(core_lfp),
+  as.data.frame(core_lfp),
+  row.names = NULL
+)
+
+core_income <- rbind(
+  samesex  = binary_summary(ae98_income$samesex),
+  morekids = binary_summary(ae98_income$morekids),
+  workedm  = binary_summary(ae98_income$workedm)
+)
+
+core_income <- data.frame(
+  Sample = "Positive-income sample",
+  Variable = rownames(core_income),
+  as.data.frame(core_income),
+  row.names = NULL
+)
+
+core_design_table <- rbind(core_lfp, core_income)
+
+show_desc_table(
+  core_design_table,
+  caption = "Core design variables: instrument, treatment, and LFP outcome"
+)
+
+
+# ------------------------------------------------------------------------------
+# 11. Outcome coding map
+# ------------------------------------------------------------------------------
+
+outcome_coding_table <- data.frame(
+  Outcome_group = c(
+    "Labor force participation",
+    "Labor force participation",
+    "Labor force participation",
+    "Log income",
+    "Log income",
+    "Log income",
+    "Log income"
+  ),
+  Object_name = c(
+    "workedm",
+    "workedm_21",
+    "workedm_01",
+    "lincomem_cnt",
+    "lincomem",
+    "lincomem_ths",
+    "lincomem_hths"
+  ),
+  Meaning = c(
+    "1 if worked, 0 otherwise",
+    "2 if worked, 1 otherwise = workedm + 1",
+    "1 if did not work, 0 otherwise = 1 - workedm",
+    "log income measured in cents = log(100 * incomem)",
+    "log income measured in dollars = log(incomem)",
+    "log income measured in thousands = log(incomem / 1000)",
+    "log income measured in hundred-thousands = log(incomem / 100000)"
+  ),
+  Sample_used = c(
+    "ae98_lfp",
+    "ae98_lfp",
+    "ae98_lfp",
+    "ae98_income",
+    "ae98_income",
+    "ae98_income",
+    "ae98_income"
+  ),
+  stringsAsFactors = FALSE
+)
+
+show_desc_table(
+  outcome_coding_table,
+  caption = "Outcome codings used later for translation and scale sensitivity"
+)
+
+
+# ------------------------------------------------------------------------------
+# 12. Basic continuous-variable overview
+# ------------------------------------------------------------------------------
+
+continuous_lfp <- rbind(
+  agem    = continuous_summary(ae98_lfp$agem),
+  agefstm = continuous_summary(ae98_lfp$agefstm)
+)
+
+continuous_lfp <- data.frame(
+  Sample = "LFP sample",
+  Variable = rownames(continuous_lfp),
+  as.data.frame(continuous_lfp),
+  row.names = NULL
+)
+
+income_summary <- rbind(
+  incomem       = continuous_summary(ae98_income$incomem),
+  lincomem_cnt  = continuous_summary(ae98_income$lincomem_cnt),
+  lincomem      = continuous_summary(ae98_income$lincomem),
+  lincomem_ths  = continuous_summary(ae98_income$lincomem_ths),
+  lincomem_hths = continuous_summary(ae98_income$lincomem_hths)
+)
+
+income_summary <- data.frame(
+  Sample = "Positive-income sample",
+  Variable = rownames(income_summary),
+  as.data.frame(income_summary),
+  row.names = NULL
+)
+
+show_desc_table(
+  continuous_lfp,
+  caption = "Continuous covariates in the LFP sample"
+)
+
+show_desc_table(
+  income_summary,
+  caption = "Income variable and log-income unit transformations"
+)
+
+
+# ------------------------------------------------------------------------------
+# 13. Final interpretation notes
+# ------------------------------------------------------------------------------
+
+cat("\nInterpretation notes:\n")
+cat("  1. ae98_lfp is the sample for all labor-force-participation outcomes.\n")
+cat("  2. ae98_income is smaller because log income requires incomem > 0.\n")
+cat("  3. samesex should be close to 0.5 if the sex-composition instrument is plausibly random.\n")
+cat("  4. The four log-income outcomes differ only by additive constants.\n")
+cat("     Therefore normalized estimators should be invariant across them,\n")
+cat("     while unnormalized kappa estimators may change strongly.\n")
+cat("  5. X_lfp and X_income are now ready for propensity-score estimation later.\n")
+cat("============================================================\n")
+```
+
+
+```{r}
+# ==============================================================================
+# DESCRIPTIVE BLOCK 2 — First stage and compliance-relevant design diagnostics
+# ==============================================================================
+# Requires objects from Block 1:
+#   ae98_lfp, ae98_income, X_lfp, X_income
+#   show_desc_table(), binary_summary()
+#
+# Purpose:
+#   Inspect the core IV design before estimating the LATE:
+#     (i)   Is Z = samesex close to randomly assigned?
+#     (ii)  Does Z shift D = morekids?
+#     (iii) How large is the reduced-form relationship with outcomes?
+#     (iv) What is the implied simple Wald estimate before covariate adjustment?
+#
+# Interpretation:
+#   The first stage is E[D | Z = 1] - E[D | Z = 0].
+#   In this design, it should be positive: same-sex first two children increase
+#   the probability of having a third child.
+# ==============================================================================
+
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 2 — First stage and compliance diagnostics\n")
+cat("============================================================\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. Helper functions
+# ------------------------------------------------------------------------------
+
+mean_by_z <- function(df, var, z = "samesex") {
+  y <- df[[var]]
+  zz <- df[[z]]
+
+  c(
+    Mean_Z0 = mean(y[zz == 0], na.rm = TRUE),
+    Mean_Z1 = mean(y[zz == 1], na.rm = TRUE),
+    Difference_Z1_minus_Z0 = mean(y[zz == 1], na.rm = TRUE) -
+      mean(y[zz == 0], na.rm = TRUE),
+    N_Z0 = sum(zz == 0 & !is.na(y)),
+    N_Z1 = sum(zz == 1 & !is.na(y))
+  )
+}
+
+simple_wald <- function(df, y_var, d_var = "morekids", z_var = "samesex") {
+  y <- df[[y_var]]
+  d <- df[[d_var]]
+  z <- df[[z_var]]
+
+  rf <- mean(y[z == 1], na.rm = TRUE) - mean(y[z == 0], na.rm = TRUE)
+  fs <- mean(d[z == 1], na.rm = TRUE) - mean(d[z == 0], na.rm = TRUE)
+
+  c(
+    Reduced_form = rf,
+    First_stage = fs,
+    Wald = rf / fs
+  )
+}
+
+first_stage_lm <- function(df) {
+  fit <- lm(morekids ~ samesex, data = df)
+  s <- summary(fit)
+
+  data.frame(
+    Term = "samesex",
+    Estimate = coef(fit)["samesex"],
+    Std_Error = s$coefficients["samesex", "Std. Error"],
+    t_value = s$coefficients["samesex", "t value"],
+    p_value = s$coefficients["samesex", "Pr(>|t|)"],
+    N = nobs(fit),
+    stringsAsFactors = FALSE
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Instrument balance: how many observations have Z = 0 and Z = 1?
+# ------------------------------------------------------------------------------
+
+z_distribution <- rbind(
+  data.frame(
+    Sample = "LFP sample",
+    Variable = "samesex",
+    as.data.frame(t(binary_summary(ae98_lfp$samesex))),
+    row.names = NULL
+  ),
+  data.frame(
+    Sample = "Positive-income sample",
+    Variable = "samesex",
+    as.data.frame(t(binary_summary(ae98_income$samesex))),
+    row.names = NULL
+  )
+)
+
+show_desc_table(
+  z_distribution,
+  caption = "Distribution of the instrument samesex"
+)
+
+cat("\nInterpretation:\n")
+cat("  samesex should be close to 0.5. This is a first descriptive check that\n")
+cat("  the sex-composition instrument behaves like a quasi-random assignment.\n")
+cat("  Very large deviations from 0.5 would be suspicious.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 3. Treatment rates by instrument status: raw first stage
+# ------------------------------------------------------------------------------
+
+first_stage_table <- rbind(
+  data.frame(
+    Sample = "LFP sample",
+    Outcome = "morekids",
+    as.data.frame(t(mean_by_z(ae98_lfp, "morekids"))),
+    row.names = NULL
+  ),
+  data.frame(
+    Sample = "Positive-income sample",
+    Outcome = "morekids",
+    as.data.frame(t(mean_by_z(ae98_income, "morekids"))),
+    row.names = NULL
+  )
+)
+
+show_desc_table(
+  first_stage_table,
+  caption = "Raw first stage: treatment rates by samesex"
+)
+
+cat("\nInterpretation:\n")
+cat("  Difference_Z1_minus_Z0 is the raw first stage.\n")
+cat("  It should be positive: mothers whose first two children have the same sex\n")
+cat("  are more likely to have a third child.\n")
+cat("  This difference is also an empirical proxy for the complier share in the\n")
+cat("  unconditional Wald design.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Regression first stage: morekids on samesex
+# ------------------------------------------------------------------------------
+
+first_stage_reg <- rbind(
+  cbind(Sample = "LFP sample", first_stage_lm(ae98_lfp)),
+  cbind(Sample = "Positive-income sample", first_stage_lm(ae98_income))
+)
+
+show_desc_table(
+  first_stage_reg,
+  caption = "Regression first stage: lm(morekids ~ samesex)"
+)
+
+cat("\nInterpretation:\n")
+cat("  The coefficient on samesex is numerically the same as the raw first-stage\n")
+cat("  difference in treatment rates. The t-statistic should be very large because\n")
+cat("  the AE sample is huge. Economically, however, the first stage is modest:\n")
+cat("  the instrument shifts the probability of morekids by only a few percentage points.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 5. Outcome means by instrument status
+# ------------------------------------------------------------------------------
+
+lfp_outcome_by_z <- rbind(
+  workedm = mean_by_z(ae98_lfp, "workedm"),
+  workedm_21 = mean_by_z(ae98_lfp, "workedm_21"),
+  workedm_01 = mean_by_z(ae98_lfp, "workedm_01")
+)
+
+lfp_outcome_by_z <- data.frame(
+  Sample = "LFP sample",
+  Outcome = rownames(lfp_outcome_by_z),
+  as.data.frame(lfp_outcome_by_z),
+  row.names = NULL
+)
+
+income_outcome_by_z <- rbind(
+  lincomem_cnt = mean_by_z(ae98_income, "lincomem_cnt"),
+  lincomem = mean_by_z(ae98_income, "lincomem"),
+  lincomem_ths = mean_by_z(ae98_income, "lincomem_ths"),
+  lincomem_hths = mean_by_z(ae98_income, "lincomem_hths")
+)
+
+income_outcome_by_z <- data.frame(
+  Sample = "Positive-income sample",
+  Outcome = rownames(income_outcome_by_z),
+  as.data.frame(income_outcome_by_z),
+  row.names = NULL
+)
+
+show_desc_table(
+  lfp_outcome_by_z,
+  caption = "LFP outcomes by samesex status"
+)
+
+show_desc_table(
+  income_outcome_by_z,
+  caption = "Log-income outcomes by samesex status"
+)
+
+cat("\nInterpretation:\n")
+cat("  These are reduced-form outcome differences by instrument status.\n")
+cat("  The LFP recodings should mechanically differ by sign or level, but the\n")
+cat("  causal content is the same. The log-income unit transformations should have\n")
+cat("  identical reduced-form differences because changing units adds a constant\n")
+cat("  to log income.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Simple unconditional Wald estimates
+# ------------------------------------------------------------------------------
+
+wald_lfp <- rbind(
+  workedm = simple_wald(ae98_lfp, "workedm"),
+  workedm_21 = simple_wald(ae98_lfp, "workedm_21"),
+  workedm_01_raw = simple_wald(ae98_lfp, "workedm_01")
+)
+
+wald_lfp <- data.frame(
+  Sample = "LFP sample",
+  Outcome = rownames(wald_lfp),
+  as.data.frame(wald_lfp),
+  row.names = NULL
+)
+
+# For comparability with SUW reporting, add sign-flipped did-not-work version
+wald_lfp$Wald_reported <- wald_lfp$Wald
+wald_lfp$Wald_reported[wald_lfp$Outcome == "workedm_01_raw"] <-
+  -wald_lfp$Wald[wald_lfp$Outcome == "workedm_01_raw"]
+
+wald_income <- rbind(
+  lincomem_cnt = simple_wald(ae98_income, "lincomem_cnt"),
+  lincomem = simple_wald(ae98_income, "lincomem"),
+  lincomem_ths = simple_wald(ae98_income, "lincomem_ths"),
+  lincomem_hths = simple_wald(ae98_income, "lincomem_hths")
+)
+
+wald_income <- data.frame(
+  Sample = "Positive-income sample",
+  Outcome = rownames(wald_income),
+  as.data.frame(wald_income),
+  row.names = NULL
+)
+
+show_desc_table(
+  wald_lfp,
+  caption = "Simple unconditional Wald estimates: LFP outcomes"
+)
+
+show_desc_table(
+  wald_income,
+  caption = "Simple unconditional Wald estimates: log-income outcomes"
+)
+
+cat("\nInterpretation:\n")
+cat("  The simple Wald estimate is reduced form divided by first stage.\n")
+cat("  For workedm and workedm_21, the Wald estimate should be the same because\n")
+cat("  adding 1 to the outcome leaves the reduced-form difference unchanged.\n")
+cat("  For workedm_01, the raw sign is reversed, so Wald_reported flips it back\n")
+cat("  to the SUW-style reporting convention.\n")
+cat("  For log income, all four Wald estimates should be numerically identical\n")
+cat("  because the log-unit transformations differ only by additive constants.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Compact design summary for later reference
+# ------------------------------------------------------------------------------
+
+design_summary <- data.frame(
+  Sample = c("LFP sample", "Positive-income sample"),
+  N = c(nrow(ae98_lfp), nrow(ae98_income)),
+  Share_samesex = c(
+    mean(ae98_lfp$samesex, na.rm = TRUE),
+    mean(ae98_income$samesex, na.rm = TRUE)
+  ),
+  First_stage = c(
+    simple_wald(ae98_lfp, "workedm")["First_stage"],
+    simple_wald(ae98_income, "lincomem")["First_stage"]
+  ),
+  Wald_workedm_or_lincomem = c(
+    simple_wald(ae98_lfp, "workedm")["Wald"],
+    simple_wald(ae98_income, "lincomem")["Wald"]
+  ),
+  stringsAsFactors = FALSE
+)
+
+show_desc_table(
+  design_summary,
+  caption = "Compact IV design summary"
+)
+
+cat("\nFinal notes for Block 2:\n")
+cat("  1. If Share_samesex is close to 0.5, the instrument distribution looks plausible.\n")
+cat("  2. If First_stage is positive and non-trivial, the design has empirical relevance.\n")
+cat("  3. The simple Wald estimates are not the final SUW kappa estimates, but they\n")
+cat("     give an intuitive first look at the direction and scale of the design.\n")
+cat("  4. In later blocks, we move from this raw Wald design to covariate-adjusted\n")
+cat("     propensity-score and kappa-weight diagnostics.\n")
+cat("============================================================\n")
+
+```
+
+
+```{r}
+
+# ==============================================================================
+# DESCRIPTIVE BLOCK 3 — Covariate balance by instrument status
+# ==============================================================================
+# Requires objects from Block 1:
+#   ae98_lfp, ae98_income, X_lfp, X_income
+#   show_desc_table()
+#
+# Purpose:
+#   Check whether observed covariates are balanced across Z = samesex.
+#   Since samesex should be close to quasi-random, covariate differences between
+#   Z = 1 and Z = 0 should be small.
+#
+# Important distinction:
+#   This is NOT the final outcome-weight balance diagnostic.
+#   This is only the raw descriptive balance of covariates by instrument status.
+#   Later, outcome weights / kappa weights ask a different question:
+#     Which observations drive the LATE estimate?
+# ==============================================================================
+
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 3 — Covariate balance by instrument status\n")
+cat("============================================================\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. Helper functions
+# ------------------------------------------------------------------------------
+
+smd_binary_or_continuous <- function(x, z) {
+  x <- as.numeric(x)
+  z <- as.numeric(z)
+
+  x0 <- x[z == 0]
+  x1 <- x[z == 1]
+
+  m0 <- mean(x0, na.rm = TRUE)
+  m1 <- mean(x1, na.rm = TRUE)
+
+  sd_pooled <- sqrt(
+    (stats::var(x0, na.rm = TRUE) + stats::var(x1, na.rm = TRUE)) / 2
+  )
+
+  smd <- ifelse(sd_pooled > 0, (m1 - m0) / sd_pooled, NA_real_)
+
+  c(
+    Mean_Z0 = m0,
+    Mean_Z1 = m1,
+    Diff_Z1_minus_Z0 = m1 - m0,
+    SMD = smd,
+    Abs_SMD = abs(smd),
+    N_Z0 = sum(!is.na(x0)),
+    N_Z1 = sum(!is.na(x1))
+  )
+}
+
+covariate_balance_by_z <- function(df, covariates, sample_label) {
+  out <- lapply(covariates, function(v) {
+    stats <- smd_binary_or_continuous(df[[v]], df$samesex)
+
+    data.frame(
+      Sample = sample_label,
+      Covariate = v,
+      Mean_Z0 = stats["Mean_Z0"],
+      Mean_Z1 = stats["Mean_Z1"],
+      Diff_Z1_minus_Z0 = stats["Diff_Z1_minus_Z0"],
+      SMD = stats["SMD"],
+      Abs_SMD = stats["Abs_SMD"],
+      N_Z0 = stats["N_Z0"],
+      N_Z1 = stats["N_Z1"],
+      stringsAsFactors = FALSE
+    )
+  })
+
+  do.call(rbind, out)
+}
+
+flag_balance <- function(abs_smd) {
+  ifelse(
+    is.na(abs_smd),
+    NA_character_,
+    ifelse(abs_smd < 0.05, "Very small",
+           ifelse(abs_smd < 0.10, "Small / acceptable", "Potential imbalance"))
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Define covariates used in the childbearing application
+# ------------------------------------------------------------------------------
+
+ae_covariates <- c(
+  "agem",
+  "agefstm",
+  "sexk",
+  "sex2nd",
+  "blackm",
+  "hispm",
+  "othracem"
+)
+
+missing_covariates_lfp <- setdiff(ae_covariates, names(ae98_lfp))
+missing_covariates_income <- setdiff(ae_covariates, names(ae98_income))
+
+if (length(missing_covariates_lfp) > 0 || length(missing_covariates_income) > 0) {
+  stop(
+    paste0(
+      "Some covariates are missing.\n",
+      "Missing in ae98_lfp: ",
+      paste(missing_covariates_lfp, collapse = ", "),
+      "\nMissing in ae98_income: ",
+      paste(missing_covariates_income, collapse = ", ")
+    )
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 3. Balance table: LFP sample
+# ------------------------------------------------------------------------------
+
+balance_lfp <- covariate_balance_by_z(
+  df = ae98_lfp,
+  covariates = ae_covariates,
+  sample_label = "LFP sample"
+)
+
+balance_lfp$Balance_flag <- flag_balance(balance_lfp$Abs_SMD)
+
+show_desc_table(
+  balance_lfp,
+  caption = "Raw covariate balance by samesex: LFP sample"
+)
+
+cat("\nInterpretation — LFP sample:\n")
+cat("  This table compares observed covariates between Z = 0 and Z = 1.\n")
+cat("  Because samesex is based on child sex composition, large differences in\n")
+cat("  mother's age, age at first birth, or race variables would be suspicious.\n")
+cat("  In a plausible quasi-random design, Abs_SMD values should be very small.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Balance table: positive-income sample
+# ------------------------------------------------------------------------------
+
+balance_income <- covariate_balance_by_z(
+  df = ae98_income,
+  covariates = ae_covariates,
+  sample_label = "Positive-income sample"
+)
+
+balance_income$Balance_flag <- flag_balance(balance_income$Abs_SMD)
+
+show_desc_table(
+  balance_income,
+  caption = "Raw covariate balance by samesex: positive-income sample"
+)
+
+cat("\nInterpretation — positive-income sample:\n")
+cat("  This repeats the same balance check after restricting to mothers with\n")
+cat("  positive income. The income sample is selected on the outcome side, so it is\n")
+cat("  useful to verify that the instrument still looks balanced in this smaller sample.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 5. Compact comparison across samples
+# ------------------------------------------------------------------------------
+
+balance_compact <- rbind(
+  data.frame(
+    Sample = "LFP sample",
+    Max_Abs_SMD = max(balance_lfp$Abs_SMD, na.rm = TRUE),
+    Mean_Abs_SMD = mean(balance_lfp$Abs_SMD, na.rm = TRUE),
+    Covariate_with_max_Abs_SMD =
+      balance_lfp$Covariate[which.max(balance_lfp$Abs_SMD)],
+    stringsAsFactors = FALSE
+  ),
+  data.frame(
+    Sample = "Positive-income sample",
+    Max_Abs_SMD = max(balance_income$Abs_SMD, na.rm = TRUE),
+    Mean_Abs_SMD = mean(balance_income$Abs_SMD, na.rm = TRUE),
+    Covariate_with_max_Abs_SMD =
+      balance_income$Covariate[which.max(balance_income$Abs_SMD)],
+    stringsAsFactors = FALSE
+  )
+)
+
+show_desc_table(
+  balance_compact,
+  caption = "Compact raw covariate-balance summary"
+)
+
+cat("\nInterpretation:\n")
+cat("  Max_Abs_SMD gives the worst raw covariate imbalance by samesex.\n")
+cat("  Mean_Abs_SMD summarizes the average imbalance across covariates.\n")
+cat("  For this design, these values should be small because samesex should not\n")
+cat("  systematically sort mothers by observed covariates.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Optional simple plot: raw SMD by covariate
+# ------------------------------------------------------------------------------
+
+old_par <- par(no.readonly = TRUE)
+
+plot(
+  balance_lfp$Abs_SMD,
+  seq_along(balance_lfp$Abs_SMD),
+  xlim = c(0, max(c(balance_lfp$Abs_SMD, balance_income$Abs_SMD, 0.1), na.rm = TRUE)),
+  yaxt = "n",
+  xlab = "Absolute standardized mean difference by samesex",
+  ylab = "",
+  main = "Raw covariate balance by instrument status"
+)
+
+points(
+  balance_income$Abs_SMD,
+  seq_along(balance_income$Abs_SMD),
+  pch = 17
+)
+
+axis(
+  side = 2,
+  at = seq_along(balance_lfp$Covariate),
+  labels = balance_lfp$Covariate,
+  las = 1
+)
+
+abline(v = 0.10, lty = 2)
+abline(v = 0.05, lty = 3)
+
+legend(
+  "bottomright",
+  legend = c("LFP sample", "Positive-income sample", "0.10 threshold", "0.05 reference"),
+  pch = c(1, 17, NA, NA),
+  lty = c(NA, NA, 2, 3),
+  bty = "n"
+)
+
+par(old_par)
+
+cat("\nPlot interpretation:\n")
+cat("  This is a raw instrument-balance plot, not a final Love plot.\n")
+cat("  Points close to zero mean that Z = samesex is balanced on that covariate.\n")
+cat("  If the points are all far below 0.10, the descriptive instrument balance\n")
+cat("  looks very clean.\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Save useful objects for later blocks
+# ------------------------------------------------------------------------------
+
+ae_balance_raw_lfp <- balance_lfp
+ae_balance_raw_income <- balance_income
+ae_balance_raw_compact <- balance_compact
+
+cat("\nObjects created by Block 3:\n")
+cat("  ae_balance_raw_lfp\n")
+cat("  ae_balance_raw_income\n")
+cat("  ae_balance_raw_compact\n")
+cat("============================================================\n")
+
+
+```
+
+
+```{r}
+# ==============================================================================
+# DESCRIPTIVE BLOCK 4 — Propensity score and kappa-leverage diagnostic
+# ==============================================================================
+# Requires objects from Block 1:
+#   ae98_lfp, ae98_income, X_lfp, X_income
+#   show_desc_table()
+#
+# Purpose:
+#   Diagnose whether the AE childbearing design has the same extreme-kappa problem
+#   as the Card design.
+#
+# Key question:
+#   Are there observations with extreme p(Z=1|X), especially high p but Z=0,D=1,
+#   that dominate Abadie kappa weights?
+#
+# Interpretation:
+#   In Card, p(Z|X) was highly dispersed because nearc4 is strongly predicted by
+#   geography. In AE, samesex should be close to random, so p(Z|X) should stay
+#   close to 0.5. That should prevent massive kappa leverage.
+# ==============================================================================
+
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 4 — Propensity score and kappa leverage\n")
+cat("============================================================\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. Helper functions
+# ------------------------------------------------------------------------------
+
+safe_logit <- function(eta) {
+  eta <- pmin(pmax(eta, -35), 35)
+  1 / (1 + exp(-eta))
+}
+
+logit_mle_desc <- function(Z, X) {
+  Z <- as.numeric(Z)
+  X <- as.matrix(X)
+
+  fit <- glm.fit(
+    x = X,
+    y = Z,
+    family = binomial(link = "logit")
+  )
+
+  beta <- coef(fit)
+  beta[is.na(beta)] <- 0
+
+  p <- as.vector(safe_logit(X %*% beta))
+  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)
+
+  p
+}
+
+kappa_complier_desc <- function(Z, D, p) {
+  Z <- as.numeric(Z)
+  D <- as.numeric(D)
+  p <- pmin(pmax(as.numeric(p), 1e-8), 1 - 1e-8)
+
+  1 - D * (1 - Z) / (1 - p) - (1 - D) * Z / p
+}
+
+ps_summary <- function(p, sample_label) {
+  data.frame(
+    Sample = sample_label,
+    N = length(p),
+    Mean = mean(p),
+    SD = sd(p),
+    Min = min(p),
+    Q01 = unname(quantile(p, 0.01)),
+    Q05 = unname(quantile(p, 0.05)),
+    Q25 = unname(quantile(p, 0.25)),
+    Median = median(p),
+    Q75 = unname(quantile(p, 0.75)),
+    Q95 = unname(quantile(p, 0.95)),
+    Q99 = unname(quantile(p, 0.99)),
+    Max = max(p),
+    Share_below_0.30 = mean(p < 0.30),
+    Share_above_0.70 = mean(p > 0.70),
+    Share_below_0.10 = mean(p < 0.10),
+    Share_above_0.90 = mean(p > 0.90),
+    stringsAsFactors = FALSE
+  )
+}
+
+kappa_summary <- function(kappa, p, Z, D, sample_label) {
+  abs_k <- abs(kappa)
+
+  data.frame(
+    Sample = sample_label,
+    N = length(kappa),
+    Mean_kappa = mean(kappa),
+    SD_kappa = sd(kappa),
+    Min_kappa = min(kappa),
+    Q01_kappa = unname(quantile(kappa, 0.01)),
+    Median_kappa = median(kappa),
+    Q99_kappa = unname(quantile(kappa, 0.99)),
+    Max_kappa = max(kappa),
+    Max_abs_kappa = max(abs_k),
+    ESS_kappa_raw = sum(kappa)^2 / sum(kappa^2),
+    Share_negative_kappa = mean(kappa < 0),
+    Share_Z0_D1 = mean(Z == 0 & D == 1),
+    Share_Z1_D0 = mean(Z == 1 & D == 0),
+    Mean_p_Z0_D1 = mean(p[Z == 0 & D == 1], na.rm = TRUE),
+    Mean_p_Z1_D0 = mean(p[Z == 1 & D == 0], na.rm = TRUE),
+    stringsAsFactors = FALSE
+  )
+}
+
+top_kappa_summary <- function(df, p, kappa, sample_label, top_n = c(5, 10, 25, 50, 100)) {
+  Z <- as.numeric(df$samesex)
+  D <- as.numeric(df$morekids)
+  abs_k <- abs(kappa)
+  ord <- order(abs_k, decreasing = TRUE)
+  total_abs <- sum(abs_k)
+
+  rows <- lapply(top_n, function(n_top) {
+    idx <- ord[seq_len(min(n_top, length(ord)))]
+
+    data.frame(
+      Sample = sample_label,
+      Top_n = length(idx),
+      Share_abs_kappa = sum(abs_k[idx]) / total_abs,
+      Min_kappa_top = min(kappa[idx]),
+      Max_kappa_top = max(kappa[idx]),
+      Mean_abs_kappa_top = mean(abs_k[idx]),
+      Mean_p_top = mean(p[idx]),
+      Share_Z0_D1_top = mean(Z[idx] == 0 & D[idx] == 1),
+      Share_Z1_D0_top = mean(Z[idx] == 1 & D[idx] == 0),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  do.call(rbind, rows)
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Estimate MLE propensity scores p(Z=1|X)
+# ------------------------------------------------------------------------------
+
+Z_lfp <- as.numeric(ae98_lfp$samesex)
+D_lfp <- as.numeric(ae98_lfp$morekids)
+
+Z_income <- as.numeric(ae98_income$samesex)
+D_income <- as.numeric(ae98_income$morekids)
+
+p_lfp_ml <- logit_mle_desc(Z_lfp, X_lfp)
+p_income_ml <- logit_mle_desc(Z_income, X_income)
+
+cat("MLE propensity scores estimated for:\n")
+cat("  LFP sample\n")
+cat("  Positive-income sample\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 3. Propensity-score distribution
+# ------------------------------------------------------------------------------
+
+ps_dist_table <- rbind(
+  ps_summary(p_lfp_ml, "LFP sample"),
+  ps_summary(p_income_ml, "Positive-income sample")
+)
+
+show_desc_table(
+  ps_dist_table,
+  caption = "Distribution of estimated instrument propensity scores p(Z=1|X)"
+)
+
+cat("\nInterpretation:\n")
+cat("  For AE, p(Z=1|X) should stay close to 0.5 because samesex is close to random.\n")
+cat("  Shares below 0.30 or above 0.70 should be tiny or zero.\n")
+cat("  This is very different from Card, where geography strongly predicted nearc4.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Kappa weights for complier moments
+# ------------------------------------------------------------------------------
+
+kappa_lfp_ml <- kappa_complier_desc(Z_lfp, D_lfp, p_lfp_ml)
+kappa_income_ml <- kappa_complier_desc(Z_income, D_income, p_income_ml)
+
+kappa_dist_table <- rbind(
+  kappa_summary(
+    kappa = kappa_lfp_ml,
+    p = p_lfp_ml,
+    Z = Z_lfp,
+    D = D_lfp,
+    sample_label = "LFP sample"
+  ),
+  kappa_summary(
+    kappa = kappa_income_ml,
+    p = p_income_ml,
+    Z = Z_income,
+    D = D_income,
+    sample_label = "Positive-income sample"
+  )
+)
+
+show_desc_table(
+  kappa_dist_table,
+  caption = "Abadie kappa diagnostic under MLE p(Z|X)"
+)
+
+cat("\nInterpretation:\n")
+cat("  ESS_kappa_raw = sum(kappa)^2 / sum(kappa^2) is a simple concentration check\n")
+cat("  for the complier-moment kappa weights. It is not yet the final outcome-weight\n")
+cat("  ESS from tau_u, but it shows whether kappa mass is dominated by a few units.\n")
+cat("  If Max_abs_kappa is close to 2 and p is near 0.5, leverage is mild.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 5. Top absolute-kappa concentration
+# ------------------------------------------------------------------------------
+
+top_kappa_lfp <- top_kappa_summary(
+  df = ae98_lfp,
+  p = p_lfp_ml,
+  kappa = kappa_lfp_ml,
+  sample_label = "LFP sample"
+)
+
+top_kappa_income <- top_kappa_summary(
+  df = ae98_income,
+  p = p_income_ml,
+  kappa = kappa_income_ml,
+  sample_label = "Positive-income sample"
+)
+
+top_kappa_table <- rbind(top_kappa_lfp, top_kappa_income)
+
+show_desc_table(
+  top_kappa_table,
+  caption = "Top absolute-kappa concentration"
+)
+
+cat("\nInterpretation:\n")
+cat("  This is the compact analogue of the Card high-p diagnostic.\n")
+cat("  If the top 50 or top 100 observations explain only a small share of total\n")
+cat("  absolute kappa mass, then the design does not have the severe leverage pattern\n")
+cat("  found in Card. In Card, top-kappa units often had high p(Z|X), Z=0, and D=1.\n")
+cat("  Here, because p(Z|X) should be near 0.5, that mechanism should be much weaker.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Cell-level check: surprising instrument cells
+# ------------------------------------------------------------------------------
+
+cell_diag <- function(df, p, kappa, sample_label) {
+  Z <- as.numeric(df$samesex)
+  D <- as.numeric(df$morekids)
+
+  cells <- list(
+    "Z=0, D=0" = which(Z == 0 & D == 0),
+    "Z=0, D=1" = which(Z == 0 & D == 1),
+    "Z=1, D=0" = which(Z == 1 & D == 0),
+    "Z=1, D=1" = which(Z == 1 & D == 1)
+  )
+
+  rows <- lapply(names(cells), function(cell_name) {
+    idx <- cells[[cell_name]]
+
+    data.frame(
+      Sample = sample_label,
+      Cell = cell_name,
+      N = length(idx),
+      Share_sample = length(idx) / length(Z),
+      Mean_p = mean(p[idx], na.rm = TRUE),
+      Mean_kappa = mean(kappa[idx], na.rm = TRUE),
+      Mean_abs_kappa = mean(abs(kappa[idx]), na.rm = TRUE),
+      Max_abs_kappa = max(abs(kappa[idx]), na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  do.call(rbind, rows)
+}
+
+cell_diag_table <- rbind(
+  cell_diag(ae98_lfp, p_lfp_ml, kappa_lfp_ml, "LFP sample"),
+  cell_diag(ae98_income, p_income_ml, kappa_income_ml, "Positive-income sample")
+)
+
+show_desc_table(
+  cell_diag_table,
+  caption = "Kappa leverage by instrument-treatment cell"
+)
+
+cat("\nInterpretation:\n")
+cat("  The dangerous Card-style cell is typically high p(Z=1|X), observed Z=0,\n")
+cat("  and D=1, because 1 / (1-p) can become large. In AE, p should be close to 0.5,\n")
+cat("  so even Z=0,D=1 observations should not generate huge negative kappa values.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Save objects for later blocks
+# ------------------------------------------------------------------------------
+
+ae_p_lfp_ml <- p_lfp_ml
+ae_p_income_ml <- p_income_ml
+
+ae_kappa_lfp_ml <- kappa_lfp_ml
+ae_kappa_income_ml <- kappa_income_ml
+
+ae_ps_dist_table <- ps_dist_table
+ae_kappa_dist_table <- kappa_dist_table
+ae_top_kappa_table <- top_kappa_table
+ae_cell_diag_table <- cell_diag_table
+
+cat("Objects created by Block 4:\n")
+cat("  ae_p_lfp_ml\n")
+cat("  ae_p_income_ml\n")
+cat("  ae_kappa_lfp_ml\n")
+cat("  ae_kappa_income_ml\n")
+cat("  ae_ps_dist_table\n")
+cat("  ae_kappa_dist_table\n")
+cat("  ae_top_kappa_table\n")
+cat("  ae_cell_diag_table\n")
+cat("============================================================\n")
+
+
+```
+
+
+The question when it comes to the P(Z=1|X) is can mother age, age at first birth, child-sex indicators, race, ethnicity, etc. predict whether the first two children are same-sex?
+The output shows that the answer is no. As the MLE propensity is tightly distributed around 0.5
+Covariates hence do not meaningfully predict samesex. This is perfect as it shows how a quasy random assignment should look alike. 
+I cannot predict much better than a coin flip wheter the mother has same sex first two children
+
+
+
+```{r}
+# ==============================================================================
+# DESCRIPTIVE BLOCK 5 — MLE vs CBPS propensity-score comparison
+# ==============================================================================
+# Requires objects from previous blocks:
+#   ae98_lfp, ae98_income, X_lfp, X_income
+#   ae_p_lfp_ml, ae_p_income_ml
+#   show_desc_table()
+#
+# Purpose:
+#   Compare MLE and covariate-balancing propensity scores for p(Z=1|X).
+#   In the AE childbearing design, both should be close because samesex is already
+#   nearly randomized with respect to X.
+# ==============================================================================
+
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 5 — MLE vs CBPS propensity-score comparison\n")
+cat("============================================================\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. CBPS-style propensity score estimator
+# ------------------------------------------------------------------------------
+# This solves a covariate-balancing objective:
+#   sum_i Z_i X_i / p_i  ≈  sum_i (1-Z_i) X_i / (1-p_i)
+#
+# It is intentionally implemented as a compact diagnostic version.
+# For final estimation, keep using your main replication's CBPS routine.
+
+cbps_desc <- function(Z, X, start_p = NULL, maxit = 1000) {
+  Z <- as.numeric(Z)
+  X <- as.matrix(X)
+
+  if (is.null(start_p)) {
+    fit_start <- glm.fit(
+      x = X,
+      y = Z,
+      family = binomial(link = "logit")
+    )
+    beta_start <- coef(fit_start)
+    beta_start[is.na(beta_start)] <- 0
+  } else {
+    beta_start <- rep(0, ncol(X))
+  }
+
+  objective <- function(beta) {
+    eta <- as.vector(X %*% beta)
+    eta <- pmin(pmax(eta, -35), 35)
+    p <- 1 / (1 + exp(-eta))
+    p <- pmin(pmax(p, 1e-6), 1 - 1e-6)
+
+    moments <- colMeans((Z / p - (1 - Z) / (1 - p)) * X)
+    sum(moments^2)
+  }
+
+  opt <- optim(
+    par = beta_start,
+    fn = objective,
+    method = "BFGS",
+    control = list(maxit = maxit, reltol = 1e-10)
+  )
+
+  eta <- as.vector(X %*% opt$par)
+  eta <- pmin(pmax(eta, -35), 35)
+  p <- 1 / (1 + exp(-eta))
+  p <- pmin(pmax(p, 1e-8), 1 - 1e-8)
+
+  list(
+    p = p,
+    beta = opt$par,
+    convergence = opt$convergence,
+    objective = opt$value
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Estimate CBPS propensity scores
+# ------------------------------------------------------------------------------
+
+cbps_lfp <- cbps_desc(
+  Z = ae98_lfp$samesex,
+  X = X_lfp
+)
+
+cbps_income <- cbps_desc(
+  Z = ae98_income$samesex,
+  X = X_income
+)
+
+ae_p_lfp_cb <- cbps_lfp$p
+ae_p_income_cb <- cbps_income$p
+
+cbps_convergence <- data.frame(
+  Sample = c("LFP sample", "Positive-income sample"),
+  Convergence_code = c(cbps_lfp$convergence, cbps_income$convergence),
+  Objective_value = c(cbps_lfp$objective, cbps_income$objective),
+  stringsAsFactors = FALSE
+)
+
+show_desc_table(
+  cbps_convergence,
+  caption = "CBPS optimizer diagnostics"
+)
+
+cat("\nInterpretation:\n")
+cat("  Convergence code 0 means successful BFGS convergence.\n")
+cat("  The objective value measures remaining covariate imbalance in the CBPS moments.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 3. Compare MLE and CBPS propensity-score distributions
+# ------------------------------------------------------------------------------
+
+ps_summary_method <- function(p, sample_label, method_label) {
+  data.frame(
+    Sample = sample_label,
+    Method = method_label,
+    N = length(p),
+    Mean = mean(p),
+    SD = sd(p),
+    Min = min(p),
+    Q01 = unname(quantile(p, 0.01)),
+    Q05 = unname(quantile(p, 0.05)),
+    Q25 = unname(quantile(p, 0.25)),
+    Median = median(p),
+    Q75 = unname(quantile(p, 0.75)),
+    Q95 = unname(quantile(p, 0.95)),
+    Q99 = unname(quantile(p, 0.99)),
+    Max = max(p),
+    Share_below_0.30 = mean(p < 0.30),
+    Share_above_0.70 = mean(p > 0.70),
+    stringsAsFactors = FALSE
+  )
+}
+
+ps_mle_cb_table <- rbind(
+  ps_summary_method(ae_p_lfp_ml, "LFP sample", "MLE logit"),
+  ps_summary_method(ae_p_lfp_cb, "LFP sample", "CBPS"),
+  ps_summary_method(ae_p_income_ml, "Positive-income sample", "MLE logit"),
+  ps_summary_method(ae_p_income_cb, "Positive-income sample", "CBPS")
+)
+
+show_desc_table(
+  ps_mle_cb_table,
+  caption = "MLE versus CBPS propensity-score distributions"
+)
+
+cat("\nInterpretation:\n")
+cat("  If MLE and CBPS are very similar, this means there was little covariate\n")
+cat("  imbalance for CBPS to correct. That is what we expect in the same-sex design.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Direct MLE-CBPS difference
+# ------------------------------------------------------------------------------
+
+ps_diff_table <- data.frame(
+  Sample = c("LFP sample", "Positive-income sample"),
+  Mean_abs_difference = c(
+    mean(abs(ae_p_lfp_cb - ae_p_lfp_ml)),
+    mean(abs(ae_p_income_cb - ae_p_income_ml))
+  ),
+  Max_abs_difference = c(
+    max(abs(ae_p_lfp_cb - ae_p_lfp_ml)),
+    max(abs(ae_p_income_cb - ae_p_income_ml))
+  ),
+  Correlation = c(
+    cor(ae_p_lfp_cb, ae_p_lfp_ml),
+    cor(ae_p_income_cb, ae_p_income_ml)
+  ),
+  stringsAsFactors = FALSE
+)
+
+show_desc_table(
+  ps_diff_table,
+  caption = "Direct difference between MLE and CBPS propensity scores"
+)
+
+cat("\nInterpretation:\n")
+cat("  Small mean and max differences imply that the propensity-score method does\n")
+cat("  not materially change the estimated assignment probabilities.\n")
+cat("  High correlation means MLE and CBPS rank observations similarly.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 5. Kappa leverage under CBPS
+# ------------------------------------------------------------------------------
+
+kappa_from_p <- function(Z, D, p) {
+  Z <- as.numeric(Z)
+  D <- as.numeric(D)
+  p <- pmin(pmax(as.numeric(p), 1e-8), 1 - 1e-8)
+
+  1 - D * (1 - Z) / (1 - p) - (1 - D) * Z / p
+}
+
+kappa_summary_short <- function(kappa, p, sample_label, method_label) {
+  data.frame(
+    Sample = sample_label,
+    Method = method_label,
+    Mean_p = mean(p),
+    SD_p = sd(p),
+    Min_p = min(p),
+    Max_p = max(p),
+    Mean_kappa = mean(kappa),
+    Min_kappa = min(kappa),
+    Max_kappa = max(kappa),
+    Max_abs_kappa = max(abs(kappa)),
+    ESS_kappa_raw = sum(kappa)^2 / sum(kappa^2),
+    Share_negative_kappa = mean(kappa < 0),
+    stringsAsFactors = FALSE
+  )
+}
+
+ae_kappa_lfp_cb <- kappa_from_p(
+  Z = ae98_lfp$samesex,
+  D = ae98_lfp$morekids,
+  p = ae_p_lfp_cb
+)
+
+ae_kappa_income_cb <- kappa_from_p(
+  Z = ae98_income$samesex,
+  D = ae98_income$morekids,
+  p = ae_p_income_cb
+)
+
+kappa_mle_cb_table <- rbind(
+  kappa_summary_short(ae_kappa_lfp_ml, ae_p_lfp_ml, "LFP sample", "MLE logit"),
+  kappa_summary_short(ae_kappa_lfp_cb, ae_p_lfp_cb, "LFP sample", "CBPS"),
+  kappa_summary_short(ae_kappa_income_ml, ae_p_income_ml, "Positive-income sample", "MLE logit"),
+  kappa_summary_short(ae_kappa_income_cb, ae_p_income_cb, "Positive-income sample", "CBPS")
+)
+
+show_desc_table(
+  kappa_mle_cb_table,
+  caption = "Kappa leverage: MLE versus CBPS propensity scores"
+)
+
+cat("\nInterpretation:\n")
+cat("  If Max_abs_kappa and ESS_kappa_raw barely change from MLE to CBPS, then\n")
+cat("  propensity-score estimation is not the driver of the childbearing results.\n")
+cat("  This supports the interpretation that the same-sex design is much less exposed\n")
+cat("  to extreme propensity-score leverage than the Card design.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Save objects for later blocks
+# ------------------------------------------------------------------------------
+
+ae_p_lfp_cb <- ae_p_lfp_cb
+ae_p_income_cb <- ae_p_income_cb
+
+ae_kappa_lfp_cb <- ae_kappa_lfp_cb
+ae_kappa_income_cb <- ae_kappa_income_cb
+
+ae_ps_mle_cb_table <- ps_mle_cb_table
+ae_ps_diff_table <- ps_diff_table
+ae_kappa_mle_cb_table <- kappa_mle_cb_table
+
+cat("Objects created by Block 5:\n")
+cat("  ae_p_lfp_cb\n")
+cat("  ae_p_income_cb\n")
+cat("  ae_kappa_lfp_cb\n")
+cat("  ae_kappa_income_cb\n")
+cat("  ae_ps_mle_cb_table\n")
+cat("  ae_ps_diff_table\n")
+cat("  ae_kappa_mle_cb_table\n")
+cat("============================================================\n")
+
+```
+
+
+
+
+
+
+```{r}
+# ==============================================================================
+# DESCRIPTIVE BLOCK 6 — Outcome descriptives by treatment and instrument status
+# ==============================================================================
+# Requires objects from previous blocks:
+#   ae98_lfp, ae98_income
+#   show_desc_table()
+#
+# Purpose:
+#   Give a concise descriptive view of the outcome side:
+#     (i)   How do outcomes differ by actual treatment D = morekids?
+#     (ii)  How do outcomes differ by instrument Z = samesex?
+#     (iii) Are treatment-status differences much larger than instrument-status
+#           differences?
+#
+# Interpretation:
+#   Differences by D are descriptive associations and are endogenous.
+#   Differences by Z are reduced-form differences and are closer to the IV logic.
+# ==============================================================================
+
+
+cat("\n============================================================\n")
+cat("DESCRIPTIVE BLOCK 6 — Outcome descriptives by D and Z\n")
+cat("============================================================\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 1. Helper functions
+# ------------------------------------------------------------------------------
+
+group_mean_diff <- function(df, y_var, group_var) {
+  y <- as.numeric(df[[y_var]])
+  g <- as.numeric(df[[group_var]])
+
+  y0 <- y[g == 0]
+  y1 <- y[g == 1]
+
+  data.frame(
+    Outcome = y_var,
+    Group_var = group_var,
+    Mean_0 = mean(y0, na.rm = TRUE),
+    Mean_1 = mean(y1, na.rm = TRUE),
+    Difference_1_minus_0 = mean(y1, na.rm = TRUE) - mean(y0, na.rm = TRUE),
+    SD_0 = sd(y0, na.rm = TRUE),
+    SD_1 = sd(y1, na.rm = TRUE),
+    N_0 = sum(!is.na(y0)),
+    N_1 = sum(!is.na(y1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+make_outcome_panel <- function(df, y_vars, sample_label, group_var) {
+  out <- do.call(
+    rbind,
+    lapply(y_vars, function(y) group_mean_diff(df, y, group_var))
+  )
+
+  out$Sample <- sample_label
+  out <- out[, c(
+    "Sample",
+    "Outcome",
+    "Group_var",
+    "Mean_0",
+    "Mean_1",
+    "Difference_1_minus_0",
+    "SD_0",
+    "SD_1",
+    "N_0",
+    "N_1"
+  )]
+
+  rownames(out) <- NULL
+  out
+}
+
+
+# ------------------------------------------------------------------------------
+# 2. Define outcome groups
+# ------------------------------------------------------------------------------
+
+lfp_outcomes <- c(
+  "workedm",
+  "workedm_21",
+  "workedm_01"
+)
+
+income_outcomes <- c(
+  "lincomem_cnt",
+  "lincomem",
+  "lincomem_ths",
+  "lincomem_hths"
+)
+
+
+# ------------------------------------------------------------------------------
+# 3. Outcomes by treatment status D = morekids
+# ------------------------------------------------------------------------------
+
+lfp_by_D <- make_outcome_panel(
+  df = ae98_lfp,
+  y_vars = lfp_outcomes,
+  sample_label = "LFP sample",
+  group_var = "morekids"
+)
+
+income_by_D <- make_outcome_panel(
+  df = ae98_income,
+  y_vars = income_outcomes,
+  sample_label = "Positive-income sample",
+  group_var = "morekids"
+)
+
+show_desc_table(
+  lfp_by_D,
+  caption = "LFP outcomes by treatment status D = morekids"
+)
+
+show_desc_table(
+  income_by_D,
+  caption = "Log-income outcomes by treatment status D = morekids"
+)
+
+cat("\nInterpretation — outcomes by D:\n")
+cat("  These are raw differences between mothers with and without a third child.\n")
+cat("  They are NOT causal because morekids is endogenous.\n")
+cat("  They are still useful because they show the strong selection pattern behind D:\n")
+cat("  mothers with more children can differ systematically in labor supply and income.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 4. Outcomes by instrument status Z = samesex
+# ------------------------------------------------------------------------------
+
+lfp_by_Z <- make_outcome_panel(
+  df = ae98_lfp,
+  y_vars = lfp_outcomes,
+  sample_label = "LFP sample",
+  group_var = "samesex"
+)
+
+income_by_Z <- make_outcome_panel(
+  df = ae98_income,
+  y_vars = income_outcomes,
+  sample_label = "Positive-income sample",
+  group_var = "samesex"
+)
+
+show_desc_table(
+  lfp_by_Z,
+  caption = "LFP outcomes by instrument status Z = samesex"
+)
+
+show_desc_table(
+  income_by_Z,
+  caption = "Log-income outcomes by instrument status Z = samesex"
+)
+
+cat("\nInterpretation — outcomes by Z:\n")
+cat("  These are reduced-form differences by instrument status.\n")
+cat("  They should be much smaller than the raw D differences because samesex only\n")
+cat("  shifts treatment probability modestly. Dividing these reduced forms by the\n")
+cat("  first stage gives the simple Wald estimates from Block 2.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 5. Compact comparison: D differences versus Z differences
+# ------------------------------------------------------------------------------
+
+compact_outcome_comparison <- data.frame(
+  Sample = c(
+    "LFP sample",
+    "Positive-income sample"
+  ),
+  Main_outcome = c(
+    "workedm",
+    "lincomem"
+  ),
+  Diff_by_D = c(
+    lfp_by_D$Difference_1_minus_0[lfp_by_D$Outcome == "workedm"],
+    income_by_D$Difference_1_minus_0[income_by_D$Outcome == "lincomem"]
+  ),
+  Diff_by_Z = c(
+    lfp_by_Z$Difference_1_minus_0[lfp_by_Z$Outcome == "workedm"],
+    income_by_Z$Difference_1_minus_0[income_by_Z$Outcome == "lincomem"]
+  ),
+  First_stage = c(
+    mean(ae98_lfp$morekids[ae98_lfp$samesex == 1], na.rm = TRUE) -
+      mean(ae98_lfp$morekids[ae98_lfp$samesex == 0], na.rm = TRUE),
+    mean(ae98_income$morekids[ae98_income$samesex == 1], na.rm = TRUE) -
+      mean(ae98_income$morekids[ae98_income$samesex == 0], na.rm = TRUE)
+  ),
+  stringsAsFactors = FALSE
+)
+
+compact_outcome_comparison$Simple_Wald <- with(
+  compact_outcome_comparison,
+  Diff_by_Z / First_stage
+)
+
+compact_outcome_comparison$Abs_Diff_by_D_over_Abs_Diff_by_Z <- with(
+  compact_outcome_comparison,
+  abs(Diff_by_D) / abs(Diff_by_Z)
+)
+
+show_desc_table(
+  compact_outcome_comparison,
+  caption = "Compact comparison: treatment associations versus reduced forms"
+)
+
+cat("\nInterpretation:\n")
+cat("  Diff_by_D is the raw association with actual fertility behavior.\n")
+cat("  Diff_by_Z is the reduced-form effect of the instrument.\n")
+cat("  The reduced form should be much smaller because the instrument only moves\n")
+cat("  treatment for compliers, not for the whole sample.\n")
+cat("  Simple_Wald rescales the reduced form by the first stage.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 6. Mechanical checks for outcome recodings
+# ------------------------------------------------------------------------------
+
+mechanical_checks <- data.frame(
+  Check = c(
+    "workedm_21 - workedm",
+    "workedm + workedm_01",
+    "lincomem_cnt - lincomem",
+    "lincomem - lincomem_ths",
+    "lincomem - lincomem_hths"
+  ),
+  Expected_value = c(
+    1,
+    1,
+    log(100),
+    log(1000),
+    log(100000)
+  ),
+  Observed_mean = c(
+    mean(ae98_lfp$workedm_21 - ae98_lfp$workedm, na.rm = TRUE),
+    mean(ae98_lfp$workedm + ae98_lfp$workedm_01, na.rm = TRUE),
+    mean(ae98_income$lincomem_cnt - ae98_income$lincomem, na.rm = TRUE),
+    mean(ae98_income$lincomem - ae98_income$lincomem_ths, na.rm = TRUE),
+    mean(ae98_income$lincomem - ae98_income$lincomem_hths, na.rm = TRUE)
+  ),
+  stringsAsFactors = FALSE
+)
+
+mechanical_checks$Abs_error <- abs(
+  mechanical_checks$Observed_mean - mechanical_checks$Expected_value
+)
+
+show_desc_table(
+  mechanical_checks,
+  caption = "Mechanical checks for outcome recodings"
+)
+
+cat("\nInterpretation:\n")
+cat("  These checks confirm that the alternative outcome codings are exactly\n")
+cat("  translations/sign transformations of the same underlying outcome.\n")
+cat("  Therefore differences across normalized and unnormalized estimators later\n")
+cat("  cannot be attributed to different data; they come from estimator properties.\n\n")
+
+
+# ------------------------------------------------------------------------------
+# 7. Save objects
+# ------------------------------------------------------------------------------
+
+ae_lfp_by_D <- lfp_by_D
+ae_income_by_D <- income_by_D
+ae_lfp_by_Z <- lfp_by_Z
+ae_income_by_Z <- income_by_Z
+ae_outcome_compact <- compact_outcome_comparison
+ae_outcome_mechanical_checks <- mechanical_checks
+
+cat("Objects created by Block 6:\n")
+cat("  ae_lfp_by_D\n")
+cat("  ae_income_by_D\n")
+cat("  ae_lfp_by_Z\n")
+cat("  ae_income_by_Z\n")
+cat("  ae_outcome_compact\n")
+cat("  ae_outcome_mechanical_checks\n")
+cat("============================================================\n")
+```
+
+
+So mothers with at least three children are about 12.1 percentage points less likely to work and have about 21.5 log points lower income than mothers with only two children.
+But this is not the causal effect. It is just the raw association. Mothers who have a third child may differ systematically from mothers who do not: preferences, household structure, education, labor-market attachment, family background, partner income, etc.
+
+
+
+The instrument on the other hand produces much smaller outcome differences 
+So mothers whose first two children have the same sex are about 0.8 percentage points less likely to work and have about 0.9 log points lower income.
+
+
+The first stage rescales the reduced form into the wald estimate:
+This says: samesex increases the probability of having a third child by about 6.0 percentage points in the LFP sample and 5.4 percentage points in the positive-income sample.
+So Wald of -0.132: Among compliers — mothers whose fertility is shifted by the same-sex composition of the first two children — having an additional child is associated with around a 13 percentage point reduction in labor-force participation in the simple unconditional Wald design.
+For income : Among compliers in the positive-income sample, the simple unconditional Wald estimate suggests a negative income effect of about 16 log points.
+
+
+This means the raw fertility association is about 15 times larger than the instrument reduced form for LFP, and about 24 times larger for income.
+
+That is not a problem. It shows two things:
+
+Treatment is endogenous/selected. Mothers with more children differ a lot from mothers without more children.
+The instrument is subtle. samesex only nudges fertility behavior for a small complier group.
+
+This is exactly why the IV estimate divides the small reduced form by the small first stage.
+
+This is the raw treatment difference and why it is 15 times larger :
+Raw treatment association = -0.121
+Reduced form by instrument = -0.008
+abs(-0.121) / abs(-0.008) ≈ 15.4
