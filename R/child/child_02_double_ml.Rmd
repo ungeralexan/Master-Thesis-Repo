@@ -1,0 +1,623 @@
+---
+title: "child_02_double_ml"
+author: "Alexander Unger"
+date: "2026-06-02"
+output: html_document
+---
+```{r}
+# ==============================================================================
+# ANGRIST & EVANS (1998) — CHILDBEARING AND LABOUR SUPPLY: DML EXTENSION
+# Builds on child_repl_30 — run that first (all kappa objects must be in memory).
+#
+# Design:
+#   Z = samesex   (1 if first two children same sex)
+#   D = morekids  (1 if third child)
+#   Y = workedm   (LFP, binary) and lincomem (log income, dollars)
+#
+# Near one-sided noncompliance: almost no always-takers.
+# samesex is near-random (p ≈ 0.5) → design dominates learner, as in Vietnam.
+#
+# WHY ONLY WALD-AIPW (NOT AIPW-ATE)?
+# ------------------------------------
+# Under near one-sided noncompliance, AIPW-ATE requires estimating E[Y|D=0,X]
+# in the always-taker stratum, which is near-empty. dml_with_smoother() returns
+# NaN for AIPW-ATE in this design. Only PLR-IV and Wald-AIPW are reported.
+#
+# OUTCOME SPECIFICATIONS:
+#   LFP:    workedm (0/1), workedm_21 (+1 shift), workedm_01 (1 - workedm)
+#   Income: lincomem (dollars), lincomem_cnt (cents), lincomem_ths (thousands)
+#
+# STRUCTURE:
+#   BLOCK A — Setup, helpers, X matrices
+#   BLOCK B — LFP outcome: workedm (main spec)
+#   BLOCK C — Income outcome: lincomem (main spec)
+#   BLOCK D — Translation invariance: LFP (binary outcome)
+#   BLOCK E — Translation invariance: Log income
+#   BLOCK F — Weight diagnostics: DML vs kappa (both outcomes)
+#   BLOCK G — Love plots (full covariate spec)
+#   BLOCK H — Summary point-estimates table
+# ==============================================================================
+
+
+# ==============================================================================
+# BLOCK A — SETUP
+# Requires: child_repl_30 objects in memory.
+# ==============================================================================
+
+library(OutcomeWeights)   # dml_with_smoother(), get_outcome_weights()
+library(cobalt)           # love.plot()
+library(viridis)          # colour palette
+library(gridExtra)        # grid.arrange()
+library(ggplot2)          # required by OutcomeWeights
+
+stopifnot(
+  exists("ae98_lfp"), exists("ae98_income"),
+  exists("kappa_weights"), exists("tau_u"), exists("tau_a10"),
+  exists("tau_unnorm"), exists("logit_mle"), exists("get_cbps_p"),
+  exists("kappa_outcome_weights"), exists("weight_diag")
+)
+
+# Shorthands
+Z_lfp    <- ae98_lfp$samesex
+D_lfp    <- ae98_lfp$morekids
+Z_inc    <- ae98_income$samesex
+D_inc    <- ae98_income$morekids
+
+# Outcomes: LFP
+Y_lfp    <- ae98_lfp$workedm          # 1 if worked, 0 otherwise
+Y_lfp_21 <- ae98_lfp$workedm_21       # 2 if worked, 1 otherwise  (+1 shift)
+Y_lfp_01 <- ae98_lfp$workedm_01       # 1 if did not work, 0 otherwise
+
+# Outcomes: income
+Y_inc_dol <- ae98_income$lincomem      # log income, dollars
+Y_inc_cnt <- ae98_income$lincomem_cnt  # log income, cents  = Y_dol + log(100)
+Y_inc_ths <- ae98_income$lincomem_ths  # log income, $1000s = Y_dol - log(1000)
+
+k_inc <- log(100)   # translation constant for cents vs. dollars
+k_ths <- log(1000)  # translation constant for thousands vs. dollars
+
+# ------------------------------------------------------------------------------
+# make_X(): strips model.matrix attributes → clean numeric matrix for grf
+# grf/OutcomeWeights requires ncol >= 2
+# ------------------------------------------------------------------------------
+make_X <- function(formula, data) {
+  mm <- model.matrix(formula, data = data)
+  m  <- matrix(as.numeric(mm), nrow = nrow(mm), ncol = ncol(mm))
+  colnames(m) <- colnames(mm)
+  m
+}
+
+# DML design matrices — full covariate set (no intercept for grf)
+# LFP sample
+X_dml_lfp <- make_X(
+  ~ 0 + agem + agefstm + sexk + sex2nd + blackm + hispm + othracem,
+  ae98_lfp
+)
+
+# Income sample
+X_dml_inc <- make_X(
+  ~ 0 + agem + agefstm + sexk + sex2nd + blackm + hispm + othracem,
+  ae98_income
+)
+
+# Kappa X matrices — WITH intercept (for logit_mle / cbps)
+X_kappa_lfp <- make_X_ae(ae98_lfp)
+X_kappa_inc <- make_X_ae(ae98_income)
+
+# ------------------------------------------------------------------------------
+# get_estimate(): extract point estimate from dml summary matrix
+# ------------------------------------------------------------------------------
+get_estimate <- function(res, row_name) {
+  if ("Estimate" %in% colnames(res)) return(as.numeric(res[row_name, "Estimate"]))
+  as.numeric(res[row_name, 1])
+}
+
+# ------------------------------------------------------------------------------
+# check_weight_identity(): verify omega'Y = tau_hat (Knaus 2024 algebraic check)
+# ------------------------------------------------------------------------------
+check_weight_identity <- function(w, Y, estimate, tol = 1e-8) {
+  isTRUE(all.equal(sum(w * Y), estimate, tolerance = tol))
+}
+
+# ------------------------------------------------------------------------------
+# check_omega_rows(): guard against missing rows in omega object
+# ------------------------------------------------------------------------------
+check_omega_rows <- function(omega_obj, rows = c("PLR-IV", "Wald-AIPW")) {
+  missing_rows <- setdiff(rows, rownames(omega_obj$omega))
+  if (length(missing_rows) > 0)
+    stop("Missing outcome-weight rows: ", paste(missing_rows, collapse = ", "))
+}
+
+# ------------------------------------------------------------------------------
+# kappa_weights_bundle(): outcome weights for all six kappa estimators
+# ------------------------------------------------------------------------------
+kappa_weights_bundle <- function(Z, D, X_kappa) {
+  p_ml <- logit_mle(Z, X_kappa)
+  p_cb <- get_cbps_p(Z, X_kappa)        # note: pass Z explicitly
+  
+  kw_ml <- kappa_outcome_weights(Z, D, p_ml)
+  kw_cb <- kappa_outcome_weights(Z, D, p_cb)
+  
+  list(
+    tau_cb_u   = kw_cb$w_u,
+    tau_ml_u   = kw_ml$w_u,
+    tau_ml_a10 = kw_ml$w_a10,
+    tau_ml_a   = kw_ml$w_a,
+    tau_ml_a1  = kw_ml$w_a1,
+    tau_ml_a0  = kw_ml$w_a0,
+    p_ml       = p_ml,
+    p_cb       = p_cb
+  )
+}
+
+cat(sprintf(
+  "BLOCK A ready.  LFP: N=%d | Income: N=%d | mean(Z_lfp)=%.3f\n\n",
+  nrow(ae98_lfp), nrow(ae98_income), mean(Z_lfp)
+))
+
+
+```
+
+```{r}
+
+
+# ==============================================================================
+# BLOCK B — LFP OUTCOME: workedm
+# Y = 1 if worked, 0 otherwise   (main LFP spec)
+# Full covariate set: age, age at first birth, child sex dummies, race dummies
+# ==============================================================================
+#
+# Note: samesex is near-random (p ≈ 0.5) across all covariate cells.
+# As in Vietnam, "design dominates learner": ESS and % negative weights will be
+# nearly identical across PLR-IV, Wald-AIPW, and kappa estimators.
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK B — DML: LFP outcome (workedm)\n")
+cat(strrep("=", 70), "\n\n")
+
+dml_lfp <- dml_with_smoother(Y_lfp, D_lfp, X_dml_lfp, Z_lfp,
+                             n_cf_folds = 5, tune.parameters = "all")
+res_lfp <- summary(dml_lfp)
+
+cat("Point estimates (IV rows only):\n")
+print(res_lfp[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+# Extract outcome weights
+omega_lfp      <- get_outcome_weights(dml_lfp)
+check_omega_rows(omega_lfp)
+w_plriv_lfp    <- as.vector(omega_lfp$omega["PLR-IV",    ])
+w_waldaipw_lfp <- as.vector(omega_lfp$omega["Wald-AIPW", ])
+
+cat("\nAlgebraic check (omega'Y = tau_hat, must be TRUE):\n")
+cat("  PLR-IV:   ",
+    check_weight_identity(w_plriv_lfp,    Y_lfp, get_estimate(res_lfp, "PLR-IV")),    "\n")
+cat("  Wald-AIPW:",
+    check_weight_identity(w_waldaipw_lfp, Y_lfp, get_estimate(res_lfp, "Wald-AIPW")), "\n\n")
+
+cat("Weight diagnostics (Sum_w = 0 => translation invariant):\n")
+print(rbind(
+  weight_diag(w_plriv_lfp,    "PLR-IV     (DML, LFP)"),
+  weight_diag(w_waldaipw_lfp, "Wald-AIPW  (DML, LFP)")
+), row.names = FALSE)
+
+cat("\nBLOCK B done. Objects: dml_lfp, w_plriv_lfp, w_waldaipw_lfp\n\n")
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK C — INCOME OUTCOME: lincomem (log income, dollars)
+# Y = log(incomem)   (main income spec; positive-income subsample)
+# ==============================================================================
+
+set.seed(42)
+cat(strrep("=", 70), "\n")
+cat("BLOCK C — DML: Income outcome (lincomem, dollars)\n")
+cat(strrep("=", 70), "\n\n")
+
+dml_inc <- dml_with_smoother(Y_inc_dol, D_inc, X_dml_inc, Z_inc,
+                             n_cf_folds = 5, tune.parameters = "all")
+res_inc <- summary(dml_inc)
+
+cat("Point estimates (IV rows only):\n")
+print(res_inc[c("PLR-IV", "Wald-AIPW"), , drop = FALSE])
+
+omega_inc      <- get_outcome_weights(dml_inc)
+check_omega_rows(omega_inc)
+w_plriv_inc    <- as.vector(omega_inc$omega["PLR-IV",    ])
+w_waldaipw_inc <- as.vector(omega_inc$omega["Wald-AIPW", ])
+
+cat("\nAlgebraic check (omega'Y = tau_hat, must be TRUE):\n")
+cat("  PLR-IV:   ",
+    check_weight_identity(w_plriv_inc,    Y_inc_dol, get_estimate(res_inc, "PLR-IV")),    "\n")
+cat("  Wald-AIPW:",
+    check_weight_identity(w_waldaipw_inc, Y_inc_dol, get_estimate(res_inc, "Wald-AIPW")), "\n\n")
+
+cat("Weight diagnostics (Sum_w = 0 => translation invariant):\n")
+print(rbind(
+  weight_diag(w_plriv_inc,    "PLR-IV     (DML, income)"),
+  weight_diag(w_waldaipw_inc, "Wald-AIPW  (DML, income)")
+), row.names = FALSE)
+
+cat("\nBLOCK C done. Objects: dml_inc, w_plriv_inc, w_waldaipw_inc\n\n")
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK D — TRANSLATION INVARIANCE: LFP (binary outcome)
+# Requires: BLOCK B.
+#
+# For any estimator tau_hat = sum_i omega_i Y_i:
+#   Y_21 = Y_lfp + 1  =>  tau_hat(Y_21) - tau_hat(Y_lfp) = 1 * sum(omega)
+#   Y_01 = 1 - Y_lfp  =>  tau_hat(Y_01) = -tau_hat(Y_lfp)  [scale + translate]
+#
+# Normalized kappa estimators and fully-normalized DML estimators satisfy
+# sum(omega) = 0, so the estimate is unchanged by the +1 shift.
+# Unnormalized estimators will differ across all three codings.
+# ==============================================================================
+cat(strrep("=", 70), "\n")
+cat("BLOCK D — TRANSLATION INVARIANCE: LFP\n")
+cat(strrep("=", 70), "\n\n")
+
+k_lfp <- 1  # translation constant (workedm -> workedm + 1)
+
+print_ti_lfp <- function() {
+  kw <- kappa_weights_bundle(Z_lfp, D_lfp, X_kappa_lfp)
+  p_ml <- kw$p_ml;  p_cb <- kw$p_cb
+  
+  cat(sprintf("  %-22s  %9s  %9s  %9s  %9s  %7s\n",
+              "Estimator", "Y=0/1", "Y=1/2", "Y_01(raw)", "-Y_01", "TI?"))
+  cat(strrep("-", 80), "\n")
+  
+  rows <- list(
+    list(name = "PLR-IV",
+         w    = w_plriv_lfp,
+         e01  = sum(w_plriv_lfp * Y_lfp),
+         e21  = sum(w_plriv_lfp * Y_lfp_21)),
+    
+    list(name = "Wald-AIPW",
+         w    = w_waldaipw_lfp,
+         e01  = sum(w_waldaipw_lfp * Y_lfp),
+         e21  = sum(w_waldaipw_lfp * Y_lfp_21)),
+    
+    list(name = "tau_cb_u",
+         w    = kw$tau_cb_u,
+         e01  = tau_u(Y_lfp, Z_lfp, D_lfp, p_cb),
+         e21  = tau_u(Y_lfp_21, Z_lfp, D_lfp, p_cb)),
+    
+    list(name = "tau_ml_u",
+         w    = kw$tau_ml_u,
+         e01  = tau_u(Y_lfp, Z_lfp, D_lfp, p_ml),
+         e21  = tau_u(Y_lfp_21, Z_lfp, D_lfp, p_ml)),
+    
+    list(name = "tau_ml_a10",
+         w    = kw$tau_ml_a10,
+         e01  = tau_a10(Y_lfp, Z_lfp, D_lfp, p_ml),
+         e21  = tau_a10(Y_lfp_21, Z_lfp, D_lfp, p_ml)),
+    
+    list(name = "tau_ml_a",
+         w    = kw$tau_ml_a,
+         e01  = tau_unnorm(Y_lfp, Z_lfp, D_lfp, p_ml, "a"),
+         e21  = tau_unnorm(Y_lfp_21, Z_lfp, D_lfp, p_ml, "a")),
+    
+    list(name = "tau_ml_a0",
+         w    = kw$tau_ml_a0,
+         e01  = tau_unnorm(Y_lfp, Z_lfp, D_lfp, p_ml, "a0"),
+         e21  = tau_unnorm(Y_lfp_21, Z_lfp, D_lfp, p_ml, "a0"))
+  )
+  
+  for (r in rows) {
+    raw_01 <- -tau_u(Y_lfp_01, Z_lfp, D_lfp, p_ml)   # placeholder sign convention
+    # For display: use the actual estimate for Y_01 (sign-flipped for the "not work" version)
+    e_01_raw <- if (grepl("PLR-IV",    r$name)) sum(w_plriv_lfp    * Y_lfp_01) else
+      if (grepl("Wald-AIPW", r$name)) sum(w_waldaipw_lfp * Y_lfp_01) else
+        if (grepl("tau_cb_u",  r$name)) tau_u(Y_lfp_01, Z_lfp, D_lfp, p_cb)       else
+          if (grepl("tau_ml_u",  r$name)) tau_u(Y_lfp_01, Z_lfp, D_lfp, p_ml)       else
+            if (grepl("a10",       r$name)) tau_a10(Y_lfp_01, Z_lfp, D_lfp, p_ml)     else
+              if (grepl("tau_ml_a$", r$name)) tau_unnorm(Y_lfp_01, Z_lfp, D_lfp, p_ml, "a") else
+                tau_unnorm(Y_lfp_01, Z_lfp, D_lfp, p_ml, "a0")
+    
+    diff21 <- r$e21 - r$e01
+    ti_ok  <- isTRUE(all.equal(diff21, k_lfp * sum(r$w), tolerance = 1e-6))
+    
+    cat(sprintf("  %-22s  %9.4f  %9.4f  %9.4f  %9.4f  %7s\n",
+                r$name, r$e01, r$e21, e_01_raw, -e_01_raw,
+                if (ti_ok) "PASS" else "FAIL"))
+  }
+  cat("\n")
+  cat("  Columns: Y=0/1 (original) | Y=1/2 (+1 shift) | Y_01 raw tau(1-Y) | -Y_01 (signed back)\n")
+  cat("  PASS = |tau(Y+1) - tau(Y) - sum(omega)| < 1e-6\n\n")
+}
+
+print_ti_lfp()
+
+cat("BLOCK D done.\n\n")
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK E — TRANSLATION INVARIANCE: LOG INCOME
+# Requires: BLOCK C.
+#
+# Three scalings: dollars, cents (+log(100)), $1000s (-log(1000)).
+# Prediction: tau_hat(Y_cnt) - tau_hat(Y_dol) = log(100) * sum(omega)
+#             => 0 for normalized, non-zero for unnormalized.
+#
+# This mirrors BLOCK D of the Vietnam DML exactly.
+# ==============================================================================
+cat(strrep("=", 70), "\n")
+cat("BLOCK E — TRANSLATION INVARIANCE: LOG INCOME\n")
+cat(strrep("=", 70), "\n\n")
+
+cat(sprintf("k (dollars → cents)     = log(100)  = %.6f\n",   k_inc))
+cat(sprintf("k (dollars → thousands) = -log(1000) = %.6f\n\n", -k_ths))
+
+print_ti_inc <- function() {
+  kw <- kappa_weights_bundle(Z_inc, D_inc, X_kappa_inc)
+  p_ml <- kw$p_ml;  p_cb <- kw$p_cb
+  
+  cat(sprintf("  %-22s  %9s  %9s  %9s  %10s  %10s  %7s\n",
+              "Estimator", "Dollars", "Cents", "$1000s",
+              "Diff(cnt)", "Diff(ths)", "TI?"))
+  cat(strrep("-", 88), "\n")
+  
+  rows <- list(
+    list(name = "PLR-IV",
+         w    = w_plriv_inc,
+         edol = sum(w_plriv_inc * Y_inc_dol),
+         ecnt = sum(w_plriv_inc * Y_inc_cnt),
+         eths = sum(w_plriv_inc * Y_inc_ths)),
+    
+    list(name = "Wald-AIPW",
+         w    = w_waldaipw_inc,
+         edol = sum(w_waldaipw_inc * Y_inc_dol),
+         ecnt = sum(w_waldaipw_inc * Y_inc_cnt),
+         eths = sum(w_waldaipw_inc * Y_inc_ths)),
+    
+    list(name = "tau_cb_u",
+         w    = kw$tau_cb_u,
+         edol = tau_u(Y_inc_dol, Z_inc, D_inc, p_cb),
+         ecnt = tau_u(Y_inc_cnt, Z_inc, D_inc, p_cb),
+         eths = tau_u(Y_inc_ths, Z_inc, D_inc, p_cb)),
+    
+    list(name = "tau_ml_u",
+         w    = kw$tau_ml_u,
+         edol = tau_u(Y_inc_dol, Z_inc, D_inc, p_ml),
+         ecnt = tau_u(Y_inc_cnt, Z_inc, D_inc, p_ml),
+         eths = tau_u(Y_inc_ths, Z_inc, D_inc, p_ml)),
+    
+    list(name = "tau_ml_a10",
+         w    = kw$tau_ml_a10,
+         edol = tau_a10(Y_inc_dol, Z_inc, D_inc, p_ml),
+         ecnt = tau_a10(Y_inc_cnt, Z_inc, D_inc, p_ml),
+         eths = tau_a10(Y_inc_ths, Z_inc, D_inc, p_ml)),
+    
+    list(name = "tau_ml_a",
+         w    = kw$tau_ml_a,
+         edol = tau_unnorm(Y_inc_dol, Z_inc, D_inc, p_ml, "a"),
+         ecnt = tau_unnorm(Y_inc_cnt, Z_inc, D_inc, p_ml, "a"),
+         eths = tau_unnorm(Y_inc_ths, Z_inc, D_inc, p_ml, "a")),
+    
+    list(name = "tau_ml_a0",
+         w    = kw$tau_ml_a0,
+         edol = tau_unnorm(Y_inc_dol, Z_inc, D_inc, p_ml, "a0"),
+         ecnt = tau_unnorm(Y_inc_cnt, Z_inc, D_inc, p_ml, "a0"),
+         eths = tau_unnorm(Y_inc_ths, Z_inc, D_inc, p_ml, "a0"))
+  )
+  
+  for (r in rows) {
+    diff_cnt <- r$ecnt - r$edol
+    diff_ths <- r$eths - r$edol
+    pred_cnt <- sum(r$w) * k_inc
+    pred_ths <- sum(r$w) * (-k_ths)
+    ti_ok <- isTRUE(all.equal(diff_cnt, pred_cnt, tolerance = 1e-8)) &&
+      isTRUE(all.equal(diff_ths, pred_ths, tolerance = 1e-8))
+    
+    cat(sprintf("  %-22s  %9.4f  %9.4f  %9.4f  %10.4f  %10.4f  %7s\n",
+                r$name, r$edol, r$ecnt, r$eths,
+                diff_cnt, diff_ths, if (ti_ok) "PASS" else "FAIL"))
+  }
+  cat("\n")
+  cat("  PASS = diff equals sum(omega)*k to tolerance 1e-8\n\n")
+}
+
+print_ti_inc()
+
+cat("BLOCK E done.\n\n")
+
+```
+
+
+
+```{r}
+# ==============================================================================
+# BLOCK F — WEIGHT DIAGNOSTICS: DML VS KAPPA
+# Requires: BLOCKS B and C.
+#
+# Key expected findings for AE design:
+#   - samesex near-random → p ≈ 0.5 everywhere → design dominates learner
+#   - ESS similar across all estimators (same as Vietnam finding)
+#   - Near one-sided noncompliance → mean(kappa0) ≈ 0 → tau_ml_a0 explodes (near-zero denom)
+#   - Wald-AIPW: Sum_w ≈ 0 (fully normalized); PLR-IV: Sum_w ≈ 0
+# ==============================================================================
+cat(strrep("=", 70), "\n")
+cat("BLOCK F — WEIGHT DIAGNOSTICS: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
+cat("Sum_w = 0 => translation invariant  |  ESS = 1 / sum(w_i^2)\n\n")
+
+kw_lfp_bundle <- kappa_weights_bundle(Z_lfp, D_lfp, X_kappa_lfp)
+kw_inc_bundle <- kappa_weights_bundle(Z_inc, D_inc, X_kappa_inc)
+
+diag_lfp <- rbind(
+  weight_diag(w_plriv_lfp,              "PLR-IV        (DML)"),
+  weight_diag(w_waldaipw_lfp,           "Wald-AIPW     (DML)"),
+  weight_diag(kw_lfp_bundle$tau_cb_u,   "tau_cb_u      (kappa)"),
+  weight_diag(kw_lfp_bundle$tau_ml_u,   "tau_ml_u      (kappa)"),
+  weight_diag(kw_lfp_bundle$tau_ml_a10, "tau_ml_a10    (kappa)"),
+  weight_diag(kw_lfp_bundle$tau_ml_a,   "tau_ml_a      (kappa)"),
+  weight_diag(kw_lfp_bundle$tau_ml_a1,  "tau_ml_a1/t   (kappa)"),
+  weight_diag(kw_lfp_bundle$tau_ml_a0,  "tau_ml_a0     (kappa)")
+)
+
+diag_inc <- rbind(
+  weight_diag(w_plriv_inc,              "PLR-IV        (DML)"),
+  weight_diag(w_waldaipw_inc,           "Wald-AIPW     (DML)"),
+  weight_diag(kw_inc_bundle$tau_cb_u,   "tau_cb_u      (kappa)"),
+  weight_diag(kw_inc_bundle$tau_ml_u,   "tau_ml_u      (kappa)"),
+  weight_diag(kw_inc_bundle$tau_ml_a10, "tau_ml_a10    (kappa)"),
+  weight_diag(kw_inc_bundle$tau_ml_a,   "tau_ml_a      (kappa)"),
+  weight_diag(kw_inc_bundle$tau_ml_a1,  "tau_ml_a1/t   (kappa)"),
+  weight_diag(kw_inc_bundle$tau_ml_a0,  "tau_ml_a0     (kappa)")
+)
+
+cat("--- LFP outcome (workedm) ---\n")
+print(diag_lfp, row.names = FALSE)
+
+cat("\n--- Income outcome (lincomem, dollars) ---\n")
+print(diag_inc, row.names = FALSE)
+
+cat("\nBLOCK F done.\n\n")
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK G — LOVE PLOTS: DML VS KAPPA
+# Requires: BLOCKS B, C, F.
+#
+# Outcome weights are signed contrasts. Multiply by (2D - 1) to map onto
+# treated-vs-control balance convention expected by cobalt::love.plot().
+#
+# Two 2×4 grids:
+#   G1 — LFP outcome (8 estimators × full covariate set)
+#   G2 — Income outcome (8 estimators × full covariate set)
+# ==============================================================================
+cat(strrep("=", 70), "\n")
+cat("BLOCK G — LOVE PLOTS: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
+
+make_love_ae <- function(title_str, w_vec, D_vec, X_mat) {
+  love.plot(
+    D_vec ~ X_mat,
+    weights    = w_vec * (2 * D_vec - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+# --- G1: LFP ---
+cat("G1: LFP love plots (2x4 grid)\n")
+lp_lfp1 <- make_love_ae("PLR-IV",       w_plriv_lfp,              D_lfp, X_dml_lfp)
+lp_lfp2 <- make_love_ae("Wald-AIPW",    w_waldaipw_lfp,           D_lfp, X_dml_lfp)
+lp_lfp3 <- make_love_ae("tau_cb_u",     kw_lfp_bundle$tau_cb_u,   D_lfp, X_dml_lfp)
+lp_lfp4 <- make_love_ae("tau_ml_u",     kw_lfp_bundle$tau_ml_u,   D_lfp, X_dml_lfp)
+lp_lfp5 <- make_love_ae("tau_ml_a10",   kw_lfp_bundle$tau_ml_a10, D_lfp, X_dml_lfp)
+lp_lfp6 <- make_love_ae("tau_ml_a",     kw_lfp_bundle$tau_ml_a,   D_lfp, X_dml_lfp)
+lp_lfp7 <- make_love_ae("tau_ml_a1/t",  kw_lfp_bundle$tau_ml_a1,  D_lfp, X_dml_lfp)
+lp_lfp8 <- make_love_ae("tau_ml_a0",    kw_lfp_bundle$tau_ml_a0,  D_lfp, X_dml_lfp)
+grid.arrange(lp_lfp1, lp_lfp2, lp_lfp3, lp_lfp4,
+             lp_lfp5, lp_lfp6, lp_lfp7, lp_lfp8, nrow = 2)
+
+# --- G2: Income ---
+cat("G2: Income love plots (2x4 grid)\n")
+lp_inc1 <- make_love_ae("PLR-IV",       w_plriv_inc,              D_inc, X_dml_inc)
+lp_inc2 <- make_love_ae("Wald-AIPW",    w_waldaipw_inc,           D_inc, X_dml_inc)
+lp_inc3 <- make_love_ae("tau_cb_u",     kw_inc_bundle$tau_cb_u,   D_inc, X_dml_inc)
+lp_inc4 <- make_love_ae("tau_ml_u",     kw_inc_bundle$tau_ml_u,   D_inc, X_dml_inc)
+lp_inc5 <- make_love_ae("tau_ml_a10",   kw_inc_bundle$tau_ml_a10, D_inc, X_dml_inc)
+lp_inc6 <- make_love_ae("tau_ml_a",     kw_inc_bundle$tau_ml_a,   D_inc, X_dml_inc)
+lp_inc7 <- make_love_ae("tau_ml_a1/t",  kw_inc_bundle$tau_ml_a1,  D_inc, X_dml_inc)
+lp_inc8 <- make_love_ae("tau_ml_a0",    kw_inc_bundle$tau_ml_a0,  D_inc, X_dml_inc)
+grid.arrange(lp_inc1, lp_inc2, lp_inc3, lp_inc4,
+             lp_inc5, lp_inc6, lp_inc7, lp_inc8, nrow = 2)
+
+cat("BLOCK G done.\n\n")
+
+```
+
+
+```{r}
+# ==============================================================================
+# BLOCK H — SUMMARY TABLE: DML VS KAPPA POINT ESTIMATES
+# Requires: BLOCKS B and C.
+#
+# Four columns: LFP (workedm) | Log income (dollars)
+# Rows: 2SLS (from child_repl_30) | DML PLR-IV | DML Wald-AIPW | kappa estimators
+# ==============================================================================
+cat(strrep("=", 70), "\n")
+cat("BLOCK H — POINT ESTIMATES: DML VS KAPPA\n")
+cat(strrep("=", 70), "\n\n")
+
+# Retrieve kappa point estimates from the blocks already run in child_repl_30
+# (blk_lfp_01 and blk_inc_dollars are the canonical single-spec objects)
+pe_lfp <- blk_lfp_01$estimates
+pe_inc <- blk_inc_dollars$estimates
+
+cat(sprintf("  %-22s  %12s  %12s\n",  "Estimator", "LFP",  "Log income"))
+cat(strrep("-", 52), "\n")
+
+# 2SLS benchmark
+cat(sprintf("  %-22s  %12.4f  %12.4f\n",
+            "2SLS",
+            blk_lfp_01$tsls_coef,
+            blk_inc_dollars$tsls_coef))
+
+cat(strrep("-", 52), "\n")
+
+# DML rows
+cat(sprintf("  %-22s  %12.4f  %12.4f\n",
+            "PLR-IV      (DML)",
+            get_estimate(res_lfp, "PLR-IV"),
+            get_estimate(res_inc, "PLR-IV")))
+
+cat(sprintf("  %-22s  %12.4f  %12.4f\n",
+            "Wald-AIPW   (DML)",
+            get_estimate(res_lfp, "Wald-AIPW"),
+            get_estimate(res_inc, "Wald-AIPW")))
+
+cat(strrep("-", 52), "\n")
+
+# Kappa rows — normalized
+for (nm in c("tau_cb_u", "tau_ml_u", "tau_ml_a10")) {
+  cat(sprintf("  %-22s  %12.4f  %12.4f\n", nm, pe_lfp[nm], pe_inc[nm]))
+}
+
+cat(strrep("-", 52), "\n")
+
+# Kappa rows — unnormalized
+for (nm in c("tau_ml_a", "tau_ml_t", "tau_ml_a0")) {
+  nm_key <- if (nm == "tau_ml_t") "tau_ml_a1" else nm   # internal key
+  cat(sprintf("  %-22s  %12.4f  %12.4f\n", nm, pe_lfp[nm_key], pe_inc[nm_key]))
+}
+
+cat(strrep("=", 70), "\n")
+cat("DML extension complete.\n")
+cat(strrep("=", 70), "\n")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
