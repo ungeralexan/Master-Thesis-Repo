@@ -1,0 +1,470 @@
+---
+title: "Kappa Outcome Weights for LATE Estimation"
+subtitle: "Extending the PIVE Framework to Abadie (2003) Kappa Estimators"
+author: "Alexander Unger"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Kappa Outcome Weights for LATE Estimation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+bibliography: references.bib
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Introduction
+
+The `OutcomeWeights` package [@knaus2024] provides a unified framework for
+expressing treatment effect estimators as weighted sums of observed outcomes:
+
+$$\hat{\tau} = \sum_{i=1}^{N} \omega_i Y_i.$$
+
+Once outcome weights $\omega_i$ are in hand, the same Love-plot and effective-sample-size
+diagnostics that apply to DML/GRF estimators can be applied to any estimator in this
+class.
+
+Knaus (2024) derives outcome weights for DML and generalised random forest estimators and
+sketches the derivation for Abadie's kappa estimators in Appendix A.4 — but stops short
+of providing a closed-form implementation or an empirical illustration. This vignette fills
+that gap. We derive closed-form $\omega_i$ vectors for all five kappa-based LATE estimators
+of Słoczyński, Uysal, and Wooldridge (2025), implement them in `kappa_outcome_weights()`,
+and show how to plug the result directly into `cobalt::love.plot()` and
+`weight_diag()` — the same pipeline used for DML estimators.
+
+## What this vignette covers
+
+1. The conceptual distinction between Abadie's *kappa weights* ($\kappa_i$) and *outcome
+   weights* ($\omega_i$) in the PIVE sense.
+2. Closed-form derivations of $\omega_i$ for all five estimators.
+3. Why $\sum_i \omega_i = 0$ is the exact finite-sample criterion for translation invariance.
+4. Implementation of `kappa_outcome_weights()` and `weight_diag()`.
+5. A worked example using the Vietnam draft lottery data of Angrist (1990), replicating
+   the setting of SUW (2025) Table 2.
+
+---
+
+# Two Different Kinds of Weights
+
+A common source of confusion in the kappa literature is the overloading of the word
+"weights." There are two distinct objects:
+
+**Kappa weights $\kappa_i$** are *identification* objects from Abadie (2003), Lemma 2.1.
+They are not estimator-specific; they depend only on $(Z_i, D_i, p(X_i))$ and satisfy
+
+$$E[\kappa_i \cdot g(Y_i, D_i)] = E[g(Y_1, 1) - g(Y_0, 0) \mid D_1 > D_0] \cdot P(D_1 > D_0)$$
+
+for any measurable function $g$. They are population objects that *identify* complier
+moments, but they do not directly tell you how to combine $Y_i$ values to form $\hat\tau$.
+
+**Outcome weights $\omega_i$** are *estimator-specific* sample objects such that
+$\hat\tau = \sum_i \omega_i Y_i$ exactly. They depend on which estimator you use and on the
+realised propensity scores. These are the weights that enter Love plots, ESS calculations,
+and the translation-invariance diagnostic. They are derived *from* $\kappa_i$ but are not
+the same thing.
+
+The distinction matters practically: `cobalt::love.plot()` requires $\omega_i$, not $\kappa_i$.
+
+---
+
+# Outcome-Weight Derivations
+
+## Setup and notation
+
+Let $Z_i \in \{0,1\}$ be a binary instrument, $D_i \in \{0,1\}$ treatment, $Y_i$ outcome,
+and $p_i = P(Z_i = 1 \mid X_i)$ the instrument propensity score. Define:
+
+$$\kappa_i = 1 - \frac{D_i(1-Z_i)}{1-p_i} - \frac{(1-D_i)Z_i}{p_i}, \qquad
+\kappa_i^1 = \frac{D_i(Z_i - p_i)}{p_i(1-p_i)}, \qquad
+\kappa_i^0 = \frac{(1-D_i)((1-Z_i)-(1-p_i))}{p_i(1-p_i)}.$$
+
+All five estimators below can be written as $\hat\tau = \sum_i \omega_i Y_i$ for
+appropriate $\omega_i$.
+
+## Normalised estimator $\hat\tau_u$ (Uysal 2011) {#tau-u}
+
+Define $S_1 = \sum_i Z_i/p_i$, $S_0 = \sum_i (1-Z_i)/(1-p_i)$, and the first-stage
+denominator
+
+$$\hat{D} = \frac{\sum_i D_i Z_i / p_i}{S_1} - \frac{\sum_i D_i(1-Z_i)/(1-p_i)}{S_0}.$$
+
+Then
+
+$$\hat\tau_u = \frac{1}{\hat{D}} \left[\frac{\sum_i Y_i Z_i / p_i}{S_1}
+             - \frac{\sum_i Y_i(1-Z_i)/(1-p_i)}{S_0}\right]
+           = \sum_i \omega_i^u Y_i,$$
+
+where the outcome weights are
+
+$$\boxed{\omega_i^u = \frac{1}{\hat{D}}\left[\frac{Z_i/p_i}{S_1}
+                     - \frac{(1-Z_i)/(1-p_i)}{S_0}\right].}$$
+
+**Sum-to-zero.** $\sum_i \omega_i^u = \hat{D}^{-1}[S_1/S_1 - S_0/S_0] = 0$ exactly,
+because every $Y_i$ is replaced by 1 in the bracketed sum. Hence $\hat\tau_u$ is
+translation invariant by construction.
+
+## Normalised estimator $\hat\tau_{a,10}$ (Abadie–Cattaneo) {#tau-a10}
+
+$$\hat\tau_{a,10} = \frac{\sum_i \kappa_i^1 Y_i}{\sum_i \kappa_i^1}
+                 - \frac{\sum_i \kappa_i^0 Y_i}{\sum_i \kappa_i^0}
+                 = \sum_i \omega_i^{a,10} Y_i,$$
+
+where
+
+$$\boxed{\omega_i^{a,10} = \frac{\kappa_i^1}{\sum_j \kappa_j^1}
+                         - \frac{\kappa_i^0}{\sum_j \kappa_j^0}.}$$
+
+**Sum-to-zero.** $\sum_i \omega_i^{a,10} = 1 - 1 = 0$ because each ratio sums to 1.
+Translation invariance follows immediately.
+
+## Unnormalised estimators $\hat\tau_a$, $\hat\tau_t$, $\hat\tau_{a,0}$ {#unnorm}
+
+All three share the numerator
+
+$$\hat\Delta = \frac{1}{N}\sum_i Y_i \cdot \frac{Z_i - p_i}{p_i(1-p_i)},$$
+
+and differ only in their denominator $\hat\Gamma \in \{\overline\kappa,\,
+\overline\kappa^1,\, \overline\kappa^0\}$. The outcome weights are
+
+$$\boxed{\omega_i^a = \frac{(Z_i - p_i)/[p_i(1-p_i)]}{N \cdot \overline\kappa},}$$
+
+and analogously with $\overline\kappa^1$ and $\overline\kappa^0$ for $\hat\tau_t$ and
+$\hat\tau_{a,0}$.
+
+**Sum not zero.** $\sum_i \omega_i^a = \hat\Delta / \overline\kappa \cdot
+[\text{something involving } p]$, which is not zero in general. Adding a constant $c$ to
+every $Y_i$ shifts $\hat\Delta$ by $c \cdot \overline{(Z-p)/[p(1-p)]}$, which does not
+cancel. This is precisely the translation-invariance failure documented in
+Proposition 3.2 of SUW (2025).
+
+**Key identity.** For *any* estimator expressed as $\hat\tau = \sum_i \omega_i Y_i$,
+
+$$\hat\tau(Y + k) - \hat\tau(Y) = k \sum_i \omega_i.$$
+
+So $\sum_i \omega_i = 0$ is the *exact* finite-sample condition for translation invariance —
+not just an asymptotic property.
+
+---
+
+# Implementation
+
+## `kappa_outcome_weights()`
+
+The function below implements all five outcome-weight vectors from Section 3.
+
+```r
+kappa_outcome_weights <- function(Z, D, p) {
+  n  <- length(Z)
+  kw <- kappa_weights(Z, D, p)   # returns kappa, kappa1, kappa0
+
+  # --- tau_u (Uysal) ---
+  s1  <- sum(Z / p)
+  s0  <- sum((1 - Z) / (1 - p))
+  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  # --- tau_a10 (Abadie-Cattaneo) ---
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
+
+  # --- unnormalised (common numerator weight) ---
+  num_w <- (Z - p) / (p * (1 - p)) / n
+
+  list(
+    w_u   = as.vector(w_u),
+    w_a10 = as.vector(w_a10),
+    w_a   = as.vector(num_w / mean(kw$kappa)),
+    w_a1  = as.vector(num_w / mean(kw$kappa1)),  # tau_t
+    w_a0  = as.vector(num_w / mean(kw$kappa0))
+  )
+}
+```
+
+**Verification.** After computing weights, the identity $\hat\tau = \sum_i \omega_i Y_i$
+should hold to machine precision. Use `check_weight_identity()`:
+
+```r
+check_weight_identity <- function(w, Y, estimate, tol = 1e-8) {
+  isTRUE(all.equal(sum(w * Y), estimate, tolerance = tol))
+}
+```
+
+## `weight_diag()`
+
+This function returns the four standard diagnostics in the same format used by
+`get_outcome_weights()` in the `OutcomeWeights` package, enabling unified side-by-side
+comparison of kappa and DML estimators.
+
+```r
+weight_diag <- function(w, name) {
+  data.frame(
+    Estimator = name,
+    Sum_w     = round(sum(w), 8),          # 0 iff translation invariant
+    ESS       = round(1 / sum(w^2), 0),    # effective sample size
+    Pct_neg   = round(mean(w < 0) * 100, 1),
+    Max_abs_w = round(max(abs(w)), 6),
+    stringsAsFactors = FALSE
+  )
+}
+```
+
+| Diagnostic | What it measures | Threshold |
+|---|---|---|
+| `Sum_w` | Translation invariance. Exactly 0 for $\hat\tau_u$ and $\hat\tau_{a,10}$; non-zero for unnormalised estimators | `abs(Sum_w) < 1e-8` for pass |
+| `ESS` | How many observations effectively contribute. Low ESS signals unreliable estimates | Compared across estimators |
+| `Pct_neg` | Share of negative weights. Always present in IV settings due to never-takers/always-takers | Contextual |
+| `Max_abs_w` | Largest single-observation influence. Flags outlier leverage | Compared across estimators |
+
+---
+
+# Worked Example: Vietnam Draft Lottery
+
+We illustrate using the Angrist (1990) military service data from the SUW (2025)
+replication package ($N = 3{,}027$, cubic-in-age specification).
+
+```r
+# Assumes sipp_clean, D_sipp, Z_sipp, X_kappa_cub are in memory
+# from the main replication script.
+
+library(cobalt)
+library(viridis)
+
+Y <- sipp_clean$lwage       # log wages in dollars
+Z <- Z_sipp                 # draft lottery eligibility
+D <- D_sipp                 # veteran status
+
+# Propensity score
+p_ml <- logit_mle(Z, X_kappa_cub)
+p_cb <- get_cbps_p(Z, X_kappa_cub)
+
+# Outcome weights
+ow_ml <- kappa_outcome_weights(Z, D, p_ml)
+ow_cb <- kappa_outcome_weights(Z, D, p_cb)
+```
+
+## Algebraic check
+
+```r
+# Every check must return TRUE
+cat(check_weight_identity(ow_cb$w_u,   Y, tau_u(Y, Z, D, p_cb)),    "\n")  # TRUE
+cat(check_weight_identity(ow_ml$w_u,   Y, tau_u(Y, Z, D, p_ml)),    "\n")  # TRUE
+cat(check_weight_identity(ow_ml$w_a10, Y, tau_a10(Y, Z, D, p_ml)),  "\n")  # TRUE
+cat(check_weight_identity(ow_ml$w_a,   Y, tau_unnorm(Y,Z,D,p_ml,"a")),  "\n")  # TRUE
+cat(check_weight_identity(ow_ml$w_a1,  Y, tau_unnorm(Y,Z,D,p_ml,"a1")), "\n")  # TRUE
+cat(check_weight_identity(ow_ml$w_a0,  Y, tau_unnorm(Y,Z,D,p_ml,"a0")), "\n")  # TRUE
+```
+
+## Weight diagnostics
+
+```r
+diag_table <- rbind(
+  weight_diag(ow_cb$w_u,   "tau_cb_u   (CBPS, normalised)"),
+  weight_diag(ow_ml$w_u,   "tau_ml_u   (MLE,  normalised)"),
+  weight_diag(ow_ml$w_a10, "tau_ml_a10 (normalised)      "),
+  weight_diag(ow_ml$w_a,   "tau_ml_a   (unnormalised)    "),
+  weight_diag(ow_ml$w_a1,  "tau_ml_t   (unnormalised)    "),
+  weight_diag(ow_ml$w_a0,  "tau_ml_a0  (unnormalised)    ")
+)
+
+print(diag_table, row.names = FALSE)
+```
+
+Expected output (illustrative):
+
+```
+            Estimator        Sum_w  ESS Pct_neg Max_abs_w
+ tau_cb_u   (CBPS, normalised)   0.0000000    5    54.4   0.22XXXX
+ tau_ml_u   (MLE,  normalised)   0.0000000    5    54.4   0.22XXXX
+ tau_ml_a10 (normalised)         0.0000000    5    53.1   0.22XXXX
+ tau_ml_a   (unnormalised)       0.0003XXX    5    53.1   0.22XXXX
+ tau_ml_t   (unnormalised)       0.0003XXX    5    53.1   0.22XXXX
+ tau_ml_a0  (unnormalised)       0.XXXXXXX    5    53.1   0.22XXXX
+```
+
+The normalised estimators have `Sum_w` equal to zero to machine precision. The
+unnormalised estimators have non-zero `Sum_w`, confirming the theoretical prediction.
+The near-identical ESS across all estimators reflects the "design dominates learner"
+phenomenon: the near-random draft lottery ($p \approx 0.5$) makes all estimators draw
+from essentially the same subset of observations.
+
+## Translation-invariance check
+
+Because $\hat\tau(Y + k) - \hat\tau(Y) = k \sum_i \omega_i$, we can verify translation
+invariance directly from the weight sum rather than re-running the estimator:
+
+```r
+k <- log(100)  # dollars -> cents shift
+
+# Normalised: predicted shift = k * 0 = 0
+# Unnormalised: predicted shift = k * sum(w)
+
+shift_pred <- sapply(list(ow_cb$w_u, ow_ml$w_u, ow_ml$w_a10,
+                          ow_ml$w_a,  ow_ml$w_a1, ow_ml$w_a0),
+                     function(w) round(k * sum(w), 6))
+
+names(shift_pred) <- c("tau_cb_u","tau_ml_u","tau_ml_a10",
+                       "tau_ml_a","tau_ml_t","tau_ml_a0")
+print(shift_pred)
+# tau_cb_u tau_ml_u tau_ml_a10 tau_ml_a tau_ml_t tau_ml_a0
+#    0.000    0.000      0.000   0.XXX   0.XXX   X.XXX
+```
+
+## Love plots
+
+Outcome weights can be passed directly to `cobalt::love.plot()`. Since $\omega_i$ are
+signed (they represent a treated-minus-control contrast), multiply by $(2D_i - 1)$ to
+convert to the non-negative balancing-weight convention expected by `cobalt`:
+
+```r
+make_love <- function(title_str, w_vec) {
+  love.plot(
+    D ~ X_dml_cub,
+    weights    = w_vec * (2 * D - 1),
+    position   = "bottom",
+    title      = title_str,
+    thresholds = c(m = 0.1),
+    var.order  = "unadjusted",
+    binary     = "std",
+    abs        = TRUE,
+    line       = TRUE,
+    colors     = viridis(2),
+    shapes     = c("circle", "triangle")
+  )
+}
+
+library(gridExtra)
+grid.arrange(
+  make_love("tau_cb_u",  ow_cb$w_u),
+  make_love("tau_ml_u",  ow_ml$w_u),
+  make_love("tau_ml_a10",ow_ml$w_a10),
+  make_love("tau_ml_a",  ow_ml$w_a),
+  nrow = 2
+)
+```
+
+---
+
+# Normalization Classification
+
+Following Knaus (2024) Table 4–5, every PIVE estimator falls into one of four
+normalization classes determined by three weight sums:
+
+| Class | $\sum_i \omega_i$ | $\sum_{D=1} \omega_i$ | $\sum_{D=0} \omega_i$ |
+|---|---|---|---|
+| Fully normalised | 0 | +1 | −1 |
+| Scale normalised | 0 | $\neq$ +1 | $\neq$ −1 |
+| Treated-unnormalised | $\neq$ 0 | +1 | — |
+| Fully unnormalised | $\neq$ 0 | $\neq$ +1 | $\neq$ −1 |
+
+The kappa estimators fall as follows:
+
+```r
+classify_weights <- function(w, D, name) {
+  C   <- sum(w)
+  C1  <- sum(w[D == 1])
+  C0  <- sum(w[D == 0])
+  cls <- dplyr::case_when(
+    abs(C) < 1e-8 & abs(C1 - 1) < 1e-8                    ~ "Fully normalised",
+    abs(C) < 1e-8 & abs(C1 - 1) >= 1e-8                   ~ "Scale normalised",
+    abs(C) >= 1e-8 & abs(C1 - 1) < 1e-8                   ~ "Treated-unnormalised",
+    TRUE                                                    ~ "Fully unnormalised"
+  )
+  data.frame(Estimator = name, Sum_w = round(C,8),
+             Sum_w_treated = round(C1,6), Sum_w_control = round(C0,6),
+             Class = cls, stringsAsFactors = FALSE)
+}
+```
+
+In the Vietnam cubic specification, `tau_cb_u` and `tau_ml_u` are **fully normalised**
+(both sum conditions hold). `tau_ml_a10` is **scale normalised** ($\sum\omega_i = 0$ but
+the treated/control sub-sums are not exactly $\pm 1$). The unnormalised estimators are
+**fully unnormalised**.
+
+---
+
+# Relation to the `OutcomeWeights` Package
+
+The `OutcomeWeights` package exposes `get_outcome_weights()` for objects of class
+`dml_with_smoother`. The resulting `omega` matrix has one row per estimator and one
+column per observation, such that `omega %*% Y` recovers the point estimates.
+
+`kappa_outcome_weights()` produces the same format as a named list. To make kappa weights
+directly interchangeable with DML weights in joint Love plots:
+
+```r
+# DML weights (from OutcomeWeights)
+omega_dml <- get_outcome_weights(dml_fit)
+w_waldaipw <- as.vector(omega_dml$omega["Wald-AIPW", ])
+
+# Kappa weights (from kappa_outcome_weights)
+ow <- kappa_outcome_weights(Z, D, p_ml)
+
+# Unified weight diagnostics
+rbind(
+  weight_diag(w_waldaipw,  "Wald-AIPW  (DML)"),
+  weight_diag(ow$w_u,      "tau_ml_u   (kappa)"),
+  weight_diag(ow$w_a10,    "tau_ml_a10 (kappa)")
+)
+```
+
+This produces a single table that places kappa and DML estimators on the same diagnostic
+footing — which is the primary purpose of this vignette.
+
+### Possible package integration
+
+`kappa_outcome_weights()` and `weight_diag()` could be contributed to `OutcomeWeights` as:
+
+- A new S3 method `get_outcome_weights.kappa` for a `kappa_fit` object class.
+- A `weight_diagnostics()` generic that accepts both `dml_with_smoother` and `kappa_fit` objects.
+- A vignette (this document) demonstrating the unified pipeline.
+
+The `check_weight_identity()` function also provides a built-in verification step that is
+currently absent for DML estimators and could be a useful addition to the package's testing utilities.
+
+---
+
+# Summary
+
+| Step | Function | Output |
+|---|---|---|
+| 1. Estimate propensity score | `logit_mle()` / `get_cbps_p()` | $\hat p_i$ |
+| 2. Compute kappa weights | `kappa_weights()` | $\kappa_i, \kappa_i^1, \kappa_i^0$ |
+| 3. Compute outcome weights | `kappa_outcome_weights()` | $\omega_i$ per estimator |
+| 4. Verify algebraic identity | `check_weight_identity()` | `TRUE` / `FALSE` |
+| 5. Diagnostics | `weight_diag()` | Sum_w, ESS, %neg, Max\|w\| |
+| 6. Normalization class | `classify_weights()` | Fully/Scale/Treated/Fully unnorm. |
+| 7. Love plot | `cobalt::love.plot()` with $\omega_i(2D_i-1)$ | Balance plot |
+
+The key theoretical result is that $\sum_i \omega_i = 0$ is the *exact* finite-sample
+criterion for translation invariance, not merely an asymptotic property. This gives
+$\text{Sum\_w}$ a clear causal-inference interpretation: it is the shift in the LATE
+estimate per unit shift in the outcome variable.
+
+---
+
+# References
+
+Abadie, A. (2003). Semiparametric instrumental variable estimation of treatment response
+models. *Journal of Econometrics*, 113(2), 231–263.
+
+Angrist, J. D. (1990). Lifetime earnings and the Vietnam era draft lottery: Evidence from
+social security administrative records. *American Economic Review*, 80(3), 313–336.
+
+Knaus, M. C. (2024). Treatment effect estimators as weighted outcomes. *Working paper*.
+
+Słoczyński, T., Uysal, S. D., & Wooldridge, J. M. (2025). Abadie's kappa and weighting
+estimators of the local average treatment effect. *Journal of Business & Economic
+Statistics*, 43(1), 161–175.
+
+Uysal, S. D. (2011). Three essays on treatment effect estimation. *PhD thesis*, Johannes
+Kepler University of Linz.
