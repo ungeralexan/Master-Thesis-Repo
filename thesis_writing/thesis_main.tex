@@ -1,0 +1,1167 @@
+% ==============================================================================
+% MASTER'S THESIS — EBERHARD KARLS UNIVERSITÄT TÜBINGEN
+% Faculty of Economics and Social Sciences
+% Chair of Econometrics (Prof. Dr. Michael Knaus)
+%
+% Title: Outcome Weights, Kappa Estimators, and Covariate Balance
+%        in LATE Estimation
+%
+% Compile with: pdflatex → biber → pdflatex → pdflatex
+%   or in Overleaf: set compiler to pdfLaTeX, bibliography tool to Biber
+% ==============================================================================
+
+\documentclass[12pt, a4paper, oneside]{article}
+
+% ------------------------------------------------------------------------------
+% ENCODING & LANGUAGE
+% ------------------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ------------------------------------------------------------------------------
+% FONTS  — matches standard econometrics journals (Times-like serif)
+% ------------------------------------------------------------------------------
+
+\usepackage[scaled=0.90]{helvet}
+\usepackage{courier}
+
+% ------------------------------------------------------------------------------
+% PAGE GEOMETRY
+% ------------------------------------------------------------------------------
+\usepackage[
+  a4paper,
+  top    = 2.5cm,
+  bottom = 2.5cm,
+  left   = 3.0cm,
+  right  = 2.5cm,
+  headheight = 14pt
+]{geometry}
+
+% ------------------------------------------------------------------------------
+% SPACING
+% ------------------------------------------------------------------------------
+\usepackage{setspace}
+\onehalfspacing                % 1.5 line spacing (standard for master theses)
+
+% ------------------------------------------------------------------------------
+% HEADERS & FOOTERS
+% ------------------------------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Outcome Weights, Kappa Estimators, and Covariate Balance}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{%      % Chapter opening pages
+  \fancyhf{}
+  \fancyfoot[C]{\small\thepage}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+% ------------------------------------------------------------------------------
+% MATHEMATICS
+% ------------------------------------------------------------------------------
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{bm}                % bold math symbols
+
+% Theorem-like environments
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}[proposition]{Lemma}
+\newtheorem{corollary}[proposition]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[proposition]{Definition}
+\newtheorem{remark}[proposition]{Remark}
+
+% Convenient math macros
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\indic}{\mathbf{1}}
+\newcommand{\tauhat}{\hat{\tau}}
+\newcommand{\phat}{\hat{p}}
+\newcommand{\omegavec}{\boldsymbol{\omega}}
+\newcommand{\kappavec}{\boldsymbol{\kappa}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\plim}{plim}
+
+% ------------------------------------------------------------------------------
+% TABLES & FIGURES
+% ------------------------------------------------------------------------------
+\usepackage{booktabs}          % publication-quality tables
+\usepackage{threeparttable}    % notes below tables
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup{
+  font      = small,
+  labelfont = bf,
+  format    = hang,
+  width     = 0.95\textwidth
+}
+
+% ------------------------------------------------------------------------------
+% HYPERLINKS & CROSS-REFERENCES
+% ------------------------------------------------------------------------------
+\usepackage[
+  colorlinks = true,
+  linkcolor  = black,
+  citecolor  = black,
+  urlcolor   = black
+]{hyperref}
+\usepackage{cleveref}
+
+% ------------------------------------------------------------------------------
+% BIBLIOGRAPHY  — Author-year (AER/econometrics standard)
+% ------------------------------------------------------------------------------
+\usepackage[round,authoryear]{natbib}
+
+
+% ------------------------------------------------------------------------------
+% MISC
+% ------------------------------------------------------------------------------
+\usepackage{microtype}         % better typography
+\usepackage{parskip}           % space between paragraphs instead of indent
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{lscape}            % landscape pages for wide tables
+\usepackage{rotating}
+\usepackage{pdflscape}
+\usepackage[normalem]{ulem}    % strikethrough if needed
+
+% Code listings (for appendix R code)
+\usepackage{listings}
+\lstset{
+  basicstyle   = \small\ttfamily,
+  breaklines   = true,
+  frame        = single,
+  language     = R,
+  commentstyle = \color{gray},
+  keywordstyle = \color{blue!70!black},
+  numbers      = left,
+  numberstyle  = \tiny\color{gray},
+  xleftmargin  = 2em
+}
+
+% ------------------------------------------------------------------------------
+% PDF METADATA
+% ------------------------------------------------------------------------------
+\hypersetup{
+  pdftitle  = {Outcome Weights, Kappa Estimators, and Covariate Balance in LATE Estimation},
+  pdfauthor = {Alexander Unger},
+  pdfsubject= {Master's Thesis, University of Tübingen},
+}
+
+
+% ==============================================================================
+\begin{document}
+% ==============================================================================
+
+% ------------------------------------------------------------------------------
+% TITLE PAGE
+% ------------------------------------------------------------------------------
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+
+  \vspace*{1.5cm}
+
+  {\large \textsc{Eberhard Karls Universität Tübingen}}\\[0.3cm]
+  {\large Faculty of Economics and Social Sciences}\\[0.1cm]
+  {\normalsize Department of Economics}\\[0.1cm]
+  {\normalsize Chair of Data Science in Economics}
+
+  \vspace{1.5cm}
+
+  \rule{\textwidth}{1.5pt}\\[0.4cm]
+  {\LARGE \bfseries Comparing Kappa Weighting and Causal Machine \\[0.3cm]
+   Learning Estimators via Weight-Based Diagnostics}\\[0.4cm]
+  \rule{\textwidth}{1.5pt}
+
+  \vspace{1.5cm}
+
+  {\large Master's Thesis}\\[0.2cm]
+  {\normalsize submitted in partial fulfilment of the requirements for the degree of}\\[0.2cm]
+  {\large \textit{Master of Science in Data Science in Business and Economics}}
+
+  \vspace{2.0cm}
+
+  \begin{tabular}{ll}
+    \textbf{Author:}     & Alexander Unger \\[0.2cm]
+    \textbf{Matriculation number:} & [6946672] \\[0.2cm]
+    \textbf{First supervisor:}  & Junior Prof.\ Dr.\ Michael Knaus \\[0.2cm]
+    \textbf{Submission date:}   & \today \\
+  \end{tabular}
+
+  \vfill
+
+  {\small Tübingen, Germany}
+
+\end{titlepage}
+
+% ------------------------------------------------------------------------------
+% FRONT MATTER
+% ------------------------------------------------------------------------------
+\pagenumbering{roman}
+
+% Abstract
+\newpage
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+This thesis applies the outcome-weights framework of \citet{knaus2024} to kappa-based
+local average treatment effect (LATE) estimators of \citet{abadie2003} and
+\citet{suw2025}. Any estimator that can be written as a weighted sum of observed outcomes,
+$\hat\tau = \sum_i \omega_i Y_i$, admits direct covariate balance diagnostics via Love
+plots and effective sample size (ESS) calculations. Knaus (2024) derives such outcome
+weights for double machine learning (DML) and generalised random forest estimators;
+Appendix A.4 sketches but does not implement the same for kappa estimators. We fill
+this gap by deriving closed-form outcome weights for all five kappa-based LATE estimators
+and showing that the sum-to-zero condition $\sum_i \omega_i = 0$ is the exact finite-sample
+criterion for translation invariance---the property that the LATE estimate is unaffected
+by additive rescaling of the outcome variable.
+
+We apply the unified outcome-weight diagnostics to three empirical settings: the Vietnam
+draft lottery \citep{angrist1990}, college proximity as an instrument for education
+\citep{card1995}, and sibling sex composition as an instrument for fertility
+\citep{angrist1998}. A striking finding across applications is that in low-dimensional,
+near-random-assignment designs, ESS and the percentage of negative weights are virtually
+identical across all estimators and all machine learning learners---a pattern we term
+\emph{design dominates learner}. Normalization, not covariate adjustment, drives estimate
+divergence. Unnormalized kappa estimators fail translation invariance dramatically in the
+Angrist--Evans design, with estimates changing sign under outcome recoding. Normalized
+estimators $\hat\tau_u$ and $\hat\tau_{a,10}$ are robust throughout.
+
+\bigskip
+\noindent\textbf{Keywords:} local average treatment effect, instrumental variables,
+kappa weighting, outcome weights, translation invariance, covariate balance,
+double machine learning.
+
+\bigskip
+\noindent\textbf{JEL classification:} C14, C21, C26.
+
+% Table of contents
+\newpage
+\tableofcontents
+
+% List of figures
+\newpage
+\listoffigures
+\addcontentsline{toc}{section}{List of Figures}
+
+% List of tables
+\newpage
+\listoftables
+\addcontentsline{toc}{section}{List of Tables}
+
+% ------------------------------------------------------------------------------
+% MAIN TEXT
+% ------------------------------------------------------------------------------
+\newpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% ==============================================================================
+\section{Introduction}
+\label{sec:intro}
+% ==============================================================================
+
+\subsection{Motivation}
+\label{subsec:motivation}
+
+% [WRITE HERE — hook: cents vs. dollars failure, ~0.5 page]
+
+\subsection{Background}
+\label{subsec:background}
+
+% [WRITE HERE — 2SLS doesn't recover LATE, kappa as alternative, ~0.5 page]
+
+\subsection{Research Gap and Contribution}
+\label{subsec:contribution}
+
+% [WRITE HERE — Knaus Appendix A.4 gap, list 4–5 contributions, ~1 page]
+
+\subsection{Road Map}
+\label{subsec:roadmap}
+
+% [WRITE HERE — 1 paragraph, chapter-by-chapter]
+
+
+% ==============================================================================
+\section{Econometric Framework}
+\label{sec:framework}
+% ==============================================================================
+
+\subsection{IV, LATE, and Compliers}
+\label{subsec:late}
+
+% [WRITE HERE — potential outcomes, four types, LATE definition, ~1.5 pages]
+
+\subsection{Abadie's Kappa Theorem}
+\label{subsec:kappa_theorem}
+
+% [WRITE HERE — Lemma 2.1, three kappa weights, Table 1 of SUW, ~1.5 pages]
+
+\subsection{Kappa-Based LATE Estimators}
+\label{subsec:estimators}
+
+% [WRITE HERE — five estimators, MLE vs CBPS, ~1.5 pages]
+
+\subsection{Why Normalisation Matters}
+\label{subsec:normalisation}
+
+% [WRITE HERE — TI definition, Prop 3.2 SUW, cents/dollars example, ~1.5 pages]
+
+\subsection{Double Machine Learning and Wald-AIPW}
+\label{subsec:dml}
+
+% [WRITE HERE — DML framework, cross-fitting, PLR-IV and Wald-AIPW, ~1.5 pages]
+
+\subsection{The PIVE Framework and Outcome Weights}
+\label{subsec:pive}
+
+% [WRITE HERE — Knaus 2024 PIVE structure, normalization classes, ~1 page]
+
+\subsection{Covariate Balance Diagnostics}
+\label{subsec:balance}
+
+% [WRITE HERE — SMD, Love plots, ESS, sum-to-zero as TI criterion, ~1 page]
+
+
+% ==============================================================================
+\newpage
+% ==============================================================================
+\section{Connecting the Frameworks}
+\label{sec:connection}
+% ==============================================================================
+ 
+Chapters~\ref{sec:framework} built two separate frameworks: the kappa-based LATE
+estimators of \citet{abadie2003semiparametric} and \citet{sloczynski2025abadie}, and the PIVE outcome-weights
+framework of \citet{knaus2024treatment}. This chapter connects them. The central question is
+whether kappa estimators can be expressed as $\hat\tau = \sum_i \omega_i Y_i$ for
+interpretable, closed-form weights $\omega_i$ and if so, what properties those weights
+possess. The answer to both parts is yes, and the consequences are non-trivial.
+ 
+ 
+% ==============================================================================
+\subsection{Kappa Weights versus Outcome Weights: The Distinction}
+\label{subsec:distinction}
+% ==============================================================================
+ 
+To start it is essential to be precise about two objects that share
+similar notation but serve fundamentally different purposes.
+ 
+\paragraph{Kappa weights $\kappa_i$.}
+The three per-observation scalars $\kappa_i$, $\kappa_{i1}$, and $\kappa_{i0}$ introduced
+by \citet{abadie2003semiparametric} are \emph{identification} objects. Lemma~2.1 of \citet{abadie2003semiparametric},
+as restated in \citet{sloczynski2025abadie}, shows that for any measurable function $g$,
+\[
+  \mathbb{E}\bigl[\kappa_i \cdot g(Y_i, D_i)\bigr]
+  = \mathbb{E}\bigl[g(Y_1, 1) - g(Y_0, 0) \mid D_1 > D_0\bigr]
+    \cdot \mathbb{P}(D_1 > D_0).
+\]
+In other words, weighting by $\kappa_i$ turns a population expectation over all
+observations into a complier expectation. This is a population-level identification result.
+The $\kappa_i$ themselves depend only on $(Z_i, D_i, p(X_i))$ and have a well-understood
+cell-by-cell structure \citep[Table~1]{sloczynski2025abadie}; they are not estimator-specific.
+Crucially, they do not, on their own, express $\hat\tau$ as a weighted sum of $Y_i$
+values. Plugging $\kappa_i$ into $\sum_i \kappa_i Y_i / \sum_i \kappa_i$ gives the
+\emph{unnormalized} estimator $\hat\tau_a$, but not the normalized estimators
+$\hat\tau_u$ or $\hat\tau_{a,10}$.
+ 
+\paragraph{Outcome weights $\omega_i$.}
+\citet{knaus2024treatment} defines outcome weights as sample-level scalars such that
+$\hat\tau = \sum_{i=1}^N \omega_i Y_i$ \emph{exactly} for a given estimator.
+They are estimator-specific: $\omega_i^u \neq \omega_i^{a,10} \neq \omega_i^a$.
+They are derived \emph{from} the kappa weights (since the kappa estimators are
+functions of $\kappa_i$, $\kappa_{i1}$, $\kappa_{i0}$), but they are not the same
+object. As \citet[Section~3.1]{knaus2024treatment} makes clear, outcome weights inherit their
+properties (existence, normalization, negative-weight patterns) from the algebraic
+structure of the estimator, not from the identification properties of $\kappa_i$.
+ 
+\paragraph{Why the distinction matters.}
+The covariate balance diagnostics used throughout this thesis, such as Love plots via
+\texttt{cobalt::love.plot()}, effective sample size $\mathrm{ESS} = 1/\sum_i\omega_i^2$,
+and the translation-invariance criterion $\sum_i\omega_i = 0$ all operate on
+$\omega_i$, not on $\kappa_i$. Applying them to $\kappa_i$ directly would produce
+incorrectly scaled and possibly unsigned quantities that do not correspond to any
+diagnostic with a causal interpretation. The derivations in
+Section~\ref{subsec:derivation} are therefore not a notational exercise; they are the
+prerequisite for accessing the full diagnostic pipeline of \citet{knaus2024treatment} for
+kappa-based LATE estimators.
+ 
+\paragraph{What Knaus (2024) already provides.}
+\citet[Appendix~A.4]{knaus2024treatment} places $\hat\tau_a$, $\hat\tau_{a,0}$, and
+$\hat\tau_{a,10}$ in the PIVE framework and states their normalization class. However,
+the outcome weight vector $\omega_i^u$ for the \cite{uysal2011three} normalized estimator is not
+derived there, and no application of Love plots or ESS diagnostics to any kappa estimator
+appears anywhere in \citet{knaus2024treatment}. Section~\ref{subsec:derivation} fills both gaps:
+it derives $\omega_i^u$ from first principles, places it in the PIVE framework,
+and verifies full normalization step by step. The derivation of $\hat\tau_{a,10}$ is
+included in full to establish the notation and proof technique before turning to
+$\hat\tau_u$, where the argument is more involved.
+ 
+ 
+% ==============================================================================
+\subsection{Deriving Outcome Weights in the PIVE Framework}
+\label{subsec:derivation}
+% ==============================================================================
+ 
+\subsubsection{The PIVE framework and its weight formula}
+\label{sssec:pive_recap}
+ 
+\citet{knaus2024treatment} defines a \emph{pseudo-IV estimator} (PIVE) as any estimator solving
+the empirical moment condition
+\begin{equation}
+  \mathbb{E}_N\!\bigl[(\tilde{Y}_i - \hat\tau\,\tilde{D}_i)\,\tilde{Z}_i\bigr] = 0,
+  \label{eq:pive_moment}
+\end{equation}
+for scalar pseudo-quantities $\tilde{Y}_i$, $\tilde{D}_i$, $\tilde{Z}_i$ that may
+depend on nuisance estimates. Solving gives
+\begin{equation}
+  \hat\tau = \frac{\mathbb{E}_N[\tilde{Z}_i\tilde{Y}_i]}{\mathbb{E}_N[\tilde{Z}_i\tilde{D}_i]}
+           = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\tilde{\mathbf{Y}}.
+  \label{eq:pive_sol}
+\end{equation}
+The key structural result of \citet{knaus2024treatment} is:
+ 
+\begin{proposition}[Outcome weights of PIVEs, {\citealt[Proposition~1]{knaus2024treatment}}]
+\label{prop:pive_weights}
+If $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} \neq 0$ and there exists a unique
+$N\times N$ transformation matrix $\mathbf{T}$ such that
+$\mathbf{T}\mathbf{Y} = \tilde{\mathbf{Y}}$, then the outcome weights of the PIVE take
+the closed form
+\begin{equation}
+  \boldsymbol{\omega}' = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\,\tilde{\mathbf{Z}}'\,\mathbf{T},
+  \label{eq:pive_weights}
+\end{equation}
+so that $\hat\tau = \boldsymbol{\omega}'\mathbf{Y} = \sum_{i=1}^N\omega_i Y_i$.
+\end{proposition}
+ 
+This proposition motivates a two-step procedure: (i) express the estimator as a PIVE by
+identifying $\tilde{\mathbf{Z}}$, $\tilde{\mathbf{D}}$, and $\mathbf{T}$; (ii) apply
+\eqref{eq:pive_weights} to read off $\omega_i$ in closed form.
+ 
+\paragraph{Normalization classification.}
+\citet[Section~4.1]{knaus2024treatment} provides three matrix shortcuts to classify the
+normalization class of the resulting weights. Full normalization
+$\sum_i\omega_i = 0$, $\sum_i\omega_iD_i = +1$, $\sum_i\omega_i(1-D_i) = -1$, which holds
+if and only if
+\begin{alignat}{2}
+  \text{(SC1)}&\quad \mathbf{T}\mathbf{1}_N = \mathbf{0}_N
+    &&\quad\Rightarrow\quad \textstyle\sum_i\omega_i = 0,\label{eq:sc1}\\
+  \text{(SC2)}&\quad \mathbf{T}\mathbf{D} = \tilde{\mathbf{D}}
+    &&\quad\Rightarrow\quad \textstyle\sum_i\omega_iD_i = 1.\label{eq:sc2}
+\end{alignat}
+SC3 ($\sum_i\omega_i(1-D_i)=-1$) then follows by subtraction from SC1 and SC2.
+The shortcuts hold via the transformation matrix $\mathbf{T}$ \emph{whenever $\mathbf{T}$
+captures the full normalization structure of the estimator}. As we show below, for
+$\hat\tau_{a,10}$ and $\hat\tau_u$ the normalizing scalars are partly absorbed outside
+$\mathbf{T}$, so full normalization must be verified directly from the weight expression
+$\boldsymbol{\omega}' = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\tilde{\mathbf{Z}}'\mathbf{T}$
+rather than from $\mathbf{T}$ alone. This is explicitly noted in
+\citet[Appendix~A.4]{knaus2024treatment}.
+ 
+\paragraph{Relevance of Knaus (2024) smoother conditions.}
+\citet[Section~4.2]{knaus2024treatment} introduces six conditions governing the existence and
+normalization of outcome weights for estimators that involve outcome regression
+(DML, AIPW, causal/instrumental forests). For kappa estimators, no outcome model is
+estimated the pseudo-outcome $\tilde{Y}_i$ depends only on $Z_i$, $D_i$, and
+$\hat{p}_i$, never on $Y_i$ through a regression. The smoother matrix is therefore
+trivially the identity, and existence of outcome weights is unconditional. The smoother
+conditions (Conditions~1--5 in \citealt{knaus2024treatment}) do not apply. The sole operative
+condition is Condition~6b (Hájek normalization of instrument-group IPW weights), which
+will appear naturally in the derivation of $\hat\tau_u$ in
+Section~\ref{sssec:derive_u}.
+ 
+\bigskip
+ 
+We now derive outcome weights for $\hat\tau_{a,10}$ and $\hat\tau_u$.
+The unnormalized estimator $\hat\tau_a$ is included concisely to make the contrast
+explicit. Throughout, we use the notation from Section~\ref{sec:framework}:
+$p_i = \hat{p}(X_i)$, $s_1 = \sum_i Z_i/p_i$, $s_0 = \sum_i (1-Z_i)/(1-p_i)$.
+ 
+% ---------------------------------------------------------------
+\subsubsection{Outcome weights of \texorpdfstring{$\hat\tau_{a,10}$}{tau(a,10)}}
+\label{sssec:derive_a10}
+% ---------------------------------------------------------------
+ 
+The Abadie--Cattaneo estimator \citep{abadie2018econometric} is
+\begin{equation}
+  \hat\tau_{a,10}
+  = \frac{\sum_i \kappa_{i1} Y_i}{\sum_i \kappa_{i1}}
+  - \frac{\sum_i \kappa_{i0} Y_i}{\sum_i \kappa_{i0}},
+  \label{eq:tau_a10}
+\end{equation}
+which separately normalizes the $\kappa_1$- and $\kappa_0$-weighted means of the outcome.
+In matrix form, \eqref{eq:tau_a10} can be written compactly as
+\begin{equation}
+  \hat\tau_{a,10}
+  = N^{-1}\,\mathbf{1}_N'
+    \underbrace{%
+      \mathrm{diag}\!\left[
+        \frac{N\,\boldsymbol{\kappa}_1}{\mathbf{1}_N'\boldsymbol{\kappa}_1}
+        - \frac{N\,\boldsymbol{\kappa}_0}{\mathbf{1}_N'\boldsymbol{\kappa}_0}
+      \right]
+    }_{=:\,\mathbf{T}^{a,10}}
+    \mathbf{Y}.
+  \label{eq:tau_a10_matrix}
+\end{equation}
+ 
+\paragraph{PIVE identification.}
+Matching \eqref{eq:tau_a10_matrix} to \eqref{eq:pive_sol}, we read off:
+\[
+  \tilde{\mathbf{Z}}' = N^{-1}\mathbf{1}_N',\qquad
+  \tilde{\mathbf{D}} = \mathbf{1}_N,\qquad
+  \tilde{\mathbf{Z}}'\tilde{\mathbf{D}} = 1,\qquad
+  \mathbf{T}^{a,10} = \mathrm{diag}\!\left[
+    \frac{N\boldsymbol{\kappa}_1}{\mathbf{1}_N'\boldsymbol{\kappa}_1}
+    - \frac{N\boldsymbol{\kappa}_0}{\mathbf{1}_N'\boldsymbol{\kappa}_0}
+  \right].
+\]
+Since the kappa weights depend only on $Z_i$, $D_i$, $p_i$ and not on $Y_i$, the
+smoother matrix exists trivially. By Proposition~\ref{prop:pive_weights}:
+\begin{equation}
+  \boldsymbol{\omega}^{a,10\prime}
+  = (\tilde{\mathbf{Z}}'\tilde{\mathbf{D}})^{-1}\,\tilde{\mathbf{Z}}'\,\mathbf{T}^{a,10}
+  = N^{-1}\,\mathbf{1}_N'\,\mathbf{T}^{a,10}.
+  \label{eq:w_a10_vec}
+\end{equation}
+Reading off the $i$-th element:
+\begin{equation}
+  \boxed{
+    \omega_i^{a,10}
+    = \frac{\kappa_{i1}}{\sum_j \kappa_{j1}}
+    - \frac{\kappa_{i0}}{\sum_j \kappa_{j0}}.
+  }
+  \label{eq:w_a10_scalar}
+\end{equation}
+Each observation's weight is its normalized share of the treated-complier kappa minus
+its normalized share of the untreated-complier kappa. Since $\kappa_{i1} = 0$ for
+all $i$ with $D_i = 0$ and $\kappa_{i0} = 0$ for all $i$ with $D_i = 1$
+\citep[Section~2]{sloczynski2025abadie}, treated units receive positive weight through the first term
+and untreated units receive negative weight through the second.
+ 
+\paragraph{Full normalization.}
+We verify the three weight-sum conditions directly from \eqref{eq:w_a10_vec}, since the
+normalizing scalars $(\mathbf{1}_N'\boldsymbol{\kappa}_1)^{-1}$ and
+$(\mathbf{1}_N'\boldsymbol{\kappa}_0)^{-1}$ are absorbed into $\mathbf{T}^{a,10}$
+and the matrix shortcut SC1 cannot be applied to $\mathbf{T}^{a,10}$ alone.
+ 
+\textit{Sum to zero.} Using \eqref{eq:w_a10_vec}:
+\begin{equation}
+  \sum_i \omega_i^{a,10}
+  = \frac{\mathbf{1}_N'\boldsymbol{\kappa}_1}{\mathbf{1}_N'\boldsymbol{\kappa}_1}
+  - \frac{\mathbf{1}_N'\boldsymbol{\kappa}_0}{\mathbf{1}_N'\boldsymbol{\kappa}_0}
+  = 1 - 1 = 0.\qquad
+  \label{eq:a10_sum}
+\end{equation}
+ 
+\textit{Treated weights sum to one.}
+Since $\kappa_{i0}D_i = 0$ for all $i$:
+\begin{equation}
+  \sum_i \omega_i^{a,10} D_i
+  = \frac{\mathbf{1}_N'(\boldsymbol{\kappa}_1 \circ \mathbf{D})}{\mathbf{1}_N'\boldsymbol{\kappa}_1}
+  = \frac{\mathbf{1}_N'\boldsymbol{\kappa}_1}{\mathbf{1}_N'\boldsymbol{\kappa}_1}
+  = 1.\qquad
+  \label{eq:a10_treated}
+\end{equation}
+By subtraction from \eqref{eq:a10_sum} and \eqref{eq:a10_treated}:
+$\sum_i\omega_i^{a,10}(1-D_i) = 0 - 1 = -1$.
+ 
+\begin{remark}[Full normalization holds unconditionally]
+\label{rem:a10_uncond}
+The three sum conditions for $\hat\tau_{a,10}$ hold for any realization of the data and
+any propensity score estimate $\hat{p}_i$. No condition from \citet{knaus2024treatment} needs to
+be invoked. Normalization is built into the algebraic structure of
+\eqref{eq:tau_a10} by the separate rescaling of each kappa term.
+This contrasts with DML estimators such as Wald-AIPW or causal forests, which require
+Conditions~3 and 5 of \citet{knaus2024treatment}.
+\end{remark}
+ 
+% ---------------------------------------------------------------
+\subsubsection{Outcome weights of \texorpdfstring{$\hat\tau_u$}{tau(u)} (Uysal, 2011)}
+\label{sssec:derive_u}
+% ---------------------------------------------------------------
+ 
+The Uysal estimator \citep{uysal2011three} is a Wald ratio of separately
+Hájek-normalized\footnote{%
+  \citet{hajek1971comment} proposed normalizing IPW estimators by dividing each weight by the
+  sum of all weights in the same group. \citet[Condition~6b]{knaus2024treatment} formalizes
+  this for instrument-group IPW weights.}
+outcome and treatment means:
+\begin{equation}
+  \hat\tau_u
+  = \frac{\displaystyle
+      \frac{\sum_i Z_i Y_i/p_i}{\sum_i Z_i/p_i}
+    - \frac{\sum_i (1-Z_i)Y_i/(1-p_i)}{\sum_i (1-Z_i)/(1-p_i)}
+    }{%
+    \displaystyle
+      \frac{\sum_i Z_i D_i/p_i}{\sum_i Z_i/p_i}
+    - \frac{\sum_i (1-Z_i)D_i/(1-p_i)}{\sum_i (1-Z_i)/(1-p_i)}
+    }.
+  \label{eq:tau_u}
+\end{equation}
+This structure differs from $\hat\tau_{a,10}$ in that both numerator and denominator
+involve a Wald ratio with a non-trivial first-stage denominator $\hat\Delta_D$.
+ 
+\paragraph{Normalized IPW weights and the role of Condition~6b.}
+Define raw instrument-group IPW weights
+$\lambda_{1,i} = Z_i/p_i$ and $\lambda_{0,i} = (1-Z_i)/(1-p_i)$,
+with sums $s_1 = \sum_i \lambda_{1,i}$ and $s_0 = \sum_i \lambda_{0,i}$.
+Condition~6b of \citet{knaus2024treatment} normalizes these within each instrument group:
+\begin{equation}
+  \lambda_{1,i}^{\mathrm{norm}} := \frac{N\,Z_i/p_i}{s_1},\qquad
+  \lambda_{0,i}^{\mathrm{norm}} := \frac{N\,(1-Z_i)/(1-p_i)}{s_0},
+  \label{eq:norm_ipw}
+\end{equation}
+so that $\sum_i\lambda_{1,i}^{\mathrm{norm}} = \sum_i\lambda_{0,i}^{\mathrm{norm}} = N$
+by construction. Using these, define the first-stage denominator
+\begin{equation}
+  \hat\Delta_D
+  := N^{-1}\sum_i(\lambda_{1,i}^{\mathrm{norm}} - \lambda_{0,i}^{\mathrm{norm}})D_i
+   = \frac{\sum_i Z_i D_i/p_i}{s_1} - \frac{\sum_i (1-Z_i)D_i/(1-p_i)}{s_0},
+  \label{eq:delta_D}
+\end{equation}
+which is the normalized-IPW estimate of the first stage $\mathbb{E}[D_1 - D_0]$.
+Substituting \eqref{eq:norm_ipw} into \eqref{eq:tau_u}, the estimator becomes:
+\begin{equation}
+  \hat\tau_u
+  = \frac{N^{-1}\,\mathbf{1}_N'\,
+    \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm}} - \boldsymbol{\lambda}_0^{\mathrm{norm}})\,\mathbf{Y}}
+    {N^{-1}\,\mathbf{1}_N'\,
+    \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm}} - \boldsymbol{\lambda}_0^{\mathrm{norm}})\,\mathbf{D}}.
+  \label{eq:tau_u_matrix}
+\end{equation}
+ 
+\paragraph{PIVE identification.}
+Matching \eqref{eq:tau_u_matrix} to \eqref{eq:pive_sol}:
+ 
+\medskip
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lll@{}}
+\toprule
+PIVE component & Expression & Dimension \\
+\midrule
+Pseudo-instrument & $\tilde{\mathbf{Z}}' = N^{-1}\mathbf{1}_N'$ & $1\times N$ \\
+Pseudo-treatment  & $\tilde{\mathbf{D}} =
+  \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm}} - \boldsymbol{\lambda}_0^{\mathrm{norm}})\,\mathbf{D}$ & $N\times 1$ \\
+Transformation matrix & $\mathbf{T}^u =
+  \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm}} - \boldsymbol{\lambda}_0^{\mathrm{norm}})$ & $N\times N$ \\
+Normalizing scalar & $\tilde{\mathbf{Z}}'\tilde{\mathbf{D}} =
+  N^{-1}\mathbf{1}_N'\mathbf{T}^u\mathbf{D} = \hat\Delta_D$ & scalar \\
+\bottomrule
+\end{tabular}
+\end{center}
+\medskip
+ 
+By Proposition~\ref{prop:pive_weights}:
+\begin{equation}
+  \boldsymbol{\omega}^{u\prime}
+  = \hat\Delta_D^{-1}\,N^{-1}\,\mathbf{1}_N'\,
+    \mathrm{diag}(\boldsymbol{\lambda}_1^{\mathrm{norm}} - \boldsymbol{\lambda}_0^{\mathrm{norm}}).
+  \label{eq:w_u_vec}
+\end{equation}
+Per observation:
+\begin{equation}
+  \boxed{
+    \omega_i^u
+    = \frac{1}{\hat\Delta_D}
+      \left(\frac{Z_i}{p_i\,s_1} - \frac{1-Z_i}{(1-p_i)\,s_0}\right).
+  }
+  \label{eq:w_u_scalar}
+\end{equation}
+ 
+\paragraph{Full normalization.}
+The transformation matrix shortcut SC1 cannot be applied to $\mathbf{T}^u$ alone
+because $\mathbf{T}^u\mathbf{1}_N = \boldsymbol{\lambda}_1^{\mathrm{norm}} -
+\boldsymbol{\lambda}_0^{\mathrm{norm}} \neq \mathbf{0}_N$ in general. We work directly
+with $\boldsymbol{\omega}^{u\prime} = \hat\Delta_D^{-1}N^{-1}\mathbf{1}_N'\mathbf{T}^u$.
+ 
+\textit{Sum to zero.}
+\begin{equation}
+  \sum_i \omega_i^u
+  = \hat\Delta_D^{-1}\,N^{-1}
+    \bigl(\mathbf{1}_N'\boldsymbol{\lambda}_1^{\mathrm{norm}}
+         - \mathbf{1}_N'\boldsymbol{\lambda}_0^{\mathrm{norm}}\bigr)
+  = \hat\Delta_D^{-1}\,N^{-1}(N - N)
+  = 0.\qquad\checkmark
+  \label{eq:u_sum}
+\end{equation}
+The cancellation in \eqref{eq:u_sum} follows directly from Condition~6b: because both
+normalized IPW weight vectors sum to $N$, the difference of their sums is zero. Without
+this normalization as in the raw-weight estimator $\hat\tau_{a,1}$ of
+\citet{frolich2007nonparametric} and \citet{tan2006regression}, which uses $\lambda_{1,i}$ and $\lambda_{0,i}$
+instead of $\lambda_{1,i}^{\mathrm{norm}}$ and $\lambda_{0,i}^{\mathrm{norm}}$ the
+two sums equal $s_1$ and $s_0$ respectively, which are not equal in general, giving
+$\sum_i\omega_i^{a,1} = \hat\Delta_D^{a,1\,-1}N^{-1}(s_1 - s_0) \neq 0$.
+This is precisely why $\hat\tau_{a,1}$ fails translation invariance while $\hat\tau_u$
+does not.
+ 
+\textit{Treated weights sum to one.}
+\begin{align}
+  \sum_i \omega_i^u D_i
+  &= \hat\Delta_D^{-1}\,N^{-1}
+     \sum_i(\lambda_{1,i}^{\mathrm{norm}} - \lambda_{0,i}^{\mathrm{norm}})D_i
+   = \hat\Delta_D^{-1}\,N^{-1}\cdot N\,\hat\Delta_D
+   = 1.\qquad
+  \label{eq:u_treated}
+\end{align}
+The denominator $\hat\Delta_D$ is defined as precisely this expression divided by $N$,
+so the cancellation is exact.
+By subtraction: $\sum_i\omega_i^u(1-D_i) = 0 - 1 = -1$.\quad
+ 
+\begin{remark}[The role of Condition~6b: why $\hat\tau_u$ is normalized and $\hat\tau_{a,1}$ is not]
+\label{rem:c6b}
+The sum-to-zero condition for $\hat\tau_u$ follows \emph{if and only if}
+$\sum_i\lambda_{1,i}^{\mathrm{norm}} = \sum_i\lambda_{0,i}^{\mathrm{norm}}$,
+which is exactly what Condition~6b of \citet{knaus2024treatment} enforces.
+The estimator $\hat\tau_{a,1}$ uses the same transformation structure but without
+Condition~6b; the resulting weight sum is $\hat\Delta_D^{a,1\,-1}N^{-1}(s_1 - s_0)$,
+which is non-zero whenever the two instrument groups happen to differ in effective size
+after IPW reweighting. The choice to normalize within groups the Hájek
+\citeyearpar{hajek1971comment} correction is therefore the single mechanical step that
+separates a translation-invariant estimator from a non-invariant one in this class.
+\end{remark}
+ 
+% ---------------------------------------------------------------
+\subsubsection{Outcome weights of \texorpdfstring{$\hat\tau_a$}{tau(a)}: the failure case}
+\label{sssec:derive_a}
+% ---------------------------------------------------------------
+ 
+For completeness, and to make the contrast explicit, we state the weights for
+$\hat\tau_a$ concisely. The estimator is \citep{abadie2003semiparametric}:
+\begin{equation}
+  \hat\tau_a
+  = \frac{\sum_i\kappa_{i1}Y_i - \sum_i\kappa_{i0}Y_i}{\sum_i\kappa_i}
+  = (\mathbf{1}_N'\boldsymbol{\kappa})^{-1}\,\mathbf{1}_N'
+    \underbrace{\mathrm{diag}(\boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0)}_{=:\,\mathbf{T}^a}
+    \mathbf{Y},
+  \label{eq:tau_a}
+\end{equation}
+giving outcome weights
+\begin{equation}
+  \omega_i^a = \frac{\kappa_{i1} - \kappa_{i0}}{\sum_j\kappa_j}.
+  \label{eq:w_a}
+\end{equation}
+Applying shortcut SC1: $\mathbf{T}^a\mathbf{1}_N = \boldsymbol{\kappa}_1 - \boldsymbol{\kappa}_0
+\neq \mathbf{0}_N$ in general (since $\kappa_{i1} - \kappa_{i0} \neq 0$ whenever $Z_i \neq p_i$),
+so $\sum_i\omega_i^a \neq 0$ \citep[Appendix~A.4]{knaus2024}.
+By \eqref{eq:ti_key} below, this immediately implies that $\hat\tau_a$ is
+not translation invariant consistent with Proposition~3.2 of \citet{sloczynski2025abadie}.
+ 
+\paragraph{The translation-invariance identity.}
+The connection between $\sum_i\omega_i$ and translation invariance is not asymptotic
+but exact and finite-sample. For any estimator $\hat\tau = \sum_i\omega_i Y_i$ and any
+constant $k\in\mathbb{R}$:
+\begin{equation}
+  \hat\tau(Y + k\,\mathbf{1}_N) - \hat\tau(Y)
+  = \sum_{i=1}^N \omega_i k
+  = k\sum_{i=1}^N\omega_i.
+  \label{eq:ti_key}
+\end{equation}
+Hence $\sum_i\omega_i = 0$ is the \emph{exact} necessary and sufficient condition for
+translation invariance. For $\hat\tau_u$ and $\hat\tau_{a,10}$, the sum is zero by
+construction, so the estimate is invariant to any additive rescaling of $Y$.
+For $\hat\tau_a$ (and $\hat\tau_{a,1}$, $\hat\tau_{a,0}$), the sum is non-zero, so
+shifting $Y$ by $k$ shifts the estimate by $k\sum_i\omega_i^a \neq 0$ — a
+direct numerical consequence of the results in Proposition~3.2 of \citet{suw2025},
+now explained mechanically through the weight representation.
+ 
+ 
+% ==============================================================================
+\subsection{Normalization Classification and Summary}
+\label{subsec:classification}
+% ==============================================================================
+ 
+Table~\ref{tab:normalization} summarizes the outcome-weight properties of all estimators
+studied in this thesis, following the classification protocol of \citet[Table~4]{knaus2024}.
+An estimator is \emph{fully normalized} if $\sum_i\omega_i = 0$,
+$\sum_i\omega_iD_i = +1$, and $\sum_i\omega_i(1-D_i) = -1$; \emph{scale normalized}
+if $\sum_i\omega_i = 0$ but the group conditions do not hold exactly; and
+\emph{fully unnormalized} if $\sum_i\omega_i \neq 0$.
+ 
+\begin{table}[t]
+\centering
+\caption{Outcome-weight properties of kappa and DML estimators}
+\label{tab:normalization}
+\begin{threeparttable}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Estimator & & $\sum_i\omega_i = 0$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ & Class \\
+\midrule
+$\hat\tau_u^{cb}$ & (CBPS, norm.)   & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\
+$\hat\tau_u^{ml}$ & (MLE, norm.)    & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\
+$\hat\tau_{a,10}$ & (norm.)         & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\[4pt]
+$\hat\tau_a$      & (unnorm.)       & $\times$           & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
+$\hat\tau_{a,1}$  & (unnorm.)       & $\times$           & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
+$\hat\tau_{a,0}$  & (unnorm.)       & $\times$           & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
+Wald-AIPW         & (DML, grf)     & \checkmark (approx.) & $\approx +1$ & $\approx -1$ & Fully norm. \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+  \small
+  \item Classification follows \citet[Table~4--5]{knaus2024}.
+  \checkmark~(exact) means the condition holds for all data realizations
+  by algebraic construction; \checkmark~(approx.) means the condition holds
+  approximately in finite samples subject to Conditions~3 and~5 of \citet{knaus2024}.
+  $\hat\tau_{a,0}$ is treated-unnormalized: $\sum_i\omega_i^{a,0}(1-D_i) = -1$ holds
+  by the same kappa orthogonality argument but $\sum_i\omega_i^{a,0}\neq 0$
+  \citep[Appendix~A.4]{knaus2024}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+ 
+Three observations from Table~\ref{tab:normalization} deserve emphasis.
+ 
+First, $\hat\tau_u$ and $\hat\tau_{a,10}$ achieve full normalization by \emph{different}
+algebraic mechanisms. $\hat\tau_{a,10}$ does so by separately rescaling the $\kappa_1$
+and $\kappa_0$ weighted sums; no condition external to the estimator is required.
+$\hat\tau_u$ does so via Hájek normalization of the instrument-group IPW weights
+(Condition~6b); the normalization is guaranteed as long as the estimator is implemented
+with within-group rescaling, regardless of the propensity score method used.
+ 
+Second, Wald-AIPW achieves full normalization only approximately in finite samples,
+and only under Conditions~3 and~5 of \citet{knaus2024} — requirements on the smoother
+matrix that conflict with standard flexible implementations such as
+gradient-boosted trees. The kappa estimators $\hat\tau_u$ and $\hat\tau_{a,10}$ achieve
+it exactly and unconditionally.
+ 
+Third, $\sum_i\omega_i = 0$ is both a normalization criterion and a translation-invariance
+criterion: by identity \eqref{eq:ti_key}, it is the \emph{exact} finite-sample condition
+for the estimate to be unchanged under additive shifts of $Y$. The empirical diagnostics
+reported in Chapters~\ref{sec:vietnam}--\ref{sec:card_ae} exploit this by computing
+$\sum_i\omega_i$ numerically and checking it against zero to machine precision for every
+estimator and every dataset.
+ 
+\paragraph{Implementation.}
+The weight expressions \eqref{eq:w_a10_scalar} and \eqref{eq:w_u_scalar} are implemented
+in the \texttt{kappa\_outcome\_weights()} function of \texttt{functions\_kappa.R}.
+The function returns a named list of six weight vectors — one per estimator — and the
+identity $\hat\tau = \sum_i\omega_i Y_i$ is verified to machine precision via
+\texttt{check\_weight\_identity()} for every dataset and specification reported in this
+thesis. This verification step is non-trivial: it confirms not only that the algebra is
+correct but that the numerical implementation is free of floating-point errors that
+could invalidate the diagnostic results.
+ 
+% [PASTE derivation from vignette Section 3.3 here]
+
+\paragraph{Translation invariance criterion.}
+
+% [WRITE: sum = 0 iff TI, exact finite-sample result]
+
+\subsection{Normalization Classification of Kappa Estimators}
+\label{subsec:classification}
+
+% [TABLE: Knaus Table 4/5 extended to kappa estimators]
+
+% Placeholder for Table 1
+\begin{table}[H]
+  \centering
+  \caption{Normalization classification of kappa and DML estimators}
+  \label{tab:normalisation}
+  \begin{threeparttable}
+    \begin{tabular}{lcccc}
+      \toprule
+      Estimator & $\sum_i \omega_i = 0$? & $\sum_{D=1}\omega_i$ & $\sum_{D=0}\omega_i$ & Class \\
+      \midrule
+      $\hat\tau_u^{cb}$ (CBPS, normalised)  & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
+      $\hat\tau_u^{ml}$ (MLE, normalised)   & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
+      $\hat\tau_{a,10}$ (normalised)         & \checkmark & $\neq +1$    & $\neq -1$    & Scale norm. \\
+      $\hat\tau_a$, $\hat\tau_t$, $\hat\tau_{a,0}$ (unnorm.) & $\times$ & --- & --- & Fully unnorm. \\
+      Wald-AIPW (DML, grf)                  & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \small\item Classification follows \citet{knaus2024} Table~4--5.
+      The fully normalised condition requires $\sum_{D=1}\omega_i = +1$ and
+      $\sum_{D=0}\omega_i = -1$. \checkmark~= holds exactly by construction;
+      $\approx$~= holds approximately in finite samples; $\times$~= fails.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+
+% ==============================================================================
+\section{Empirical Application: Military Service and Wages}
+\label{sec:vietnam}
+% ==============================================================================
+
+\subsection{Data and Design}
+\label{subsec:vietnam_data}
+
+% [WRITE HERE — SIPP 1984, N=3027, Z=draft lottery, one-sided noncompliance, ~1 page]
+
+\subsection{Point Estimates and Replication}
+\label{subsec:vietnam_estimates}
+
+% [TABLE: SUW Table 2 replication — normalised vs unnormalised, cents vs dollars]
+
+% Placeholder for Table 2
+\begin{table}[H]
+  \centering
+  \caption{Kappa estimators: log wages (Vietnam draft lottery)}
+  \label{tab:vietnam_estimates}
+  \begin{threeparttable}
+    \begin{tabular}{llccc}
+      \toprule
+      & & \multicolumn{3}{c}{Covariate specification} \\
+      \cmidrule(lr){3-5}
+      Panel & Estimator & Linear age & Cubic age & Saturated age \\
+      \midrule
+      \multicolumn{5}{l}{\textit{A. 2SLS benchmark}} \\
+      & 2SLS & & & \\[4pt]
+      \multicolumn{5}{l}{\textit{B. Normalised estimates}} \\
+      & $\hat\tau_u^{cb}$ & & & \\
+      & $\hat\tau_u^{ml}$ & & & \\
+      & $\hat\tau_{a,10}$ & & & \\[4pt]
+      \multicolumn{5}{l}{\textit{C. Unnormalised estimates}} \\
+      & $\hat\tau_a$       & & & \\
+      & $\hat\tau_t$       & & & \\
+      & $\hat\tau_{a,0}$   & & & \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \small\item Robust standard errors in parentheses.
+      $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.
+      [ADD NOTES ON DATA AND REPLICATION OF SUW TABLE 2]
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+\subsection{Double Machine Learning Comparison}
+\label{subsec:vietnam_dml}
+
+% [WRITE HERE — PLR-IV, Wald-AIPW, three learners, design dominates learner, ~2 pages]
+
+\subsection{Outcome Weight Diagnostics and Covariate Balance}
+\label{subsec:vietnam_weights}
+
+% [WRITE HERE — weight diag table, Love plots, ESS=5, 54% negative weights, ~2 pages]
+
+% Placeholder for Table 3
+\begin{table}[H]
+  \centering
+  \caption{Outcome weight diagnostics: Vietnam (cubic specification)}
+  \label{tab:vietnam_weights}
+  \begin{threeparttable}
+    \begin{tabular}{lrrrr}
+      \toprule
+      Estimator & $\sum_i\omega_i$ & ESS & \% neg. & Max $|\omega_i|$ \\
+      \midrule
+      PLR-IV       (DML)             & & & & \\
+      Wald-AIPW    (DML)             & & & & \\
+      $\hat\tau_u^{cb}$ (kappa, CBPS) & & & & \\
+      $\hat\tau_u^{ml}$ (kappa, MLE)  & & & & \\
+      $\hat\tau_{a,10}$ (kappa)        & & & & \\
+      $\hat\tau_a$      (kappa)        & & & & \\
+      $\hat\tau_t$      (kappa)        & & & & \\
+      $\hat\tau_{a,0}$  (kappa)        & & & & \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \small\item $\sum_i\omega_i = 0$ iff translation invariant (Proposition~\ref{}).
+      ESS $= 1/\sum_i\omega_i^2$.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+% Placeholder for Figure 1 (Love plots)
+\begin{figure}[H]
+  \centering
+  % \includegraphics[width=\textwidth]{figures/vietnam_love_plots.pdf}
+  \caption{Love plots: outcome-weight-adjusted covariate balance, Vietnam (cubic specification)}
+  \label{fig:vietnam_love}
+  \medskip
+  \small [REPLACE WITH ACTUAL FIGURE]
+\end{figure}
+
+
+% ==============================================================================
+\section{Empirical Applications: Card (1995) and Angrist--Evans (1998)}
+\label{sec:card_ae}
+% ==============================================================================
+
+\subsection{Card (1995): College Proximity and Returns to Education}
+\label{subsec:card}
+
+\subsubsection{Data and Design}
+
+% [WRITE HERE — NLSY, N, Z=proximity, two treatments, two covariate specs, ~0.5 page]
+
+\subsubsection{Point Estimates and Translation Invariance}
+
+% [TABLE: Card replication, four spec × treatment columns]
+
+\subsubsection{Outcome Weight Diagnostics}
+
+% [WRITE HERE — ESS diverges across specs, Kitagawa ESS ≈ 1, ~1 page]
+
+\subsection{Angrist and Evans (1998): Childbearing and Labour Supply}
+\label{subsec:ae}
+
+\subsubsection{Data and Design}
+
+% [WRITE HERE — Census, N≈254k, Z=samesex, D=morekids, LFP + log income, ~0.5 page]
+
+\subsubsection{Point Estimates and Translation Invariance}
+
+% [TABLE: AE replication, LFP and income codings]
+
+\subsubsection{Outcome Weight Diagnostics and DML Limitation}
+
+% [WRITE HERE — kappa diagnostics, DML infeasible (memory ceiling), ~0.5 page]
+
+
+% ==============================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ==============================================================================
+
+\subsection{Cross-Application Summary}
+\label{subsec:cross_application}
+
+% Placeholder for Table 5 (cross-application comparison)
+\begin{table}[H]
+  \centering
+  \caption{Cross-application comparison of outcome weight diagnostics}
+  \label{tab:cross_app}
+  \begin{threeparttable}
+    \begin{tabular}{llrrrr}
+      \toprule
+      Application & Estimator & $\sum_i\omega_i$ & ESS & \% neg. & Balance \\
+      \midrule
+      \multicolumn{6}{l}{\textit{Angrist (1990) — Vietnam (cubic spec.)}} \\
+      & DML Wald-AIPW & & & & \\
+      & $\hat\tau_u^{cb}$ & & & & \\[4pt]
+      \multicolumn{6}{l}{\textit{Card (1995) — Card spec, somecol}} \\
+      & DML Wald-AIPW & & & & \\
+      & $\hat\tau_u^{cb}$ & & & & \\[4pt]
+      \multicolumn{6}{l}{\textit{Card (1995) — Kitagawa spec, somecol}} \\
+      & DML Wald-AIPW & & & & \\
+      & $\hat\tau_u^{cb}$ & & & & \\[4pt]
+      \multicolumn{6}{l}{\textit{Angrist \& Evans (1998) — LFP}} \\
+      & $\hat\tau_u^{cb}$ & & & & \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \small\item Balance = maximum absolute SMD from Love plot.
+      DML not reported for Angrist--Evans due to memory constraints
+      ($N \approx 254{,}000$; see Section~\ref{subsec:ae}).
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+\subsection{The Outcome-Weights Lens: What It Adds}
+\label{subsec:lens}
+
+% [WRITE HERE — what Love plots reveal beyond point estimates, ~0.5 page]
+
+\subsection{DML Learner Comparison and Implications}
+\label{subsec:dml_learners}
+
+% [WRITE HERE — learner convergence, XGBoost issue, ~0.5 page]
+
+\subsection{Practical Guidance}
+\label{subsec:practical}
+
+% [WRITE HERE — when to use which estimator, always check sum(omega), ~0.5 page]
+
+\subsection{Limitations}
+\label{subsec:limitations}
+
+% [WRITE HERE — DML memory ceiling for large N, Love plots descriptive not inferential, ~0.3 page]
+
+
+% ==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ==============================================================================
+
+% [WRITE HERE — summary of findings, recommendation (tau_u^cb), extensions, ~1.5 pages]
+
+
+% ==============================================================================
+% REFERENCES
+% ==============================================================================
+\newpage
+
+
+% ==============================================================================
+% APPENDICES
+% ==============================================================================
+\newpage
+\appendix
+\renewcommand{\thesection}{\Alph{section}}
+
+\section{Proofs}
+\label{app:proofs}
+
+% [Formal proofs of sum-to-zero for tau_u and tau_a10 if needed]
+
+\section{Additional Tables and Figures}
+\label{app:additional}
+
+% [Additional Love plots, full weight diagnostics tables, learner comparison details]
+
+\section{Data Sources and Variable Definitions}
+\label{app:data}
+
+% [Detailed variable definitions for all three applications]
+
+\section{R Code Overview}
+\label{app:code}
+
+Key functions implementing the kappa outcome weights are contained in
+\texttt{functions\_kappa.R}. The core function \texttt{kappa\_outcome\_weights()} computes
+closed-form $\omega_i$ vectors for all five estimators:
+
+\begin{lstlisting}[caption={Outcome weight construction (functions\_kappa.R, \S k)},
+                   label={lst:kappa_ow}]
+kappa_outcome_weights <- function(Z, D, p) {
+  n  <- length(Z)
+  kw <- kappa_weights(Z, D, p)
+
+  # tau_u (Uysal 2011)
+  s1  <- sum(Z / p);  s0 <- sum((1 - Z) / (1 - p))
+  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  # tau_a10 (Abadie-Cattaneo)
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
+
+  # Unnormalised (common numerator)
+  num_w <- (Z - p) / (p * (1 - p)) / n
+
+  list(w_u   = as.vector(w_u),
+       w_a10 = as.vector(w_a10),
+       w_a   = as.vector(num_w / mean(kw$kappa)),
+       w_a1  = as.vector(num_w / mean(kw$kappa1)),
+       w_a0  = as.vector(num_w / mean(kw$kappa0)))
+}
+\end{lstlisting}
+
+All replication code is available at: \texttt{[YOUR GITHUB/CLOUD LINK]}
+
+
+% ==============================================================================
+% SELBSTÄNDIGKEITSERKLÄRUNG (statutory declaration — required by Tübingen)
+% ==============================================================================
+
+
+% ==============================================================================
+\bibliographystyle{apalike}
+\bibliography{references}
+
+\end{document}
+% ==============================================================================
