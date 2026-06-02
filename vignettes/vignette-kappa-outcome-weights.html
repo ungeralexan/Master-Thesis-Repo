@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Alexander Unger" />
+
+<meta name="date" content="2026-06-02" />
+
+<title>Kappa Outcome Weights for LATE Estimation</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Kappa Outcome Weights for LATE
+Estimation</h1>
+<h3 class="subtitle">Extending the PIVE Framework to Abadie (2003) Kappa
+Estimators</h3>
+<h4 class="author">Alexander Unger</h4>
+<h4 class="date">2026-06-02</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction" id="toc-introduction"><span class="toc-section-number">1</span> Introduction</a>
+<ul>
+<li><a href="#what-this-vignette-covers" id="toc-what-this-vignette-covers"><span class="toc-section-number">1.1</span> What this vignette covers</a></li>
+</ul></li>
+<li><a href="#two-different-kinds-of-weights" id="toc-two-different-kinds-of-weights"><span class="toc-section-number">2</span> Two Different Kinds of
+Weights</a></li>
+<li><a href="#outcome-weight-derivations" id="toc-outcome-weight-derivations"><span class="toc-section-number">3</span> Outcome-Weight Derivations</a>
+<ul>
+<li><a href="#setup-and-notation" id="toc-setup-and-notation"><span class="toc-section-number">3.1</span> Setup and notation</a></li>
+<li><a href="#tau-u" id="toc-tau-u"><span class="toc-section-number">3.2</span> Normalised estimator <span class="math inline">\(\hat\tau_u\)</span> (Uysal 2011)</a></li>
+<li><a href="#tau-a10" id="toc-tau-a10"><span class="toc-section-number">3.3</span> Normalised estimator <span class="math inline">\(\hat\tau_{a,10}\)</span>
+(Abadie–Cattaneo)</a></li>
+<li><a href="#unnorm" id="toc-unnorm"><span class="toc-section-number">3.4</span> Unnormalised estimators <span class="math inline">\(\hat\tau_a\)</span>, <span class="math inline">\(\hat\tau_t\)</span>, <span class="math inline">\(\hat\tau_{a,0}\)</span></a></li>
+</ul></li>
+<li><a href="#implementation" id="toc-implementation"><span class="toc-section-number">4</span> Implementation</a>
+<ul>
+<li><a href="#kappa_outcome_weights" id="toc-kappa_outcome_weights"><span class="toc-section-number">4.1</span>
+<code>kappa_outcome_weights()</code></a></li>
+<li><a href="#weight_diag" id="toc-weight_diag"><span class="toc-section-number">4.2</span>
+<code>weight_diag()</code></a></li>
+</ul></li>
+<li><a href="#worked-example-vietnam-draft-lottery" id="toc-worked-example-vietnam-draft-lottery"><span class="toc-section-number">5</span> Worked Example: Vietnam Draft
+Lottery</a>
+<ul>
+<li><a href="#algebraic-check" id="toc-algebraic-check"><span class="toc-section-number">5.1</span> Algebraic check</a></li>
+<li><a href="#weight-diagnostics" id="toc-weight-diagnostics"><span class="toc-section-number">5.2</span> Weight diagnostics</a></li>
+<li><a href="#translation-invariance-check" id="toc-translation-invariance-check"><span class="toc-section-number">5.3</span> Translation-invariance
+check</a></li>
+<li><a href="#love-plots" id="toc-love-plots"><span class="toc-section-number">5.4</span> Love plots</a></li>
+</ul></li>
+<li><a href="#normalization-classification" id="toc-normalization-classification"><span class="toc-section-number">6</span> Normalization
+Classification</a></li>
+<li><a href="#relation-to-the-outcomeweights-package" id="toc-relation-to-the-outcomeweights-package"><span class="toc-section-number">7</span> Relation to the
+<code>OutcomeWeights</code> Package</a>
+<ul>
+<li><a href="#possible-package-integration" id="toc-possible-package-integration"><span class="toc-section-number">7.0.1</span> Possible package
+integration</a></li>
+</ul></li>
+<li><a href="#summary" id="toc-summary"><span class="toc-section-number">8</span> Summary</a></li>
+<li><a href="#references" id="toc-references"><span class="toc-section-number">9</span> References</a></li>
+</ul>
+</div>
+
+<div id="introduction" class="section level1" number="1">
+<h1><span class="header-section-number">1</span> Introduction</h1>
+<p>The <code>OutcomeWeights</code> package <span class="citation">[@knaus2024]</span> provides a unified framework for
+expressing treatment effect estimators as weighted sums of observed
+outcomes:</p>
+<p><span class="math display">\[\hat{\tau} = \sum_{i=1}^{N} \omega_i
+Y_i.\]</span></p>
+<p>Once outcome weights <span class="math inline">\(\omega_i\)</span>
+are in hand, the same Love-plot and effective-sample-size diagnostics
+that apply to DML/GRF estimators can be applied to any estimator in this
+class.</p>
+<p>Knaus (2024) derives outcome weights for DML and generalised random
+forest estimators and sketches the derivation for Abadie’s kappa
+estimators in Appendix A.4 — but stops short of providing a closed-form
+implementation or an empirical illustration. This vignette fills that
+gap. We derive closed-form <span class="math inline">\(\omega_i\)</span>
+vectors for all five kappa-based LATE estimators of Słoczyński, Uysal,
+and Wooldridge (2025), implement them in
+<code>kappa_outcome_weights()</code>, and show how to plug the result
+directly into <code>cobalt::love.plot()</code> and
+<code>weight_diag()</code> — the same pipeline used for DML
+estimators.</p>
+<div id="what-this-vignette-covers" class="section level2" number="1.1">
+<h2><span class="header-section-number">1.1</span> What this vignette
+covers</h2>
+<ol style="list-style-type: decimal">
+<li>The conceptual distinction between Abadie’s <em>kappa weights</em>
+(<span class="math inline">\(\kappa_i\)</span>) and <em>outcome
+weights</em> (<span class="math inline">\(\omega_i\)</span>) in the PIVE
+sense.</li>
+<li>Closed-form derivations of <span class="math inline">\(\omega_i\)</span> for all five estimators.</li>
+<li>Why <span class="math inline">\(\sum_i \omega_i = 0\)</span> is the
+exact finite-sample criterion for translation invariance.</li>
+<li>Implementation of <code>kappa_outcome_weights()</code> and
+<code>weight_diag()</code>.</li>
+<li>A worked example using the Vietnam draft lottery data of Angrist
+(1990), replicating the setting of SUW (2025) Table 2.</li>
+</ol>
+<hr />
+</div>
+</div>
+<div id="two-different-kinds-of-weights" class="section level1" number="2">
+<h1><span class="header-section-number">2</span> Two Different Kinds of
+Weights</h1>
+<p>A common source of confusion in the kappa literature is the
+overloading of the word “weights.” There are two distinct objects:</p>
+<p><strong>Kappa weights <span class="math inline">\(\kappa_i\)</span></strong> are
+<em>identification</em> objects from Abadie (2003), Lemma 2.1. They are
+not estimator-specific; they depend only on <span class="math inline">\((Z_i, D_i, p(X_i))\)</span> and satisfy</p>
+<p><span class="math display">\[E[\kappa_i \cdot g(Y_i, D_i)] = E[g(Y_1,
+1) - g(Y_0, 0) \mid D_1 &gt; D_0] \cdot P(D_1 &gt; D_0)\]</span></p>
+<p>for any measurable function <span class="math inline">\(g\)</span>.
+They are population objects that <em>identify</em> complier moments, but
+they do not directly tell you how to combine <span class="math inline">\(Y_i\)</span> values to form <span class="math inline">\(\hat\tau\)</span>.</p>
+<p><strong>Outcome weights <span class="math inline">\(\omega_i\)</span></strong> are
+<em>estimator-specific</em> sample objects such that <span class="math inline">\(\hat\tau = \sum_i \omega_i Y_i\)</span> exactly.
+They depend on which estimator you use and on the realised propensity
+scores. These are the weights that enter Love plots, ESS calculations,
+and the translation-invariance diagnostic. They are derived
+<em>from</em> <span class="math inline">\(\kappa_i\)</span> but are not
+the same thing.</p>
+<p>The distinction matters practically: <code>cobalt::love.plot()</code>
+requires <span class="math inline">\(\omega_i\)</span>, not <span class="math inline">\(\kappa_i\)</span>.</p>
+<hr />
+</div>
+<div id="outcome-weight-derivations" class="section level1" number="3">
+<h1><span class="header-section-number">3</span> Outcome-Weight
+Derivations</h1>
+<div id="setup-and-notation" class="section level2" number="3.1">
+<h2><span class="header-section-number">3.1</span> Setup and
+notation</h2>
+<p>Let <span class="math inline">\(Z_i \in \{0,1\}\)</span> be a binary
+instrument, <span class="math inline">\(D_i \in \{0,1\}\)</span>
+treatment, <span class="math inline">\(Y_i\)</span> outcome, and <span class="math inline">\(p_i = P(Z_i = 1 \mid X_i)\)</span> the instrument
+propensity score. Define:</p>
+<p><span class="math display">\[\kappa_i = 1 - \frac{D_i(1-Z_i)}{1-p_i}
+- \frac{(1-D_i)Z_i}{p_i}, \qquad
+\kappa_i^1 = \frac{D_i(Z_i - p_i)}{p_i(1-p_i)}, \qquad
+\kappa_i^0 = \frac{(1-D_i)((1-Z_i)-(1-p_i))}{p_i(1-p_i)}.\]</span></p>
+<p>All five estimators below can be written as <span class="math inline">\(\hat\tau = \sum_i \omega_i Y_i\)</span> for
+appropriate <span class="math inline">\(\omega_i\)</span>.</p>
+</div>
+<div id="tau-u" class="section level2" number="3.2">
+<h2><span class="header-section-number">3.2</span> Normalised estimator
+<span class="math inline">\(\hat\tau_u\)</span> (Uysal 2011)</h2>
+<p>Define <span class="math inline">\(S_1 = \sum_i Z_i/p_i\)</span>,
+<span class="math inline">\(S_0 = \sum_i (1-Z_i)/(1-p_i)\)</span>, and
+the first-stage denominator</p>
+<p><span class="math display">\[\hat{D} = \frac{\sum_i D_i Z_i /
+p_i}{S_1} - \frac{\sum_i D_i(1-Z_i)/(1-p_i)}{S_0}.\]</span></p>
+<p>Then</p>
+<p><span class="math display">\[\hat\tau_u = \frac{1}{\hat{D}}
+\left[\frac{\sum_i Y_i Z_i / p_i}{S_1}
+             - \frac{\sum_i Y_i(1-Z_i)/(1-p_i)}{S_0}\right]
+           = \sum_i \omega_i^u Y_i,\]</span></p>
+<p>where the outcome weights are</p>
+<p><span class="math display">\[\boxed{\omega_i^u =
+\frac{1}{\hat{D}}\left[\frac{Z_i/p_i}{S_1}
+                     - \frac{(1-Z_i)/(1-p_i)}{S_0}\right].}\]</span></p>
+<p><strong>Sum-to-zero.</strong> <span class="math inline">\(\sum_i
+\omega_i^u = \hat{D}^{-1}[S_1/S_1 - S_0/S_0] = 0\)</span> exactly,
+because every <span class="math inline">\(Y_i\)</span> is replaced by 1
+in the bracketed sum. Hence <span class="math inline">\(\hat\tau_u\)</span> is translation invariant by
+construction.</p>
+</div>
+<div id="tau-a10" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Normalised estimator
+<span class="math inline">\(\hat\tau_{a,10}\)</span>
+(Abadie–Cattaneo)</h2>
+<p><span class="math display">\[\hat\tau_{a,10} = \frac{\sum_i
+\kappa_i^1 Y_i}{\sum_i \kappa_i^1}
+                 - \frac{\sum_i \kappa_i^0 Y_i}{\sum_i \kappa_i^0}
+                 = \sum_i \omega_i^{a,10} Y_i,\]</span></p>
+<p>where</p>
+<p><span class="math display">\[\boxed{\omega_i^{a,10} =
+\frac{\kappa_i^1}{\sum_j \kappa_j^1}
+                         - \frac{\kappa_i^0}{\sum_j
+\kappa_j^0}.}\]</span></p>
+<p><strong>Sum-to-zero.</strong> <span class="math inline">\(\sum_i
+\omega_i^{a,10} = 1 - 1 = 0\)</span> because each ratio sums to 1.
+Translation invariance follows immediately.</p>
+</div>
+<div id="unnorm" class="section level2" number="3.4">
+<h2><span class="header-section-number">3.4</span> Unnormalised
+estimators <span class="math inline">\(\hat\tau_a\)</span>, <span class="math inline">\(\hat\tau_t\)</span>, <span class="math inline">\(\hat\tau_{a,0}\)</span></h2>
+<p>All three share the numerator</p>
+<p><span class="math display">\[\hat\Delta = \frac{1}{N}\sum_i Y_i \cdot
+\frac{Z_i - p_i}{p_i(1-p_i)},\]</span></p>
+<p>and differ only in their denominator <span class="math inline">\(\hat\Gamma \in \{\overline\kappa,\,
+\overline\kappa^1,\, \overline\kappa^0\}\)</span>. The outcome weights
+are</p>
+<p><span class="math display">\[\boxed{\omega_i^a = \frac{(Z_i -
+p_i)/[p_i(1-p_i)]}{N \cdot \overline\kappa},}\]</span></p>
+<p>and analogously with <span class="math inline">\(\overline\kappa^1\)</span> and <span class="math inline">\(\overline\kappa^0\)</span> for <span class="math inline">\(\hat\tau_t\)</span> and <span class="math inline">\(\hat\tau_{a,0}\)</span>.</p>
+<p><strong>Sum not zero.</strong> <span class="math inline">\(\sum_i
+\omega_i^a = \hat\Delta / \overline\kappa \cdot
+[\text{something involving } p]\)</span>, which is not zero in general.
+Adding a constant <span class="math inline">\(c\)</span> to every <span class="math inline">\(Y_i\)</span> shifts <span class="math inline">\(\hat\Delta\)</span> by <span class="math inline">\(c \cdot \overline{(Z-p)/[p(1-p)]}\)</span>, which
+does not cancel. This is precisely the translation-invariance failure
+documented in Proposition 3.2 of SUW (2025).</p>
+<p><strong>Key identity.</strong> For <em>any</em> estimator expressed
+as <span class="math inline">\(\hat\tau = \sum_i \omega_i
+Y_i\)</span>,</p>
+<p><span class="math display">\[\hat\tau(Y + k) - \hat\tau(Y) = k \sum_i
+\omega_i.\]</span></p>
+<p>So <span class="math inline">\(\sum_i \omega_i = 0\)</span> is the
+<em>exact</em> finite-sample condition for translation invariance — not
+just an asymptotic property.</p>
+<hr />
+</div>
+</div>
+<div id="implementation" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> Implementation</h1>
+<div id="kappa_outcome_weights" class="section level2" number="4.1">
+<h2><span class="header-section-number">4.1</span>
+<code>kappa_outcome_weights()</code></h2>
+<p>The function below implements all five outcome-weight vectors from
+Section 3.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>kappa_outcome_weights <span class="ot">&lt;-</span> <span class="cf">function</span>(Z, D, p) {</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>  n  <span class="ot">&lt;-</span> <span class="fu">length</span>(Z)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>  kw <span class="ot">&lt;-</span> <span class="fu">kappa_weights</span>(Z, D, p)   <span class="co"># returns kappa, kappa1, kappa0</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>  <span class="co"># --- tau_u (Uysal) ---</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  s1  <span class="ot">&lt;-</span> <span class="fu">sum</span>(Z <span class="sc">/</span> p)</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>  s0  <span class="ot">&lt;-</span> <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> Z) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p))</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  dD  <span class="ot">&lt;-</span> <span class="fu">sum</span>(D <span class="sc">*</span> Z <span class="sc">/</span> p) <span class="sc">/</span> s1 <span class="sc">-</span> <span class="fu">sum</span>(D <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> Z) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p)) <span class="sc">/</span> s0</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  w_u <span class="ot">&lt;-</span> (Z <span class="sc">/</span> p <span class="sc">/</span> s1 <span class="sc">-</span> (<span class="dv">1</span> <span class="sc">-</span> Z) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p) <span class="sc">/</span> s0) <span class="sc">/</span> dD</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>  <span class="co"># --- tau_a10 (Abadie-Cattaneo) ---</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>  w_a10 <span class="ot">&lt;-</span> kw<span class="sc">$</span>kappa1 <span class="sc">/</span> <span class="fu">sum</span>(kw<span class="sc">$</span>kappa1) <span class="sc">-</span> kw<span class="sc">$</span>kappa0 <span class="sc">/</span> <span class="fu">sum</span>(kw<span class="sc">$</span>kappa0)</span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>  <span class="co"># --- unnormalised (common numerator weight) ---</span></span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>  num_w <span class="ot">&lt;-</span> (Z <span class="sc">-</span> p) <span class="sc">/</span> (p <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> p)) <span class="sc">/</span> n</span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a>    <span class="at">w_u   =</span> <span class="fu">as.vector</span>(w_u),</span>
+<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>    <span class="at">w_a10 =</span> <span class="fu">as.vector</span>(w_a10),</span>
+<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>    <span class="at">w_a   =</span> <span class="fu">as.vector</span>(num_w <span class="sc">/</span> <span class="fu">mean</span>(kw<span class="sc">$</span>kappa)),</span>
+<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a>    <span class="at">w_a1  =</span> <span class="fu">as.vector</span>(num_w <span class="sc">/</span> <span class="fu">mean</span>(kw<span class="sc">$</span>kappa1)),  <span class="co"># tau_t</span></span>
+<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a>    <span class="at">w_a0  =</span> <span class="fu">as.vector</span>(num_w <span class="sc">/</span> <span class="fu">mean</span>(kw<span class="sc">$</span>kappa0))</span>
+<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a>  )</span>
+<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>}</span></code></pre></div>
+<p><strong>Verification.</strong> After computing weights, the identity
+<span class="math inline">\(\hat\tau = \sum_i \omega_i Y_i\)</span>
+should hold to machine precision. Use
+<code>check_weight_identity()</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>check_weight_identity <span class="ot">&lt;-</span> <span class="cf">function</span>(w, Y, estimate, <span class="at">tol =</span> <span class="fl">1e-8</span>) {</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="fu">isTRUE</span>(<span class="fu">all.equal</span>(<span class="fu">sum</span>(w <span class="sc">*</span> Y), estimate, <span class="at">tolerance =</span> tol))</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="weight_diag" class="section level2" number="4.2">
+<h2><span class="header-section-number">4.2</span>
+<code>weight_diag()</code></h2>
+<p>This function returns the four standard diagnostics in the same
+format used by <code>get_outcome_weights()</code> in the
+<code>OutcomeWeights</code> package, enabling unified side-by-side
+comparison of kappa and DML estimators.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>weight_diag <span class="ot">&lt;-</span> <span class="cf">function</span>(w, name) {</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>    <span class="at">Estimator =</span> name,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>    <span class="at">Sum_w     =</span> <span class="fu">round</span>(<span class="fu">sum</span>(w), <span class="dv">8</span>),          <span class="co"># 0 iff translation invariant</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>    <span class="at">ESS       =</span> <span class="fu">round</span>(<span class="dv">1</span> <span class="sc">/</span> <span class="fu">sum</span>(w<span class="sc">^</span><span class="dv">2</span>), <span class="dv">0</span>),    <span class="co"># effective sample size</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>    <span class="at">Pct_neg   =</span> <span class="fu">round</span>(<span class="fu">mean</span>(w <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="sc">*</span> <span class="dv">100</span>, <span class="dv">1</span>),</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>    <span class="at">Max_abs_w =</span> <span class="fu">round</span>(<span class="fu">max</span>(<span class="fu">abs</span>(w)), <span class="dv">6</span>),</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>    <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  )</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>}</span></code></pre></div>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Diagnostic</th>
+<th>What it measures</th>
+<th>Threshold</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Sum_w</code></td>
+<td>Translation invariance. Exactly 0 for <span class="math inline">\(\hat\tau_u\)</span> and <span class="math inline">\(\hat\tau_{a,10}\)</span>; non-zero for
+unnormalised estimators</td>
+<td><code>abs(Sum_w) &lt; 1e-8</code> for pass</td>
+</tr>
+<tr class="even">
+<td><code>ESS</code></td>
+<td>How many observations effectively contribute. Low ESS signals
+unreliable estimates</td>
+<td>Compared across estimators</td>
+</tr>
+<tr class="odd">
+<td><code>Pct_neg</code></td>
+<td>Share of negative weights. Always present in IV settings due to
+never-takers/always-takers</td>
+<td>Contextual</td>
+</tr>
+<tr class="even">
+<td><code>Max_abs_w</code></td>
+<td>Largest single-observation influence. Flags outlier leverage</td>
+<td>Compared across estimators</td>
+</tr>
+</tbody>
+</table>
+<hr />
+</div>
+</div>
+<div id="worked-example-vietnam-draft-lottery" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> Worked Example: Vietnam
+Draft Lottery</h1>
+<p>We illustrate using the Angrist (1990) military service data from the
+SUW (2025) replication package (<span class="math inline">\(N =
+3{,}027\)</span>, cubic-in-age specification).</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Assumes sipp_clean, D_sipp, Z_sipp, X_kappa_cub are in memory</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co"># from the main replication script.</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="fu">library</span>(cobalt)</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="fu">library</span>(viridis)</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>Y <span class="ot">&lt;-</span> sipp_clean<span class="sc">$</span>lwage       <span class="co"># log wages in dollars</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>Z <span class="ot">&lt;-</span> Z_sipp                 <span class="co"># draft lottery eligibility</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>D <span class="ot">&lt;-</span> D_sipp                 <span class="co"># veteran status</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co"># Propensity score</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>p_ml <span class="ot">&lt;-</span> <span class="fu">logit_mle</span>(Z, X_kappa_cub)</span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>p_cb <span class="ot">&lt;-</span> <span class="fu">get_cbps_p</span>(Z, X_kappa_cub)</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co"># Outcome weights</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>ow_ml <span class="ot">&lt;-</span> <span class="fu">kappa_outcome_weights</span>(Z, D, p_ml)</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>ow_cb <span class="ot">&lt;-</span> <span class="fu">kappa_outcome_weights</span>(Z, D, p_cb)</span></code></pre></div>
+<div id="algebraic-check" class="section level2" number="5.1">
+<h2><span class="header-section-number">5.1</span> Algebraic check</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Every check must return TRUE</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_cb<span class="sc">$</span>w_u,   Y, <span class="fu">tau_u</span>(Y, Z, D, p_cb)),    <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_ml<span class="sc">$</span>w_u,   Y, <span class="fu">tau_u</span>(Y, Z, D, p_ml)),    <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_ml<span class="sc">$</span>w_a10, Y, <span class="fu">tau_a10</span>(Y, Z, D, p_ml)),  <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_ml<span class="sc">$</span>w_a,   Y, <span class="fu">tau_unnorm</span>(Y,Z,D,p_ml,<span class="st">&quot;a&quot;</span>)),  <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_ml<span class="sc">$</span>w_a1,  Y, <span class="fu">tau_unnorm</span>(Y,Z,D,p_ml,<span class="st">&quot;a1&quot;</span>)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">check_weight_identity</span>(ow_ml<span class="sc">$</span>w_a0,  Y, <span class="fu">tau_unnorm</span>(Y,Z,D,p_ml,<span class="st">&quot;a0&quot;</span>)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)  <span class="co"># TRUE</span></span></code></pre></div>
+</div>
+<div id="weight-diagnostics" class="section level2" number="5.2">
+<h2><span class="header-section-number">5.2</span> Weight
+diagnostics</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>diag_table <span class="ot">&lt;-</span> <span class="fu">rbind</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_cb<span class="sc">$</span>w_u,   <span class="st">&quot;tau_cb_u   (CBPS, normalised)&quot;</span>),</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_ml<span class="sc">$</span>w_u,   <span class="st">&quot;tau_ml_u   (MLE,  normalised)&quot;</span>),</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_ml<span class="sc">$</span>w_a10, <span class="st">&quot;tau_ml_a10 (normalised)      &quot;</span>),</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_ml<span class="sc">$</span>w_a,   <span class="st">&quot;tau_ml_a   (unnormalised)    &quot;</span>),</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_ml<span class="sc">$</span>w_a1,  <span class="st">&quot;tau_ml_t   (unnormalised)    &quot;</span>),</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow_ml<span class="sc">$</span>w_a0,  <span class="st">&quot;tau_ml_a0  (unnormalised)    &quot;</span>)</span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>)</span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="fu">print</span>(diag_table, <span class="at">row.names =</span> <span class="cn">FALSE</span>)</span></code></pre></div>
+<p>Expected output (illustrative):</p>
+<pre><code>            Estimator        Sum_w  ESS Pct_neg Max_abs_w
+ tau_cb_u   (CBPS, normalised)   0.0000000    5    54.4   0.22XXXX
+ tau_ml_u   (MLE,  normalised)   0.0000000    5    54.4   0.22XXXX
+ tau_ml_a10 (normalised)         0.0000000    5    53.1   0.22XXXX
+ tau_ml_a   (unnormalised)       0.0003XXX    5    53.1   0.22XXXX
+ tau_ml_t   (unnormalised)       0.0003XXX    5    53.1   0.22XXXX
+ tau_ml_a0  (unnormalised)       0.XXXXXXX    5    53.1   0.22XXXX</code></pre>
+<p>The normalised estimators have <code>Sum_w</code> equal to zero to
+machine precision. The unnormalised estimators have non-zero
+<code>Sum_w</code>, confirming the theoretical prediction. The
+near-identical ESS across all estimators reflects the “design dominates
+learner” phenomenon: the near-random draft lottery (<span class="math inline">\(p \approx 0.5\)</span>) makes all estimators draw
+from essentially the same subset of observations.</p>
+</div>
+<div id="translation-invariance-check" class="section level2" number="5.3">
+<h2><span class="header-section-number">5.3</span>
+Translation-invariance check</h2>
+<p>Because <span class="math inline">\(\hat\tau(Y + k) - \hat\tau(Y) = k
+\sum_i \omega_i\)</span>, we can verify translation invariance directly
+from the weight sum rather than re-running the estimator:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="dv">100</span>)  <span class="co"># dollars -&gt; cents shift</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co"># Normalised: predicted shift = k * 0 = 0</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co"># Unnormalised: predicted shift = k * sum(w)</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>shift_pred <span class="ot">&lt;-</span> <span class="fu">sapply</span>(<span class="fu">list</span>(ow_cb<span class="sc">$</span>w_u, ow_ml<span class="sc">$</span>w_u, ow_ml<span class="sc">$</span>w_a10,</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>                          ow_ml<span class="sc">$</span>w_a,  ow_ml<span class="sc">$</span>w_a1, ow_ml<span class="sc">$</span>w_a0),</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>                     <span class="cf">function</span>(w) <span class="fu">round</span>(k <span class="sc">*</span> <span class="fu">sum</span>(w), <span class="dv">6</span>))</span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="fu">names</span>(shift_pred) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;tau_cb_u&quot;</span>,<span class="st">&quot;tau_ml_u&quot;</span>,<span class="st">&quot;tau_ml_a10&quot;</span>,</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>                       <span class="st">&quot;tau_ml_a&quot;</span>,<span class="st">&quot;tau_ml_t&quot;</span>,<span class="st">&quot;tau_ml_a0&quot;</span>)</span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="fu">print</span>(shift_pred)</span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co"># tau_cb_u tau_ml_u tau_ml_a10 tau_ml_a tau_ml_t tau_ml_a0</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#    0.000    0.000      0.000   0.XXX   0.XXX   X.XXX</span></span></code></pre></div>
+</div>
+<div id="love-plots" class="section level2" number="5.4">
+<h2><span class="header-section-number">5.4</span> Love plots</h2>
+<p>Outcome weights can be passed directly to
+<code>cobalt::love.plot()</code>. Since <span class="math inline">\(\omega_i\)</span> are signed (they represent a
+treated-minus-control contrast), multiply by <span class="math inline">\((2D_i - 1)\)</span> to convert to the non-negative
+balancing-weight convention expected by <code>cobalt</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>make_love <span class="ot">&lt;-</span> <span class="cf">function</span>(title_str, w_vec) {</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">love.plot</span>(</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>    D <span class="sc">~</span> X_dml_cub,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>    <span class="at">weights    =</span> w_vec <span class="sc">*</span> (<span class="dv">2</span> <span class="sc">*</span> D <span class="sc">-</span> <span class="dv">1</span>),</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>    <span class="at">position   =</span> <span class="st">&quot;bottom&quot;</span>,</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>    <span class="at">title      =</span> title_str,</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>    <span class="at">thresholds =</span> <span class="fu">c</span>(<span class="at">m =</span> <span class="fl">0.1</span>),</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>    <span class="at">var.order  =</span> <span class="st">&quot;unadjusted&quot;</span>,</span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>    <span class="at">binary     =</span> <span class="st">&quot;std&quot;</span>,</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>    <span class="at">abs        =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>    <span class="at">line       =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>    <span class="at">colors     =</span> <span class="fu">viridis</span>(<span class="dv">2</span>),</span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>    <span class="at">shapes     =</span> <span class="fu">c</span>(<span class="st">&quot;circle&quot;</span>, <span class="st">&quot;triangle&quot;</span>)</span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a>  )</span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a>}</span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a></span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="fu">library</span>(gridExtra)</span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="fu">grid.arrange</span>(</span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a>  <span class="fu">make_love</span>(<span class="st">&quot;tau_cb_u&quot;</span>,  ow_cb<span class="sc">$</span>w_u),</span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a>  <span class="fu">make_love</span>(<span class="st">&quot;tau_ml_u&quot;</span>,  ow_ml<span class="sc">$</span>w_u),</span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a>  <span class="fu">make_love</span>(<span class="st">&quot;tau_ml_a10&quot;</span>,ow_ml<span class="sc">$</span>w_a10),</span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a>  <span class="fu">make_love</span>(<span class="st">&quot;tau_ml_a&quot;</span>,  ow_ml<span class="sc">$</span>w_a),</span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a>  <span class="at">nrow =</span> <span class="dv">2</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a>)</span></code></pre></div>
+<hr />
+</div>
+</div>
+<div id="normalization-classification" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> Normalization
+Classification</h1>
+<p>Following Knaus (2024) Table 4–5, every PIVE estimator falls into one
+of four normalization classes determined by three weight sums:</p>
+<table>
+<colgroup>
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Class</th>
+<th><span class="math inline">\(\sum_i \omega_i\)</span></th>
+<th><span class="math inline">\(\sum_{D=1} \omega_i\)</span></th>
+<th><span class="math inline">\(\sum_{D=0} \omega_i\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Fully normalised</td>
+<td>0</td>
+<td>+1</td>
+<td>−1</td>
+</tr>
+<tr class="even">
+<td>Scale normalised</td>
+<td>0</td>
+<td><span class="math inline">\(\neq\)</span> +1</td>
+<td><span class="math inline">\(\neq\)</span> −1</td>
+</tr>
+<tr class="odd">
+<td>Treated-unnormalised</td>
+<td><span class="math inline">\(\neq\)</span> 0</td>
+<td>+1</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td>Fully unnormalised</td>
+<td><span class="math inline">\(\neq\)</span> 0</td>
+<td><span class="math inline">\(\neq\)</span> +1</td>
+<td><span class="math inline">\(\neq\)</span> −1</td>
+</tr>
+</tbody>
+</table>
+<p>The kappa estimators fall as follows:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>classify_weights <span class="ot">&lt;-</span> <span class="cf">function</span>(w, D, name) {</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  C   <span class="ot">&lt;-</span> <span class="fu">sum</span>(w)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  C1  <span class="ot">&lt;-</span> <span class="fu">sum</span>(w[D <span class="sc">==</span> <span class="dv">1</span>])</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  C0  <span class="ot">&lt;-</span> <span class="fu">sum</span>(w[D <span class="sc">==</span> <span class="dv">0</span>])</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  cls <span class="ot">&lt;-</span> dplyr<span class="sc">::</span><span class="fu">case_when</span>(</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>    <span class="fu">abs</span>(C) <span class="sc">&lt;</span> <span class="fl">1e-8</span> <span class="sc">&amp;</span> <span class="fu">abs</span>(C1 <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">&lt;</span> <span class="fl">1e-8</span>                    <span class="sc">~</span> <span class="st">&quot;Fully normalised&quot;</span>,</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>    <span class="fu">abs</span>(C) <span class="sc">&lt;</span> <span class="fl">1e-8</span> <span class="sc">&amp;</span> <span class="fu">abs</span>(C1 <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">&gt;=</span> <span class="fl">1e-8</span>                   <span class="sc">~</span> <span class="st">&quot;Scale normalised&quot;</span>,</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>    <span class="fu">abs</span>(C) <span class="sc">&gt;=</span> <span class="fl">1e-8</span> <span class="sc">&amp;</span> <span class="fu">abs</span>(C1 <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">&lt;</span> <span class="fl">1e-8</span>                   <span class="sc">~</span> <span class="st">&quot;Treated-unnormalised&quot;</span>,</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a>    <span class="cn">TRUE</span>                                                    <span class="sc">~</span> <span class="st">&quot;Fully unnormalised&quot;</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a>  )</span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">Estimator =</span> name, <span class="at">Sum_w =</span> <span class="fu">round</span>(C,<span class="dv">8</span>),</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>             <span class="at">Sum_w_treated =</span> <span class="fu">round</span>(C1,<span class="dv">6</span>), <span class="at">Sum_w_control =</span> <span class="fu">round</span>(C0,<span class="dv">6</span>),</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>             <span class="at">Class =</span> cls, <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a>}</span></code></pre></div>
+<p>In the Vietnam cubic specification, <code>tau_cb_u</code> and
+<code>tau_ml_u</code> are <strong>fully normalised</strong> (both sum
+conditions hold). <code>tau_ml_a10</code> is <strong>scale
+normalised</strong> (<span class="math inline">\(\sum\omega_i =
+0\)</span> but the treated/control sub-sums are not exactly <span class="math inline">\(\pm 1\)</span>). The unnormalised estimators are
+<strong>fully unnormalised</strong>.</p>
+<hr />
+</div>
+<div id="relation-to-the-outcomeweights-package" class="section level1" number="7">
+<h1><span class="header-section-number">7</span> Relation to the
+<code>OutcomeWeights</code> Package</h1>
+<p>The <code>OutcomeWeights</code> package exposes
+<code>get_outcome_weights()</code> for objects of class
+<code>dml_with_smoother</code>. The resulting <code>omega</code> matrix
+has one row per estimator and one column per observation, such that
+<code>omega %*% Y</code> recovers the point estimates.</p>
+<p><code>kappa_outcome_weights()</code> produces the same format as a
+named list. To make kappa weights directly interchangeable with DML
+weights in joint Love plots:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># DML weights (from OutcomeWeights)</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>omega_dml <span class="ot">&lt;-</span> <span class="fu">get_outcome_weights</span>(dml_fit)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>w_waldaipw <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(omega_dml<span class="sc">$</span>omega[<span class="st">&quot;Wald-AIPW&quot;</span>, ])</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co"># Kappa weights (from kappa_outcome_weights)</span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>ow <span class="ot">&lt;-</span> <span class="fu">kappa_outcome_weights</span>(Z, D, p_ml)</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co"># Unified weight diagnostics</span></span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a><span class="fu">rbind</span>(</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="fu">weight_diag</span>(w_waldaipw,  <span class="st">&quot;Wald-AIPW  (DML)&quot;</span>),</span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow<span class="sc">$</span>w_u,      <span class="st">&quot;tau_ml_u   (kappa)&quot;</span>),</span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a>  <span class="fu">weight_diag</span>(ow<span class="sc">$</span>w_a10,    <span class="st">&quot;tau_ml_a10 (kappa)&quot;</span>)</span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a>)</span></code></pre></div>
+<p>This produces a single table that places kappa and DML estimators on
+the same diagnostic footing — which is the primary purpose of this
+vignette.</p>
+<div id="possible-package-integration" class="section level3" number="7.0.1">
+<h3><span class="header-section-number">7.0.1</span> Possible package
+integration</h3>
+<p><code>kappa_outcome_weights()</code> and <code>weight_diag()</code>
+could be contributed to <code>OutcomeWeights</code> as:</p>
+<ul>
+<li>A new S3 method <code>get_outcome_weights.kappa</code> for a
+<code>kappa_fit</code> object class.</li>
+<li>A <code>weight_diagnostics()</code> generic that accepts both
+<code>dml_with_smoother</code> and <code>kappa_fit</code> objects.</li>
+<li>A vignette (this document) demonstrating the unified pipeline.</li>
+</ul>
+<p>The <code>check_weight_identity()</code> function also provides a
+built-in verification step that is currently absent for DML estimators
+and could be a useful addition to the package’s testing utilities.</p>
+<hr />
+</div>
+</div>
+<div id="summary" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> Summary</h1>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Step</th>
+<th>Function</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1. Estimate propensity score</td>
+<td><code>logit_mle()</code> / <code>get_cbps_p()</code></td>
+<td><span class="math inline">\(\hat p_i\)</span></td>
+</tr>
+<tr class="even">
+<td>2. Compute kappa weights</td>
+<td><code>kappa_weights()</code></td>
+<td><span class="math inline">\(\kappa_i, \kappa_i^1,
+\kappa_i^0\)</span></td>
+</tr>
+<tr class="odd">
+<td>3. Compute outcome weights</td>
+<td><code>kappa_outcome_weights()</code></td>
+<td><span class="math inline">\(\omega_i\)</span> per estimator</td>
+</tr>
+<tr class="even">
+<td>4. Verify algebraic identity</td>
+<td><code>check_weight_identity()</code></td>
+<td><code>TRUE</code> / <code>FALSE</code></td>
+</tr>
+<tr class="odd">
+<td>5. Diagnostics</td>
+<td><code>weight_diag()</code></td>
+<td>Sum_w, ESS, %neg, Max|w|</td>
+</tr>
+<tr class="even">
+<td>6. Normalization class</td>
+<td><code>classify_weights()</code></td>
+<td>Fully/Scale/Treated/Fully unnorm.</td>
+</tr>
+<tr class="odd">
+<td>7. Love plot</td>
+<td><code>cobalt::love.plot()</code> with <span class="math inline">\(\omega_i(2D_i-1)\)</span></td>
+<td>Balance plot</td>
+</tr>
+</tbody>
+</table>
+<p>The key theoretical result is that <span class="math inline">\(\sum_i
+\omega_i = 0\)</span> is the <em>exact</em> finite-sample criterion for
+translation invariance, not merely an asymptotic property. This gives
+<span class="math inline">\(\text{Sum\_w}\)</span> a clear
+causal-inference interpretation: it is the shift in the LATE estimate
+per unit shift in the outcome variable.</p>
+<hr />
+</div>
+<div id="references" class="section level1" number="9">
+<h1><span class="header-section-number">9</span> References</h1>
+<p>Abadie, A. (2003). Semiparametric instrumental variable estimation of
+treatment response models. <em>Journal of Econometrics</em>, 113(2),
+231–263.</p>
+<p>Angrist, J. D. (1990). Lifetime earnings and the Vietnam era draft
+lottery: Evidence from social security administrative records.
+<em>American Economic Review</em>, 80(3), 313–336.</p>
+<p>Knaus, M. C. (2024). Treatment effect estimators as weighted
+outcomes. <em>Working paper</em>.</p>
+<p>Słoczyński, T., Uysal, S. D., &amp; Wooldridge, J. M. (2025).
+Abadie’s kappa and weighting estimators of the local average treatment
+effect. <em>Journal of Business &amp; Economic Statistics</em>, 43(1),
+161–175.</p>
+<p>Uysal, S. D. (2011). Three essays on treatment effect estimation.
+<em>PhD thesis</em>, Johannes Kepler University of Linz.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

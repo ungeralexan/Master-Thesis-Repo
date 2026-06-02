@@ -12,7 +12,6 @@ vignette: >
   %\VignetteIndexEntry{Kappa Outcome Weights for LATE Estimation}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
-bibliography: references.bib
 ---
 
 ```{r setup, include = FALSE}
