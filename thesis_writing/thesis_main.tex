@@ -377,6 +377,7 @@ These weights are not universal features of the research design. They depend on 
 This distinction matters because the diagnostics used in the empirical part of the thesis are diagnostics of outcome weights, not of kappa weights. Love plots, standardized mean differences, effective sample size, negative weight shares, and the sum-to-zero condition for translation invariance all refer to $\omega_i$. The task is therefore not simply to compute $\kappa_i$, but to derive the estimator-specific mapping from kappa quantities to outcome weights.
 
 
+
 % ==============================================================================
 \subsection{The PIVE Framework}
 \label{subsec:pive_recap}
@@ -619,7 +620,7 @@ quantity $N^{-1}\mathbf{1}_N'\mathbf{T}^u\mathbf{D}$ that appears in the numerat
 The sum-to-zero condition $\sum_i \omega_i^u = 0$ rests entirely on
 equation~\eqref{eq:u_T_ones_zero}, which holds because both instrument groups carry
 equal total mass $N$ after normalization. This makes transparent why the structurally
-similar estimator $\hat\tau_{a,1}$ of \citet{frolich2007} and \citet{tan2006} fails
+similar estimator $\hat\tau_{a,1}$ of \citet{frolich2007nonparametric} and \citet{tan2006regression} fails
 translation invariance. That estimator uses the same Wald-IPW form as $\hat\tau_u$
 but without the within-group normalization: the raw weights $\lambda_{1i} = Z_i/\hat{p}_i$
 and $\lambda_{0i} = (1-Z_i)/(1-\hat{p}_i)$ enter directly, so the two group totals are
@@ -657,115 +658,180 @@ estimates that change sign under outcome recoding while $\hat\tau_u$ does not.
 \newpage
  
 % ==============================================================================
+
+% ==============================================================================
 \subsection{Normalization Classification and Summary}
 \label{subsec:classification}
 % ==============================================================================
- 
-Table~\ref{tab:normalization} summarizes the outcome-weight properties of all estimators
-studied in this thesis, following the classification protocol of \citet[Table~4]{knaus2024}.
-An estimator is \emph{fully normalized} if $\sum_i\omega_i = 0$,
-$\sum_i\omega_iD_i = +1$, and $\sum_i\omega_i(1-D_i) = -1$; \emph{scale normalized}
-if $\sum_i\omega_i = 0$ but the group conditions do not hold exactly; and
-\emph{fully unnormalized} if $\sum_i\omega_i \neq 0$.
- 
+
+\subsubsection{Two Notions of Normalization}
+\label{sssec:two_norms}
+
+The preceding sections use the word normalization in two senses that are related but
+logically distinct, and it is worth being explicit about both before presenting the
+classification.\\
+In the kappa-estimator literature, an estimator is called \emph{normalized} if the
+inverse-probability or kappa weights used in its construction are rescaled so that the
+denominator of the estimator converges to the true complier share
+\citep{sloczynski2025abadie}. For $\hat\tau_u$, this means the instrument-group weights
+for $Z=1$ and $Z=0$ are separately divided by their group totals before forming the
+Wald ratio. For $\hat\tau_{a,10}$, it means the $\kappa_1$- and $\kappa_0$-weighted
+sums are each divided by their own total. The unnormalized estimators $\hat\tau_a$,
+$\hat\tau_{a,1}$, and $\hat\tau_{a,0}$ omit one or both of these rescaling steps.
+This is an internal property of how the estimator is constructed.\\
+In the outcome-weight framework of \citet{knaus2024treatment}, normalization refers to
+a property of the final weights $\omega_i$ placed on the observed outcomes. An estimator
+is \emph{fully normalized} in this sense if
+\begin{equation}
+  \sum_{i=1}^N \omega_i = 0,
+  \qquad
+  \sum_{i=1}^N \omega_i D_i = 1,
+  \qquad
+  \sum_{i=1}^N \omega_i (1-D_i) = -1.
+  \label{eq:full_norm_conditions}
+\end{equation}
+These conditions say that the outcome weights behave like a normalized
+treated-minus-control contrast: the treated side carries total mass $+1$ and the
+untreated side carries total mass $-1$, so the overall sum is zero.
+
+The first condition in \eqref{eq:full_norm_conditions} has a direct causal
+interpretation through a simple algebraic identity. Suppose the outcome variable is
+shifted by a constant $k \in \mathbb{R}$, replacing $Y_i$ with $Y_i + k$ for every
+observation. This corresponds, for instance, to expressing log wages in cents rather
+than dollars, or coding a binary labour-force-participation variable as $\{1,2\}$
+rather than $\{0,1\}$. The constant $k$ carries no information about the causal
+effect of the treatment. For any estimator $\hat\tau = \sum_i \omega_i Y_i$, the
+shifted estimate equals
+\begin{equation}
+  \hat\tau(Y + k)
+  = \sum_{i=1}^N \omega_i (Y_i + k)
+  = \sum_{i=1}^N \omega_i Y_i + k \sum_{i=1}^N \omega_i
+  = \hat\tau(Y) + k \sum_{i=1}^N \omega_i.
+  \label{eq:ti_algebra}
+\end{equation}
+Rearranging gives the translation-invariance identity:
+\begin{equation}
+  \hat\tau(Y + k) - \hat\tau(Y) = k \sum_{i=1}^N \omega_i.
+  \label{eq:ti_identity}
+\end{equation}
+This identity holds exactly in finite samples, for any realization of the data and
+any propensity score estimate. The right-hand side vanishes if and only if
+$\sum_i \omega_i = 0$. 
+Thus, the sum-to-zero condition is the necessary and sufficient finite-sample
+condition for the estimator to be invariant to additive outcome transformations.
+Full normalization in the Knaus sense is stronger: it additionally requires the
+treated and untreated components of the outcome weights to sum to $+1$ and $-1$,
+respectively.
+When $\sum_i \omega_i \neq 0$, the
+estimate changes by $k \sum_i \omega_i$ for every unit shift in $k$: an estimator
+applied to log wages in cents will produce a numerically different LATE than the
+same estimator applied to log wages in dollars, even though the two outcomes contain
+identical information about the causal effect. \citet{sloczynski2025abadie} call this
+property translation invariance and show in Proposition~3.2 that it holds for
+$\hat\tau_u$ and $\hat\tau_{a,10}$ but fails for the unnormalized estimators. The
+derivations in this chapter show that the same property is an exact finite-sample
+consequence of the outcome-weight structure derived in
+Sections~\ref{sssec:derive_a10} and~\ref{sssec:derive_u}.
+
+\subsubsection{How the Two Notions Are Connected}
+\label{sssec:norm_connection}
+
+For the estimators studied in this thesis, the two normalization concepts co-occur:
+every estimator that is normalized in the SUW sense turns out to be fully normalized
+in the Knaus sense, and every unnormalized estimator fails both conditions. This is not
+a coincidence. As shown in Sections~\ref{sssec:derive_a10} and~\ref{sssec:derive_u},
+the same algebraic operation that makes $\hat\tau_u$ and $\hat\tau_{a,10}$ normalized
+in the SUW sense is also the step that forces $\sum_i \omega_i = 0$.\\
+For $\hat\tau_{a,10}$, separate rescaling of the $\kappa_1$ and $\kappa_0$ weighted sums
+forces each to sum to one, so their difference sums to zero unconditionally. For
+$\hat\tau_u$, the within-group Hájek normalization forces $\sum_i \lambda_{1i}^{z,n} =
+\sum_i \lambda_{0i}^{z,n} = N$, so the difference of the two group totals is $N - N = 0$,
+which propagates directly to $\sum_i \omega_i^u = 0$.\\
+On the other hand the unnormalized estimators fail both conditions for the same reason in reverse.
+$\hat\tau_a$ uses the raw kappa contrast $\kappa_{i1} - \kappa_{i0}$ without separate
+rescaling, giving $\sum_i \omega_i^a = (\sum_i \kappa_{i1} - \sum_i \kappa_{i0}) /
+\sum_i \kappa_i$, which is not zero in general \citep[Appendix~A.4]{knaus2024treatment}.
+$\hat\tau_{a,1}$ uses the raw IPW contrast $\lambda_{1i} - \lambda_{0i}$ without
+Hájek correction, giving $\sum_i \omega_i^{a,1} = \widehat\Delta_D^{a,1\,-1} N^{-1}
+(s_1 - s_0) \neq 0$ whenever $s_1 \neq s_0$.\\
+It is important to note that this co-occurrence is specific to the kappa family. The two
+normalization concepts are logically independent: it is possible in principle to construct
+an estimator that is normalized in the SUW sense but not in the Knaus sense, or vice
+versa. The alignment observed here reflects the particular algebraic structure of
+kappa-based Wald estimators, not a general theorem.
+
+\subsubsection{Classification Table}
+\label{sssec:class_table}
+
+Table~\ref{tab:normalization} classifies all estimators studied in this thesis according
+to both normalization criteria, following the protocol of \citet[Table~4--5]{knaus2024treatment}.
+
 \begin{table}[t]
 \centering
-\caption{Outcome-weight properties of kappa and DML estimators}
+\caption{Normalization classification of kappa and DML estimators}
 \label{tab:normalization}
 \begin{threeparttable}
 \renewcommand{\arraystretch}{1.3}
-\begin{tabular}{@{}llcccc@{}}
+\begin{tabular}{@{}lllcccc@{}}
 \toprule
-Estimator & & $\sum_i\omega_i = 0$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ & Class \\
+Estimator & & SUW norm. & $\sum_i\omega_i = 0$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ & Knaus class \\
 \midrule
-$\hat\tau_u^{cb}$ & (CBPS, norm.)   & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\
-$\hat\tau_u^{ml}$ & (MLE, norm.)    & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\
-$\hat\tau_{a,10}$ & (norm.)         & \checkmark (exact) & $= +1$ & $= -1$ & Fully norm. \\[4pt]
-$\hat\tau_a$      & (unnorm.)       & $\times$           & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
-$\hat\tau_{a,1}$  & (unnorm.)       & $\times$           & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
-$\hat\tau_{a,0}$  & (unnorm.)       & $\times$           & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
-Wald-AIPW         & (DML, grf)     & \checkmark (approx.) & $\approx +1$ & $\approx -1$ & Fully norm. \\
+$\hat\tau_u^{cb}$ & (CBPS) & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_u^{ml}$ & (MLE)  & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_{a,10}$ &        & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\[4pt]
+$\hat\tau_a$      &        & no  & $\times$            & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
+$\hat\tau_{a,1}$ & & no & $\times$ & $= +1$ & $\neq -1$ & Untreated-unnorm. \\
+$\hat\tau_{a,0}$  &        & no  & $\times$            & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
+Wald-AIPW & (DML) & n/a & \checkmark\,(approx.) & $\approx +1$ & $\approx -1$ & Scale-norm. (std.)$^{a}$ \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
   \small
-  \item Classification follows \citet[Table~4--5]{knaus2024}.
-  \checkmark~(exact) means the condition holds for all data realizations
-  by algebraic construction; \checkmark~(approx.) means the condition holds
-  approximately in finite samples subject to Conditions~3 and~5 of \citet{knaus2024}.
-  $\hat\tau_{a,0}$ is treated-unnormalized: $\sum_i\omega_i^{a,0}(1-D_i) = -1$ holds
-  by the same kappa orthogonality argument but $\sum_i\omega_i^{a,0}\neq 0$
-  \citep[Appendix~A.4]{knaus2024}.
+  \item \textit{SUW norm.} indicates whether the estimator is normalized in the sense
+  of \citet{sloczynski2025abadie}, i.e.\ whether the kappa or IPW weights are
+  separately rescaled before forming the Wald ratio.
+  \textit{Knaus class} follows \citet[Table~4--5]{knaus2024treatment}.
+  \checkmark\,(exact): the condition holds for all data realizations by algebraic
+  construction; \checkmark\,(approx.): holds approximately in finite samples subject
+  to Conditions~3 and~5 of \citet{knaus2024treatment}, which conflict with standard
+  flexible implementations. $\hat\tau_{a,0}$: treated-unnormalized because
+  $\sum_i\omega_i^{a,0}(1-D_i) = -1$ holds by kappa orthogonality but
+  $\sum_i\omega_i^{a,0} \neq 0$ \citep[Appendix~A.4]{knaus2024treatment}.
+  $^{a}$ Wald-AIPW is scale-normalized in standard implementations because
+$\sum_i\omega_i = 0$ under Condition~3 of \citet{knaus2024treatment}.
+Full normalization additionally requires Condition~5b, which holds only if the same
+smoother predicts both outcome and treatment — conflicting with standard practice
+of using separate models for each nuisance parameter
+\citep[Section~4.2.3]{knaus2024treatment}.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
- 
-Three observations from Table~\ref{tab:normalization} deserve emphasis.
- 
-First, $\hat\tau_u$ and $\hat\tau_{a,10}$ achieve full normalization by \emph{different}
-algebraic mechanisms. $\hat\tau_{a,10}$ does so by separately rescaling the $\kappa_1$
-and $\kappa_0$ weighted sums; no condition external to the estimator is required.
-$\hat\tau_u$ does so via Hájek normalization of the instrument-group IPW weights
-(Condition~6b); the normalization is guaranteed as long as the estimator is implemented
-with within-group rescaling, regardless of the propensity score method used.
- 
-Second, Wald-AIPW achieves full normalization only approximately in finite samples,
-and only under Conditions~3 and~5 of \citet{knaus2024} — requirements on the smoother
-matrix that conflict with standard flexible implementations such as
-gradient-boosted trees. The kappa estimators $\hat\tau_u$ and $\hat\tau_{a,10}$ achieve
-it exactly and unconditionally.
- 
-Third, $\sum_i\omega_i = 0$ is both a normalization criterion and a translation-invariance
-criterion: by identity \eqref{eq:ti_key}, it is the \emph{exact} finite-sample condition
-for the estimate to be unchanged under additive shifts of $Y$. The empirical diagnostics
-reported in Chapters~\ref{sec:vietnam}--\ref{sec:card_ae} exploit this by computing
-$\sum_i\omega_i$ numerically and checking it against zero to machine precision for every
-estimator and every dataset.
- 
-\paragraph{Implementation.}
-The weight expressions \eqref{eq:w_a10_scalar} and \eqref{eq:w_u_scalar} are implemented
-in the \texttt{kappa\_outcome\_weights()} function of \texttt{functions\_kappa.R}.
-The function returns a named list of six weight vectors — one per estimator — and the
-identity $\hat\tau = \sum_i\omega_i Y_i$ is verified to machine precision via
-\texttt{check\_weight\_identity()} for every dataset and specification reported in this
-thesis. This verification step is non-trivial: it confirms not only that the algebra is
-correct but that the numerical implementation is free of floating-point errors that
-could invalidate the diagnostic results.
- 
-% [PASTE derivation from vignette Section 3.3 here]
 
-\paragraph{Translation invariance criterion.}
-
-% [WRITE: sum = 0 iff TI, exact finite-sample result]
+Three observations from Table~\ref{tab:normalization} deserve emphasis.\\
+First, $\hat\tau_u$ and $\hat\tau_{a,10}$ achieve Knaus full normalization by different
+algebraic mechanisms, even though both are SUW-normalized. $\hat\tau_{a,10}$ does so by
+separately rescaling the $\kappa_1$ and $\kappa_0$ weighted sums; the sum-to-zero
+follows unconditionally from the structure of the kappa weights alone. $\hat\tau_u$ does
+so via Hájek normalization of the instrument-group IPW weights; the sum-to-zero follows
+from the equal-mass property \eqref{eq:u_norm_lambda_sums}.\\
+Second, Wald-AIPW achieves Knaus full normalization only approximately in finite samples,
+and only under Conditions~3 and~5 of \citet{knaus2024treatment}, which conflict with
+standard flexible implementations such as gradient-boosted trees. The kappa estimators
+$\hat\tau_u$ and $\hat\tau_{a,10}$ achieve it exactly and unconditionally, which is a
+stronger guarantee.\\
+Third, the practical consequence of the $\sum_i\omega_i = 0$ column is given directly
+by identity~\eqref{eq:ti_identity}: estimators with $\sum_i\omega_i \neq 0$ will produce
+different LATE estimates when the outcome variable is shifted by a constant. The
+empirical diagnostics in Chapters~\ref{sec:vietnam}--\ref{sec:card_ae} compute
+$\sum_i\omega_i$ numerically for every estimator and every dataset, and verify the
+sum-to-zero condition against machine precision. The function
+\texttt{kappa\_outcome\_weights()} in \texttt{functions\_kappa.R} implements the
+closed-form expressions derived in Sections~\ref{sssec:derive_a10}
+and~\ref{sssec:derive_u} and the identity $\hat\tau = \sum_i\omega_i Y_i$ is verified
+via \texttt{check\_weight\_identity()} for every specification reported.
 
 
-% [TABLE: Knaus Table 4/5 extended to kappa estimators]
 
-% Placeholder for Table 1
-\begin{table}[H]
-  \centering
-  \caption{Normalization classification of kappa and DML estimators}
-  \label{tab:normalisation}
-  \begin{threeparttable}
-    \begin{tabular}{lcccc}
-      \toprule
-      Estimator & $\sum_i \omega_i = 0$? & $\sum_{D=1}\omega_i$ & $\sum_{D=0}\omega_i$ & Class \\
-      \midrule
-      $\hat\tau_u^{cb}$ (CBPS, normalised)  & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
-      $\hat\tau_u^{ml}$ (MLE, normalised)   & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
-      $\hat\tau_{a,10}$ (normalised)         & \checkmark & $\neq +1$    & $\neq -1$    & Scale norm. \\
-      $\hat\tau_a$, $\hat\tau_t$, $\hat\tau_{a,0}$ (unnorm.) & $\times$ & --- & --- & Fully unnorm. \\
-      Wald-AIPW (DML, grf)                  & \checkmark & $\approx +1$ & $\approx -1$ & Fully norm. \\
-      \bottomrule
-    \end{tabular}
-    \begin{tablenotes}
-      \small\item Classification follows \citet{knaus2024} Table~4--5.
-      The fully normalised condition requires $\sum_{D=1}\omega_i = +1$ and
-      $\sum_{D=0}\omega_i = -1$. \checkmark~= holds exactly by construction;
-      $\approx$~= holds approximately in finite samples; $\times$~= fails.
-    \end{tablenotes}
-  \end{threeparttable}
-\end{table}
 
 
 % ==============================================================================
