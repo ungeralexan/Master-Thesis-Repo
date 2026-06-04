@@ -806,37 +806,33 @@ to both normalization criteria, following the protocol of \citet[Table~4--5]{kna
 \label{tab:normalization}
 \begin{threeparttable}
 \renewcommand{\arraystretch}{1.3}
-\begin{tabular}{@{}lllcccc@{}}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccccc@{}}
 \toprule
-Estimator & & SUW norm. & $\sum_i\omega_i = 0$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ & Knaus class \\
+Estimator & SUW & $\sum\omega_i{=}0$ & $\sum\omega_iD_i$ & $\sum\omega_i(1{-}D_i)$ & Knaus class \\
 \midrule
-$\hat\tau_u^{cb}$ & (CBPS) & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\
-$\hat\tau_u^{ml}$ & (MLE)  & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\
-$\hat\tau_{a,10}$ &        & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\[4pt]
-$\hat\tau_a$      &        & no  & $\times$            & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
-$\hat\tau_{a,1}$  & & no  & $\times$
-  & $= +1$\tnote{b}
-  & $\neq -1$
-  & Untreated-unnorm. \\
-$\hat\tau_{a,0}$  &        & no  & $\times$            & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
-Wald-AIPW & (DML) & n/a & \checkmark\,(std.) & not guaranteed & not guaranteed & Scale-norm. (std.)\tnote{a} \\
+$\hat\tau_u^{cb}$ (CBPS) & yes & \checkmark & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_u^{ml}$ (MLE)  & yes & \checkmark & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_{a,10}$         & yes & \checkmark & $= +1$    & $= -1$    & Fully norm. \\[4pt]
+$\hat\tau_a$              & no  & $\times$   & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
+$\hat\tau_{a,1}$          & no  & $\times$   & $= +1$\tnote{b} & $\neq -1$ & Untreated-unnorm. \\
+$\hat\tau_{a,0}$          & no  & $\times$   & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
+Wald-AIPW (DML)           & n/a\tnote{c}& \checkmark\tnote{a} & n/a & n/a & Scale-norm.\tnote{a} \\
 \bottomrule
-\end{tabular}
-\begin{tablenotes}
-  \small
-  \item \textit{SUW norm.} refers to normalization in the sense of
-  \citet{sloczynski2025abadie}: the kappa/IPW weights entering the estimator are
-  separately rescaled before the Wald ratio is formed. \textit{Knaus class} refers
-  to the normalization of the final outcome weights $\omega_i$ following
-  \citet[Tables~4--5]{knaus2024treatment}. \checkmark\,(exact) means the condition
-  holds algebraically in every finite sample.
-  \item[$^{a}$] In standard flexible implementations, Wald-AIPW is scale-normalized
-  but not generally fully normalized. Full normalization requires the additional
-  smoother condition that also reproduces the treatment nuisance component
-  \citep[Section~4.2.3]{knaus2024treatment}.
-  \item[$^{b}$] For $\hat\tau_{a,1}$, the treated side is normalized because its
-  denominator is the treated-side kappa total $\sum_i\kappa_{i1}$; the untreated side
-  is not normalized in general. See Appendix~\ref{app:omega_a1}.
+\end{tabular}%
+}
+\begin{tablenotes}[flushleft]
+  \footnotesize
+  \item \textit{SUW} = normalized in the sense of \citet{sloczynski2025abadie}
+  (kappa/IPW weights separately rescaled before the Wald ratio).
+  \textit{Knaus class} follows \citet[Tables~4--5]{knaus2024treatment}.
+  $\checkmark$ = holds algebraically in every finite sample; $\times$ = fails in general.
+  \item[$^{a}$] Wald-AIPW achieves $\sum\omega_i{=}0$ only under the smoother
+  conditions of \citet[Section~4.2.3]{knaus2024treatment}, which conflict with
+  standard flexible learners such as gradient-boosted trees.
+  \item[$^{b}$] Treated side normalized by construction (denominator
+  $=\sum_i\kappa_{i1}$); untreated side not. See Appendix~\ref{app:omega_a1}.
+  \item[$^{c}$] the n/a expression here means that it is not guaranteed.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -865,6 +861,39 @@ and~\ref{sssec:derive_u} and the identity $\hat\tau = \sum_i\omega_i Y_i$ is ver
 via \texttt{check\_weight\_identity()} for every specification reported.
 
 
+% ==============================================================================
+\subsection{From Derivation to Diagnostics: Computational Implementation}
+\label{subsec:implementation}
+% ==============================================================================
+
+The closed-form outcome weights derived in
+Section~\ref{subsec:omega_u}  translate directly
+into computable diagnostics. All five weight vectors are implemented in the
+function\\ \texttt{kappa\_outcome\_weights(Z, D, p)} (Appendix~\ref{app:code}). Given the observed
+instrument $Z$, treatment $D$, and a fitted propensity score vector $\hat{p}$,
+the function returns the vectors $\boldsymbol{\omega}^u$,
+$\boldsymbol{\omega}^{a,10}$, $\boldsymbol{\omega}^a$,
+$\boldsymbol{\omega}^{a,1}$, and $\boldsymbol{\omega}^{a,0}$ in closed form,
+without numerical optimisation or outcome regression.
+Two companion functions operationalise the diagnostics used throughout
+Chapters~\ref{sec:vietnam} and~\ref{sec:card_ae}. First
+\texttt{check\_weight\_identity(w, Y, tau\_hat)} verifies the identity
+$\hat\tau = \sum_i \omega_i Y_i$ 
+for every point estimate
+reported, confirming that the theoretical weight representation and the
+scalar estimator agree exactly in each finite sample. Second
+\texttt{weight\_diag(w)} computes the weight sum $\sum_i \omega_i$ (the translation-invariance criterion~\eqref{eq:ti_identity}), the effective sample size
+$\mathrm{ESS} = 1/\!\sum_i \omega_i^2$, the share of negative weights, and
+the maximum absolute weight.
+\bigskip
+
+The theoretical results in Chapter~\ref{sec:connection} show which outcome-weight properties follow mechanically from estimator normalization. They do not, however, determine how informative these properties are in empirical applications. The empirical analysis therefore uses outcome weights as diagnostics: not only to compare point estimates, but to assess covariate balance, leverage, and finite-sample reliability across concrete IV designs.
+The chapter considers three canonical labour-economics applications: the Vietnam draft lottery in \citet{angrist1990lifetime}, college proximity in \citet{card1995}, and same-sex sibling composition in \citet{angrist1998}. These are the empirical settings used by \citet{sloczynski2025abadie} to illustrate the finite-sample consequences of normalization and translation invariance for kappa-based LATE estimators. This makes them a natural benchmark for the present analysis. Reconsidering the same designs allows the point-estimate evidence on normalization to be connected to the outcome-weight representation developed in the previous chapter.
+At the same time, the three applications are not merely replication exercises. They differ along dimensions that are central for outcome-weight diagnostics: the degree of quasi-random assignment, the richness of the covariate adjustment problem, the compliance structure of the instrument, and the potential relevance of denominator instability. The Vietnam draft lottery provides a low-dimensional benchmark with an instrument close to randomized assignment. The Card application moves to a more covariate-rich observational design, where propensity-score estimation and covariate specification become more consequential. The Angrist--Evans application provides a demanding case of near one-sided noncompliance, where the normalization and denominator properties emphasized by \citet{sloczynski2025abadie} become especially relevant.
+
+Taken together, the applications provide a structured comparison across design quality, covariate richness, and compliance structure. This makes it possible to evaluate when outcome-weight diagnostics simply corroborate stable point estimates, and when they reveal additional information about imbalance, leverage, or estimator fragility.
+
+\newpage
 
 
 
@@ -1095,48 +1124,7 @@ via \texttt{check\_weight\_identity()} for every specification reported.
 
 % [Detailed variable definitions for all three applications]
 
-\section{R Code Overview}
-\label{app:code}
 
-Key functions implementing the kappa outcome weights are contained in
-\texttt{functions\_kappa.R}. The core function \texttt{kappa\_outcome\_weights()} computes
-closed-form $\omega_i$ vectors for all five estimators:
-
-\begin{lstlisting}[caption={Outcome weight construction (functions\_kappa.R, \S k)},
-                   label={lst:kappa_ow}]
-kappa_outcome_weights <- function(Z, D, p) {
-  n  <- length(Z)
-  kw <- kappa_weights(Z, D, p)
-
-  # tau_u (Uysal 2011)
-  s1  <- sum(Z / p);  s0 <- sum((1 - Z) / (1 - p))
-  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
-  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
-
-  # tau_a10 (Abadie-Cattaneo)
-  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
-
-  # Unnormalised (common numerator)
-  num_w <- (Z - p) / (p * (1 - p)) / n
-
-  list(w_u   = as.vector(w_u),
-       w_a10 = as.vector(w_a10),
-       w_a   = as.vector(num_w / mean(kw$kappa)),
-       w_a1  = as.vector(num_w / mean(kw$kappa1)),
-       w_a0  = as.vector(num_w / mean(kw$kappa0)))
-}
-\end{lstlisting}
-
-All replication code is available at: \texttt{[YOUR GITHUB/CLOUD LINK]}
-
-
-% ==============================================================================
-% APPENDIX — Outcome Weights of \hat\tau_{a,1}
-%
-% Paste into your appendix section, e.g. after \section{Proofs} or as its own
-% \subsection{Outcome Weights of $\hat\tau_{a,1}$}
-% ==============================================================================
-\appendix
 \section{Outcome Weights of \texorpdfstring{$\hat\tau_{a,1}$}{tau(a,1)}}
 \label{app:omega_a1}
 
@@ -1252,6 +1240,79 @@ $\hat\tau_{a,1}$ uses only the treated-side denominator, leaving the untreated s
 without its own rescaling.
 
 \newpage
+
+
+\section{R Code Overview}
+\label{app:code}
+
+The empirical analysis relies on a created set of purpose-built R functions that
+implement the outcome-weight framework derived in Section~\ref{sec:connection}.
+The functions are currently contained in \texttt{functions\_kappa.R}; the
+final replication package, whether as a standalone script, a collection of
+application-specific files, or an R package will be made available at the
+link at the end of this appendix.\\
+The central contribution of the code is the function
+\texttt{kappa\_outcome\_weights(Z, D, p)}, which takes the observed instrument
+$Z$, treatment $D$, and a fitted propensity score vector $\hat{p}$ and returns
+the five outcome weight vectors $\boldsymbol{\omega}^u$,
+$\boldsymbol{\omega}^{a,10}$, $\boldsymbol{\omega}^a$,
+$\boldsymbol{\omega}^{a,1}$, and $\boldsymbol{\omega}^{a,0}$ in closed form.
+The weights are computed directly from the expressions derived in
+Section~\ref{subsec:omega_u}, without numerical optimisation or outcome
+regression. For $\hat\tau_u$, the function applies the Hájek-normalized
+IPW contrast from \eqref{eq:u_omega_scalar}; for $\hat\tau_{a,10}$, it
+applies the separately normalised $\kappa_1$/$\kappa_0$ ratio; for the
+three unnormalized estimators, it uses the common IPW numerator with the
+three denominator choices from \citet{sloczynski2025abadie}.
+
+\begin{lstlisting}[caption={\texttt{kappa\_outcome\_weights()}: closed-form
+  outcome weights for all five kappa estimators},
+  label={lst:kappa_ow}]
+kappa_outcome_weights <- function(Z, D, p) {
+  kw  <- kappa_weights(Z, D, p)           # kappa, kappa1, kappa0
+
+  # tau_u: Hajek-normalized IPW contrast (eq. u_omega_scalar)
+  s1  <- sum(Z / p);  s0 <- sum((1 - Z) / (1 - p))
+  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  # tau_a10: separately normalized kappa1 / kappa0
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
+
+  # tau_a, tau_a1, tau_a0: common IPW numerator, three denominators
+  num_w <- (Z - p) / (p * (1 - p)) / length(Z)
+
+  list(w_u   = as.vector(w_u),
+       w_a10 = as.vector(w_a10),
+       w_a   = as.vector(num_w / mean(kw$kappa)),
+       w_a1  = as.vector(num_w / mean(kw$kappa1)),
+       w_a0  = as.vector(num_w / mean(kw$kappa0)))
+}
+\end{lstlisting}
+
+Two companion functions produce the diagnostics reported in every weight
+table throughout Chapters~\ref{sec:vietnam} and~\ref{sec:card_ae}.
+\texttt{weight\_diag(w)} returns the four quantities that appear in each
+row of Tables~\ref{tab:vietnam_weights} and~\ref{tab:card_weights}: the
+weight sum $\sum_i\omega_i$ (the translation-invariance criterion of
+\eqref{eq:ti_identity}), the effective sample size
+$\mathrm{ESS} = 1/\sum_i\omega_i^2$, the share of negative weights, and
+the maximum absolute weight.
+\texttt{check\_weight\_identity(w, Y, tau\_hat)} verifies the identity
+$\hat\tau = \sum_i\omega_i Y_i$ to machine precision for every point
+estimate reported; all checks pass across all specifications.
+The propensity score is estimated either by standard logit MLE via
+\texttt{logit\_mle()} or by a hand-coded CBPS solver,
+\texttt{fit\_cbps\_alpha()}, which implements Newton steps with
+backtracking line search to solve the covariate-balancing moment condition
+directly.
+Analytical standard errors follow from \texttt{kappa\_analytic\_se\_one()},
+which stacks the propensity-score and LATE moment conditions and computes
+the M-estimation sandwich via a numerical Jacobian.
+
+\bigskip
+\noindent All replication code is available at:
+\texttt{[GITHUB / CLOUD LINK]}
 % ==============================================================================
 \bibliographystyle{apalike}
 \bibliography{references}

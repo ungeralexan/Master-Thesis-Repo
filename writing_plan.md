@@ -1,9 +1,3 @@
-## Phase 1 — Two short pieces that unlock everything else (this week)
-Start here: Chapter 3, Section 3.2 — the outcome weight derivations.
-You already wrote this in the vignette. Convert it from Rmd to LaTeX prose. This is ~2 pages, you have the math, and it is the unique theoretical contribution of the thesis. Writing it first gives you the clearest possible statement of what Chapter 3 is doing — which then makes Chapter 2 easy to frame ("this chapter provides the building blocks for Section 3.2").
-Then: the "design dominates learner" paragraph (the single highest-value piece of writing you have, currently just a bullet on the roadmap). Write it as a self-contained 200-word block — what the finding is, why it is expected, what it means for interpretation. This will slot into Section 4.4 but once it is written you can reference it everywhere.
-These two pieces together take one focused day and unlock the rest.
-
 
 ## Phase 2 — Chapter 4, Vietnam (next 3–4 days)
 This is your most complete chapter: fully coded, three covariate specs, DML comparison, Love plots, TI check, weight diagnostics, learner comparison — everything is there. Write it as:

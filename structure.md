@@ -87,30 +87,50 @@ Brief chapter-by-chapter overview.
 
 ### Chapter 3 — Connecting the Frameworks (5–7 pages)
 
-*This is the thesis's unique theoretical contribution. Knaus (2024) Appendix A.4 derives the PIVE representation for τ̂ₐ, τ̂ₐ,₀, τ̂ₐ,₁₀ but does not explicitly derive ωᵢ for τ̂ᵤ, nor does it apply Love plots or ESS diagnostics to kappa estimators empirically. This chapter bridges that gap.*
+**Section 3.1 — Kappa weights vs. outcome weights** 
+-  distinction between κᵢ (identification objects, Abadie 2003)
+  and ωᵢ (sample-level PIVE weights, Knaus 2024) clearly established
+- Subsection 3.1.1 (Two notions of normalization):
+  SUW normalization (estimator construction) vs. Knaus normalization
+  (final weight properties); translation-invariance identity derived
+  algebraically as eq:ti_identity — the sum-to-zero condition shown as
+  necessary and sufficient in finite samples
+- Love plots use ωᵢ, not κᵢ 
 
-**Section 3.1 — Kappa weights vs. outcome weights: clarifying the distinction**
-- Kappa weights κᵢ: identification weights from Abadie (2003). Population objects that turn expectations into complier expectations. Not directly τ̂ = ΣωᵢYᵢ.
-- Outcome weights ωᵢ (Knaus 2024): sample-level weights such that τ̂ = Σᵢ ωᵢYᵢ. Derived from κ but not the same object.
-- This distinction matters practically: Love plots use ωᵢ, not κᵢ.
+**Section 3.2 — PIVE framework** 
+- Proposition 1 (Knaus 2024) stated formally 
+- Diagonal T matrix structure for kappa estimators established —
+  no smoother condition needed; existence of ωᵢ is purely algebraic
+- Sets up the derivations in 3.3 and 3.4
 
-**Section 3.2 — Analytical derivation of outcome weights for τ̂ᵤ and τ̂ₐ,₁₀**
-- Express τ̂ᵤ as weighted sum Σᵢ ωᵢᵘ Yᵢ; closed-form ωᵢᵘ in terms of p(Xᵢ), Zᵢ, and sample normalizations Ŝ₁, Ŝ₀, D̂
-- Similarly for τ̂ₐ,₁₀: weights ωᵢᵃ'¹⁰ = κᵢ₁/Σκⱼ₁ − κᵢ₀/Σκⱼ₀
-- Algebraic proof: Σᵢ ωᵢᵘ = 0 and Σᵢ ωᵢᵃ'¹⁰ = 0 (translation invariant); for unnormalized τ̂ₐ, Σᵢ ωᵢᵃ ≠ 0 in general
-- Place in PIVE framework following Knaus (2024) Appendix A.4: identify Z̃, D̃, T for each kappa estimator
-- `kappa_outcome_weights()` function implements this; verified τ̂ = Σωᵢ Yᵢ up to machine precision for all five estimators
+**Section 3.3 — Outcome weights for τ̂ᵤ**  (main derivation)
+- Full derivation: normalized IPW contrast → diagonal T^u → closed-form
+  ωᵢᵘ (eq:u_omega_scalar, boxed)
+- Three normalization conditions verified algebraically:
+  Σωᵢ = 0 (via equal-mass property), ΣωᵢDᵢ = 1, Σωᵢ(1−Dᵢ) = −1
+- Remark (rem:hajek_contrast): why τ̂ₐ,₁ fails where τ̂ᵤ succeeds —
+  the Hájek normalization is the single algebraic step that determines
+  translation invariance; connects to Appendix E derivation
+- NOTE: τ̂ₐ,₁₀ is handled via this Remark and the classification table,
+  not via a standalone derivation section. 
 
-**Section 3.3 — Theoretical weight properties: a summary table**
+**Section 3.4 — Normalization classification and summary** 
+- Subsection 3.4.1: how SUW normalization and Knaus normalization align
+  for the kappa family  co-occurrence explained algebraically, noted
+  as specific to this family (not a general theorem)
+- Subsection 3.4.2: Table 1 (tab:normalization) — all six estimators
+  classified by SUW norm., Σωᵢ=0, ΣωᵢDᵢ, Σωᵢ(1−Dᵢ), Knaus class
+  % TODO: apply resizebox fix — table currently overflows right margin
+- Three observations from the table written in prose
 
-| Estimator | Σωᵢ = 0? | ESS | Negative weights | Near-zero denom. risk |
-|---|---|---|---|---|
-| τ̂ᵤᶜᵇ (CBPS, normalized) | ✓ exact | high | yes (AT+NT) | safe (one-sided) |
-| τ̂ᵤᵐˡ (MLE, normalized) | ✓ exact | high | yes (AT+NT) | safe (one-sided) |
-| τ̂ₐ,₁₀ (normalized) | ✓ exact | high | yes | risk (one-sided) |
-| τ̂ₐ, τ̂ₜ, τ̂ₐ,₀ (unnormalized) | ✗ finite sample | moderate | yes | risk |
-| Wald-AIPW (DML, grf) | ✓ approx. | moderate | yes | safe |
-| Wald-AIPW (DoubleML) | ✓ approx. | moderate | yes | safe |
+**Section 3.5 — From Derivation to Diagnostics: Computational Implementation** 
+- kappa_outcome_weights(Z, D, p) described: returns all five ωᵢ vectors
+  in closed form, no numerical optimisation
+- check_weight_identity() and weight_diag() described as companion functions
+- Pipeline described: propensity score → weights → verify identity →
+  feed into Love plots and diagnostic tables
+
+
 
 ---
 
