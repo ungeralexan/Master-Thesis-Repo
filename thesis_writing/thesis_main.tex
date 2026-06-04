@@ -336,46 +336,143 @@ double machine learning.
 % [WRITE HERE — SMD, Love plots, ESS, sum-to-zero as TI criterion, ~1 page]
 
 
-% ==============================================================================
 \newpage
+
+
+
 % ==============================================================================
-% \section{Connecting the Frameworks}
-\label{sec:connection}
-
-
 \section{Connecting the Frameworks}
 \label{sec:connection}
 % ==============================================================================
- 
-The preceding chapter introduced two literatures that are closely related but not automatically equivalent. On the one hand, Abadie's kappa theorem and the weighting estimators studied by \citet{sloczynski2025abadie} use functions of $(Z_i,D_i,p(X_i))$ to identify moments of the complier distribution. On the other hand, the PIVE framework of \citet{knaus2024treatment} characterizes estimators through outcome weights $\omega_i$ satisfying $
-\hat\tau = \sum_{i=1}^N \omega_i Y_i ,
-$
-which makes it possible to study covariate balance, effective sample size, negative weights, and normalization properties directly from the finite-sample estimator.
 
-This chapter connects these two perspectives. The connection is not immediate because Abadie's kappa weights and Knaus's outcome weights are different objects. Kappa weights are used to establish identification: they transform population expectations into complier moments. Outcome weights are estimator-specific finite-sample objects: they describe how a particular estimate is assembled from the observed outcomes. Therefore, the fact that a LATE estimator is based on kappa weights does not by itself imply that the kappa weights are the relevant weights for balance diagnostics.
+The preceding chapter introduced the kappa-based LATE estimators of
+\citet{sloczynski2025abadie} and the outcome-weight framework of
+\citet{knaus2024treatment}. This chapter connects these two perspectives in order to
+make the finite-sample weight structure of kappa estimators explicit.
 
-The purpose of this chapter is to derive the relevant outcome weights for the kappa estimators considered in this thesis and to study their normalization properties. Appendix~A.4 of \citet{knaus2024treatment} places several kappa estimators in the PIVE framework. The estimator $\hat\tau_u$ of \citet{uysal2011three}, however, requires separate treatment because it applies a Hájek-type normalization to the instrument-specific inverse-probability weights before forming the Wald ratio. Since $\hat\tau_u$ is the recommended normalized estimator in \citet{sloczynski2025abadie} and is central to the empirical comparisons below, its outcome-weight representation is essential for interpreting the diagnostics used in the applications.
+The motivation is normalization. In population, several kappa estimators are motivated
+by the same identification result and target the same LATE. In finite samples,
+however, their denominators and implied outcome weights differ. These differences are
+substantive: if the final outcome weights do not sum to zero, the estimate changes
+when the outcome is shifted by a constant. The normalized kappa estimators are
+therefore attractive not only because of their asymptotic motivation, but also because
+they satisfy exact finite-sample invariance properties that the unnormalized estimators
+generally fail.
 
-The main result is that both $\hat\tau_u$ and $\hat\tau_{a,10}$ admit exact finite-sample outcome-weight representations. Moreover, their weights satisfy the normalization conditions that imply translation invariance. This shows that the robustness of the normalized kappa estimators to additive outcome transformations is not merely an asymptotic property, but follows directly from their finite-sample weight structure.
+The connection is not automatic: the weights used for kappa identification are not
+necessarily the weights that enter balance diagnostics or normalization checks. The
+next subsection therefore first separates kappa weights from outcome weights. The
+chapter then derives the outcome weights of the Uysal estimator \(\hat\tau_u\), whose
+H\'ajek-type normalization is central to the empirical analysis below. For
+\(\hat\tau_{a,10}\), the chapter relies on the PIVE representation in
+\citet[Appendix~A.4]{knaus2024treatment} and recalls the resulting weights for
+comparison.
 
 \subsection{Kappa Weights versus Outcome Weights}
 \label{subsec:distinction}
 
-Two types of weights appear throughout this thesis. They are based on similar ingredients, but they answer different questions.\\
-Kappa weights are identification weights. The functions $\kappa_i$, $\kappa_{i1}$, and $\kappa_{i0}$ introduced by \citet{abadie2003semiparametric} are functions of the observed instrument, treatment, and instrument propensity score. Their role is to express moments of the complier distribution in terms of observable population moments. In particular, for suitable functions $g$,
-$
-\mathbb{E}!\left[\kappa_i g(Y_i,D_i)\right]
-$
-recovers the corresponding complier moment up to the complier share. Thus, kappa weighting is an identification device: it tells us how the observed population must be reweighted to isolate the complier subpopulation.
+The distinction between kappa weights and outcome weights is central for the
+diagnostics used below. Kappa weights are identification weights. The functions
+$\kappa_i$, $\kappa_{i1}$, and $\kappa_{i0}$ introduced by
+\citet{abadie2003semiparametric} are functions of the observed instrument, treatment,
+and instrument propensity score. Their role is to express moments of the complier
+distribution in terms of observable population moments. In particular, for suitable
+functions $g$,
+\[
+  \mathbb{E}\!\left[\kappa_i g(Y_i,D_i)\right]
+\]
+recovers the corresponding complier moment up to the complier share. Thus, kappa
+weighting is an identification device: it tells us how the observed population must
+be reweighted to isolate the complier subpopulation.
 
-Outcome weights have a different role. Following \citet{knaus2024treatment}, outcome weights are sample-level scalars $\omega_i$ such that a given estimator can be written exactly as
-$
-\hat\tau = \sum_{i=1}^N \omega_i Y_i .
-$
-These weights are not universal features of the research design. They depend on the algebraic form of the estimator. Consequently, $\hat\tau_u$, $\hat\tau_{a,10}$, and $\hat\tau_a$ generally induce different outcome weights, even though all three are constructed from the same underlying kappa functions.
+Outcome weights have a different role. Following \citet{knaus2024treatment},
+outcome weights are sample-level scalars $\omega_i$ such that a given estimator can
+be written exactly as
+\[
+  \hat\tau = \sum_{i=1}^N \omega_i Y_i .
+\]
+These weights are not universal features of the research design. They depend on the
+algebraic form of the estimator. Consequently, $\hat\tau_u$, $\hat\tau_{a,10}$, and
+$\hat\tau_a$ generally induce different outcome weights, even though all three are
+constructed from the same underlying kappa functions.
 
-This distinction matters because the diagnostics used in the empirical part of the thesis are diagnostics of outcome weights, not of kappa weights. Love plots, standardized mean differences, effective sample size, negative weight shares, and the sum-to-zero condition for translation invariance all refer to $\omega_i$. The task is therefore not simply to compute $\kappa_i$, but to derive the estimator-specific mapping from kappa quantities to outcome weights.
+This distinction matters because the diagnostics used in the empirical part of the
+thesis are diagnostics of outcome weights, not of kappa weights. Love plots,
+standardized mean differences, effective sample size, negative weight shares, and
+the sum-to-zero condition for translation invariance all refer to $\omega_i$. The
+task is therefore not simply to compute $\kappa_i$, but to derive the
+estimator-specific mapping from kappa quantities to outcome weights. This mapping is
+also where the difference between normalized and unnormalized kappa estimators
+becomes visible in finite samples.
 
+\subsubsection{Two Notions of Normalization}
+\label{sssec:two_norms}
+
+The preceding sections use the word normalization in two senses that are related but
+logically distinct, and it is worth being explicit about both before presenting the
+classification.\\
+In the kappa-estimator literature, an estimator is called \emph{normalized} if the
+inverse-probability or kappa weights used in its construction are rescaled so that the
+denominator of the estimator converges to the true complier share
+\citep{sloczynski2025abadie}. For $\hat\tau_u$, this means the instrument-group weights
+for $Z=1$ and $Z=0$ are separately divided by their group totals before forming the
+Wald ratio. For $\hat\tau_{a,10}$, it means the $\kappa_1$- and $\kappa_0$-weighted
+sums are each divided by their own total. The unnormalized estimators $\hat\tau_a$,
+$\hat\tau_{a,1}$, and $\hat\tau_{a,0}$ omit one or both of these rescaling steps.
+This is an internal property of how the estimator is constructed.\\
+In the outcome-weight framework of \citet{knaus2024treatment}, normalization refers to
+a property of the final weights $\omega_i$ placed on the observed outcomes. An estimator
+is \emph{fully normalized} in this sense if
+\begin{equation}
+  \sum_{i=1}^N \omega_i = 0,
+  \qquad
+  \sum_{i=1}^N \omega_i D_i = 1,
+  \qquad
+  \sum_{i=1}^N \omega_i (1-D_i) = -1.
+  \label{eq:full_norm_conditions}
+\end{equation}
+These conditions say that the outcome weights behave like a normalized
+treated-minus-control contrast: the treated side carries total mass $+1$ and the
+untreated side carries total mass $-1$, so the overall sum is zero.
+
+The first condition in \eqref{eq:full_norm_conditions} has a direct causal
+interpretation through a simple algebraic identity. Suppose the outcome variable is
+shifted by a constant $k \in \mathbb{R}$, replacing $Y_i$ with $Y_i + k$ for every
+observation. This corresponds, for instance, to expressing log wages in cents rather
+than dollars, or coding a binary labour-force-participation variable as $\{1,2\}$
+rather than $\{0,1\}$. The constant $k$ carries no information about the causal
+effect of the treatment. For any estimator $\hat\tau = \sum_i \omega_i Y_i$, the
+shifted estimate equals
+\begin{equation}
+  \hat\tau(Y + k)
+  = \sum_{i=1}^N \omega_i (Y_i + k)
+  = \sum_{i=1}^N \omega_i Y_i + k \sum_{i=1}^N \omega_i
+  = \hat\tau(Y) + k \sum_{i=1}^N \omega_i.
+  \label{eq:ti_algebra}
+\end{equation}
+Rearranging gives the translation-invariance identity:
+\begin{equation}
+  \hat\tau(Y + k) - \hat\tau(Y) = k \sum_{i=1}^N \omega_i.
+  \label{eq:ti_identity}
+\end{equation}
+This identity holds exactly in finite samples, for any realization of the data and
+any propensity score estimate. The right-hand side vanishes if and only if
+$\sum_i \omega_i = 0$. 
+Thus, the sum-to-zero condition is the necessary and sufficient finite-sample
+condition for the estimator to be invariant to additive outcome transformations.
+Full normalization in the Knaus sense is stronger: it additionally requires the
+treated and untreated components of the outcome weights to sum to $+1$ and $-1$,
+respectively.
+When $\sum_i \omega_i \neq 0$, the
+estimate changes by $k \sum_i \omega_i$ for every unit shift in $k$: an estimator
+applied to log wages in cents will produce a numerically different LATE than the
+same estimator applied to log wages in dollars, even though the two outcomes contain
+identical information about the causal effect. \citet{sloczynski2025abadie} call this
+property translation invariance and show in Proposition~3.2 that it holds for
+$\hat\tau_u$ and $\hat\tau_{a,10}$ but fails for the unnormalized estimators. The
+derivations in this chapter show that the same property is an exact finite-sample
+consequence of the outcome-weight structure derived in
+Sections~\ref{sssec:derive_u}.
 
 
 % ==============================================================================
@@ -421,11 +518,13 @@ For kappa estimators, the pseudo-outcome is $\widetilde{Y}_i = t_i Y_i$ for some
 observation-specific scalar $t_i$ that depends only on $(Z_i, D_i, \hat{p}_i)$.
 The transformation matrix $\mathbf{T}$ is therefore diagonal, and its existence is
 immediate: no outcome regression or smoother matrix is involved.
-This means the conditions in \citet[Section~4.2]{knaus2024treatment} governing
-smoother-based estimators such as DML or causal forests do not apply here.
-The only operative condition is the separate normalization of the instrument-group
-weights, which is specific to $\hat\tau_u$ and is addressed directly in
-Section~\ref{subsec:omega_u}.
+For the kappa estimators considered here, the existence of outcome weights is therefore
+algebraic rather than dependent on an outcome-regression smoother. The smoother
+conditions in \citet[Section~4.2]{knaus2024treatment}, which are central for DML and
+forest-based estimators, are not the binding issue in this part of the analysis.
+Instead, the relevant question is how the finite-sample normalizations built into the
+different kappa estimators propagate into the final outcome weights. The next sections
+show this separately for $\hat\tau_{a,10}$ and $\hat\tau_u$.
  
  
 % ==============================================================================
@@ -664,86 +763,21 @@ estimates that change sign under outcome recoding while $\hat\tau_u$ does not.
 \label{subsec:classification}
 % ==============================================================================
 
-\subsubsection{Two Notions of Normalization}
-\label{sssec:two_norms}
-
-The preceding sections use the word normalization in two senses that are related but
-logically distinct, and it is worth being explicit about both before presenting the
-classification.\\
-In the kappa-estimator literature, an estimator is called \emph{normalized} if the
-inverse-probability or kappa weights used in its construction are rescaled so that the
-denominator of the estimator converges to the true complier share
-\citep{sloczynski2025abadie}. For $\hat\tau_u$, this means the instrument-group weights
-for $Z=1$ and $Z=0$ are separately divided by their group totals before forming the
-Wald ratio. For $\hat\tau_{a,10}$, it means the $\kappa_1$- and $\kappa_0$-weighted
-sums are each divided by their own total. The unnormalized estimators $\hat\tau_a$,
-$\hat\tau_{a,1}$, and $\hat\tau_{a,0}$ omit one or both of these rescaling steps.
-This is an internal property of how the estimator is constructed.\\
-In the outcome-weight framework of \citet{knaus2024treatment}, normalization refers to
-a property of the final weights $\omega_i$ placed on the observed outcomes. An estimator
-is \emph{fully normalized} in this sense if
-\begin{equation}
-  \sum_{i=1}^N \omega_i = 0,
-  \qquad
-  \sum_{i=1}^N \omega_i D_i = 1,
-  \qquad
-  \sum_{i=1}^N \omega_i (1-D_i) = -1.
-  \label{eq:full_norm_conditions}
-\end{equation}
-These conditions say that the outcome weights behave like a normalized
-treated-minus-control contrast: the treated side carries total mass $+1$ and the
-untreated side carries total mass $-1$, so the overall sum is zero.
-
-The first condition in \eqref{eq:full_norm_conditions} has a direct causal
-interpretation through a simple algebraic identity. Suppose the outcome variable is
-shifted by a constant $k \in \mathbb{R}$, replacing $Y_i$ with $Y_i + k$ for every
-observation. This corresponds, for instance, to expressing log wages in cents rather
-than dollars, or coding a binary labour-force-participation variable as $\{1,2\}$
-rather than $\{0,1\}$. The constant $k$ carries no information about the causal
-effect of the treatment. For any estimator $\hat\tau = \sum_i \omega_i Y_i$, the
-shifted estimate equals
-\begin{equation}
-  \hat\tau(Y + k)
-  = \sum_{i=1}^N \omega_i (Y_i + k)
-  = \sum_{i=1}^N \omega_i Y_i + k \sum_{i=1}^N \omega_i
-  = \hat\tau(Y) + k \sum_{i=1}^N \omega_i.
-  \label{eq:ti_algebra}
-\end{equation}
-Rearranging gives the translation-invariance identity:
-\begin{equation}
-  \hat\tau(Y + k) - \hat\tau(Y) = k \sum_{i=1}^N \omega_i.
-  \label{eq:ti_identity}
-\end{equation}
-This identity holds exactly in finite samples, for any realization of the data and
-any propensity score estimate. The right-hand side vanishes if and only if
-$\sum_i \omega_i = 0$. 
-Thus, the sum-to-zero condition is the necessary and sufficient finite-sample
-condition for the estimator to be invariant to additive outcome transformations.
-Full normalization in the Knaus sense is stronger: it additionally requires the
-treated and untreated components of the outcome weights to sum to $+1$ and $-1$,
-respectively.
-When $\sum_i \omega_i \neq 0$, the
-estimate changes by $k \sum_i \omega_i$ for every unit shift in $k$: an estimator
-applied to log wages in cents will produce a numerically different LATE than the
-same estimator applied to log wages in dollars, even though the two outcomes contain
-identical information about the causal effect. \citet{sloczynski2025abadie} call this
-property translation invariance and show in Proposition~3.2 that it holds for
-$\hat\tau_u$ and $\hat\tau_{a,10}$ but fails for the unnormalized estimators. The
-derivations in this chapter show that the same property is an exact finite-sample
-consequence of the outcome-weight structure derived in
-Sections~\ref{sssec:derive_a10} and~\ref{sssec:derive_u}.
 
 \subsubsection{How the Two Notions Are Connected}
 \label{sssec:norm_connection}
 
-For the estimators studied in this thesis, the two normalization concepts co-occur:
-every estimator that is normalized in the SUW sense turns out to be fully normalized
-in the Knaus sense, and every unnormalized estimator fails both conditions. This is not
-a coincidence. As shown in Sections~\ref{sssec:derive_a10} and~\ref{sssec:derive_u},
-the same algebraic operation that makes $\hat\tau_u$ and $\hat\tau_{a,10}$ normalized
-in the SUW sense is also the step that forces $\sum_i \omega_i = 0$.\\
-For $\hat\tau_{a,10}$, separate rescaling of the $\kappa_1$ and $\kappa_0$ weighted sums
-forces each to sum to one, so their difference sums to zero unconditionally. For
+For the kappa estimators studied in this thesis, the two normalization concepts align
+for the normalized estimators: $\hat\tau_u$ and $\hat\tau_{a,10}$ are normalized in the
+SUW sense and fully normalized in the outcome-weight sense. The converse pattern is
+more nuanced. The unnormalized estimators all fail the sum-to-zero condition and
+therefore fail translation invariance, but they do not all fail both group-normalization
+conditions. In particular, $\hat\tau_{a,1}$ normalizes the treated side but not the
+untreated side, whereas $\hat\tau_{a,0}$ normalizes the untreated side but not the
+treated side. This is not
+a coincidence. As shown in Section ~\ref{subsec:omega_u},
+the same algebraic operation that makes $\hat\tau_u$  normalized
+in the SUW sense is also the step that forces $\sum_i \omega_i = 0$.\\For
 $\hat\tau_u$, the within-group Hájek normalization forces $\sum_i \lambda_{1i}^{z,n} =
 \sum_i \lambda_{0i}^{z,n} = N$, so the difference of the two group totals is $N - N = 0$,
 which propagates directly to $\sum_i \omega_i^u = 0$.\\
@@ -776,33 +810,33 @@ to both normalization criteria, following the protocol of \citet[Table~4--5]{kna
 \toprule
 Estimator & & SUW norm. & $\sum_i\omega_i = 0$ & $\sum_i\omega_iD_i$ & $\sum_i\omega_i(1-D_i)$ & Knaus class \\
 \midrule
-$\hat\tau_u^{cb}$ & (CBPS) & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\
-$\hat\tau_u^{ml}$ & (MLE)  & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\
-$\hat\tau_{a,10}$ &        & yes & \checkmark\,(exact) & $= +1$    & $= -1$    & Fully norm. \\[4pt]
+$\hat\tau_u^{cb}$ & (CBPS) & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_u^{ml}$ & (MLE)  & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\
+$\hat\tau_{a,10}$ &        & yes & \checkmark\, & $= +1$    & $= -1$    & Fully norm. \\[4pt]
 $\hat\tau_a$      &        & no  & $\times$            & $\neq +1$ & $\neq -1$ & Fully unnorm. \\
-$\hat\tau_{a,1}$ & & no & $\times$ & $= +1$ & $\neq -1$ & Untreated-unnorm. \\
+$\hat\tau_{a,1}$  & & no  & $\times$
+  & $= +1$\tnote{b}
+  & $\neq -1$
+  & Untreated-unnorm. \\
 $\hat\tau_{a,0}$  &        & no  & $\times$            & $\neq +1$ & $= -1$    & Treated-unnorm. \\[4pt]
-Wald-AIPW & (DML) & n/a & \checkmark\,(approx.) & $\approx +1$ & $\approx -1$ & Scale-norm. (std.)$^{a}$ \\
+Wald-AIPW & (DML) & n/a & \checkmark\,(std.) & not guaranteed & not guaranteed & Scale-norm. (std.)\tnote{a} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
   \small
-  \item \textit{SUW norm.} indicates whether the estimator is normalized in the sense
-  of \citet{sloczynski2025abadie}, i.e.\ whether the kappa or IPW weights are
-  separately rescaled before forming the Wald ratio.
-  \textit{Knaus class} follows \citet[Table~4--5]{knaus2024treatment}.
-  \checkmark\,(exact): the condition holds for all data realizations by algebraic
-  construction; \checkmark\,(approx.): holds approximately in finite samples subject
-  to Conditions~3 and~5 of \citet{knaus2024treatment}, which conflict with standard
-  flexible implementations. $\hat\tau_{a,0}$: treated-unnormalized because
-  $\sum_i\omega_i^{a,0}(1-D_i) = -1$ holds by kappa orthogonality but
-  $\sum_i\omega_i^{a,0} \neq 0$ \citep[Appendix~A.4]{knaus2024treatment}.
-  $^{a}$ Wald-AIPW is scale-normalized in standard implementations because
-$\sum_i\omega_i = 0$ under Condition~3 of \citet{knaus2024treatment}.
-Full normalization additionally requires Condition~5b, which holds only if the same
-smoother predicts both outcome and treatment — conflicting with standard practice
-of using separate models for each nuisance parameter
-\citep[Section~4.2.3]{knaus2024treatment}.
+  \item \textit{SUW norm.} refers to normalization in the sense of
+  \citet{sloczynski2025abadie}: the kappa/IPW weights entering the estimator are
+  separately rescaled before the Wald ratio is formed. \textit{Knaus class} refers
+  to the normalization of the final outcome weights $\omega_i$ following
+  \citet[Tables~4--5]{knaus2024treatment}. \checkmark\,(exact) means the condition
+  holds algebraically in every finite sample.
+  \item[$^{a}$] In standard flexible implementations, Wald-AIPW is scale-normalized
+  but not generally fully normalized. Full normalization requires the additional
+  smoother condition that also reproduces the treatment nuisance component
+  \citep[Section~4.2.3]{knaus2024treatment}.
+  \item[$^{b}$] For $\hat\tau_{a,1}$, the treated side is normalized because its
+  denominator is the treated-side kappa total $\sum_i\kappa_{i1}$; the untreated side
+  is not normalized in general. See Appendix~\ref{app:omega_a1}.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -1097,10 +1131,127 @@ All replication code is available at: \texttt{[YOUR GITHUB/CLOUD LINK]}
 
 
 % ==============================================================================
-% SELBSTÄNDIGKEITSERKLÄRUNG (statutory declaration — required by Tübingen)
+% APPENDIX — Outcome Weights of \hat\tau_{a,1}
+%
+% Paste into your appendix section, e.g. after \section{Proofs} or as its own
+% \subsection{Outcome Weights of $\hat\tau_{a,1}$}
 % ==============================================================================
+\appendix
+\section{Outcome Weights of \texorpdfstring{$\hat\tau_{a,1}$}{tau(a,1)}}
+\label{app:omega_a1}
 
+This section derives the outcome weights of $\hat\tau_{a,1}$ (also written $\hat\tau_t$
+in \citealt{sloczynski2025abadie}) in the PIVE framework of
+\citet{knaus2024treatment}, and establishes that it is untreated-unnormalized.
 
+\paragraph{Setup.}
+Define the raw instrument IPW contrast for observation $i$ as
+\begin{equation}
+  r_i = \frac{Z_i}{\hat{p}_i} - \frac{1-Z_i}{1-\hat{p}_i}
+      = \frac{Z_i - \hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}.
+  \label{eq:a1_ri}
+\end{equation}
+The two kappa components $\kappa_{i1}$ and $\kappa_{i0}$ decompose $r_i$ as follows:
+\begin{equation}
+  \kappa_{i1} = D_i \frac{Z_i - \hat{p}_i}{\hat{p}_i(1-\hat{p}_i)} = D_i r_i,
+  \qquad
+  \kappa_{i0} = (1-D_i)\frac{(1-Z_i)-(1-\hat{p}_i)}{\hat{p}_i(1-\hat{p}_i)}
+              = -(1-D_i)r_i.
+  \label{eq:a1_kappa_decomp}
+\end{equation}
+Equation~\eqref{eq:a1_kappa_decomp} is the central identity: the treated part of $r_i$
+is $\kappa_{i1}$ and the untreated part is $-\kappa_{i0}$.
+
+\paragraph{PIVE representation.}
+Define the diagonal transformation matrix
+$\mathbf{T}^{a,1} = \mathrm{diag}(r_1, \ldots, r_N)$.
+Using \eqref{eq:a1_kappa_decomp}, the pseudo-treatment is
+$\mathbf{T}^{a,1}\mathbf{D} = \boldsymbol{\kappa}_1$,
+and the estimator can be written as
+\begin{equation}
+  \hat\tau_{a,1}
+  = \frac{N^{-1}\mathbf{1}_N'\mathbf{T}^{a,1}\mathbf{Y}}
+         {N^{-1}\mathbf{1}_N'\mathbf{T}^{a,1}\mathbf{D}}
+  = \frac{N^{-1}\sum_i r_i Y_i}{N^{-1}\sum_i \kappa_{i1}},
+  \label{eq:a1_wald}
+\end{equation}
+which is a PIVE with $\widetilde{\mathbf{Z}} = \mathbf{1}_N$,
+$\widetilde{\mathbf{D}} = \boldsymbol{\kappa}_1$,
+$\widetilde{\mathbf{Z}}'\widetilde{\mathbf{D}} = \sum_i\kappa_{i1}$.
+By Proposition~\ref{prop:pive_weights}, the outcome weights are
+\begin{equation}
+  \boldsymbol{\omega}^{a,1\prime}
+  = \left(\sum_i\kappa_{i1}\right)^{-1} \mathbf{1}_N' \mathbf{T}^{a,1},
+  \label{eq:a1_omega_vec}
+\end{equation}
+so that the weight of observation $i$ is
+\begin{equation}
+  \boxed{
+    \omega_i^{a,1} = \frac{r_i}{\sum_j \kappa_{j1}}
+    = \frac{1}{\sum_j \kappa_{j1}}
+      \cdot\frac{Z_i - \hat{p}_i}{\hat{p}_i(1-\hat{p}_i)}.
+  }
+  \label{eq:a1_omega_scalar}
+\end{equation}
+
+\paragraph{Normalization properties.}
+
+\noindent\textit{(i) Total weight sum.}
+Let $s_1 = \sum_i Z_i/\hat{p}_i$ and $s_0 = \sum_i(1-Z_i)/(1-\hat{p}_i)$.
+Then $\sum_i r_i = s_1 - s_0$, so
+\begin{equation}
+  \sum_{i=1}^N \omega_i^{a,1}
+  = \frac{\sum_i r_i}{\sum_j\kappa_{j1}}
+  = \frac{s_1 - s_0}{\sum_j\kappa_{j1}},
+  \label{eq:a1_sum}
+\end{equation}
+which is zero only if $s_1 = s_0$, a coincidental data-dependent condition with no
+structural guarantee. Hence $\sum_i\omega_i^{a,1} \neq 0$ in general, and
+$\hat\tau_{a,1}$ is not translation invariant.
+
+\noindent\textit{(ii) Treated weight sum.}
+Using $D_i r_i = \kappa_{i1}$ from \eqref{eq:a1_kappa_decomp}:
+\begin{equation}
+  \sum_{i=1}^N \omega_i^{a,1} D_i
+  = \frac{\sum_i D_i r_i}{\sum_j\kappa_{j1}}
+  = \frac{\sum_i \kappa_{i1}}{\sum_j\kappa_{j1}}
+  = 1. \qquad\checkmark
+  \label{eq:a1_treated}
+\end{equation}
+The treated weights sum to one exactly, because the denominator of $\hat\tau_{a,1}$
+is $\sum_i\kappa_{i1}$ — precisely the treated-side kappa total.
+
+\noindent\textit{(iii) Untreated weight sum.}
+Using $(1-D_i)r_i = -\kappa_{i0}$ from \eqref{eq:a1_kappa_decomp}:
+\begin{equation}
+  \sum_{i=1}^N \omega_i^{a,1}(1-D_i)
+  = \frac{\sum_i (1-D_i) r_i}{\sum_j\kappa_{j1}}
+  = \frac{-\sum_i \kappa_{i0}}{\sum_j\kappa_{j1}},
+  \label{eq:a1_untreated}
+\end{equation}
+which equals $-1$ only if $\sum_i\kappa_{i0} = \sum_i\kappa_{i1}$. Since there is no
+structural reason for the complier shares from the treated and untreated sides to be
+equal in any given sample, $\sum_i\omega_i^{a,1}(1-D_i) \neq -1$ in general.
+
+\paragraph{Classification.}
+Collecting the three results:
+\begin{equation}
+  \sum_{i=1}^N \omega_i^{a,1} \neq 0,
+  \qquad
+  \sum_{i=1}^N \omega_i^{a,1} D_i = 1,
+  \qquad
+  \sum_{i=1}^N \omega_i^{a,1}(1-D_i) = -\frac{\sum_i\kappa_{i0}}{\sum_i\kappa_{i1}} \neq -1.
+  \label{eq:a1_classification}
+\end{equation}
+Therefore $\hat\tau_{a,1}$ is \emph{untreated-unnormalized} in the sense of
+\citet[Table~4]{knaus2024treatment}: the treated side is normalized by construction
+but the untreated side is not. The contrast with $\hat\tau_{a,10}$ is instructive:
+the normalized estimator uses separate denominators $\sum_i\kappa_{i1}$ and
+$\sum_i\kappa_{i0}$ for the two sides, forcing both to sum to their target values;
+$\hat\tau_{a,1}$ uses only the treated-side denominator, leaving the untreated side
+without its own rescaling.
+
+\newpage
 % ==============================================================================
 \bibliographystyle{apalike}
 \bibliography{references}
