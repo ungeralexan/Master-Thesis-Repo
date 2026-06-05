@@ -904,8 +904,93 @@ Taken together, the applications provide a structured comparison across design q
 
 \subsection{Data and Design}
 \label{subsec:vietnam_data}
+\begin{quotation}
+\noindent\textit{``Tonight for the first time in 27 years the United
+States has again started a draft lottery.''}
 
-% [WRITE HERE — SIPP 1984, N=3027, Z=draft lottery, one-sided noncompliance, ~1 page]
+\smallskip
+\noindent\hfill --- Roger Mudd, CBS News, 1 December 1969
+\end{quotation}
+The economic consequences of military service have long been a central question in the evaluation of veterans' compensation and labour-market policy. In the United States, this question is especially relevant for the Vietnam era, where military service was politically contested and where the long-run civilian outcomes of veterans remained difficult to assess. A simple comparison between veterans and nonveterans, however, does not provide a credible causal estimate of the effect of military service on earnings. Men who served in the military were not selected at random. They may differ from nonveterans in health, education, ability, labour-market opportunities, or willingness to enlist. As a result, observed earnings differences may reflect both the causal effect of service and the characteristics that selected individuals into military service.\\
+This is the selection problem adressed in \citet{angrist1990lifetime}.
+Key to his idea to overcome it is to use the Vietnam-era draft lottery as a source of quasi random variation in the probability of taking on military service. 
+The lottery did not randomly assigned military service itself, instead, it randomly assigned draft risk.
+
+\subsubsection{The Draft Lottery - The instrument}
+During the Vietnam-era draft lotteries, Random Sequence Numbers (RSNs) were assigned to dates of birth. For each birth cohort, the Department of Defense later announced an induction ceiling. Men with lottery numbers below the relevant cohort-specific ceiling were classified as draft-eligible, while men with higher lottery numbers were not. Formally, draft eligibility can be written as: 
+\begin{equation}
+  Z_i \;=\; \mathbbm{1}\!\left\{RSN_i \leq c_{b(i)}\right\},
+  \label{eq:vietnam_z}
+\end{equation}
+%
+where $RSN_i$ denotes individual $i$'s lottery number, $b(i)$ his birth
+cohort, and $c_{b(i)}$ the draft-eligibility ceiling for that cohort.
+Table~\ref{tab:vietnam_cutoffs} reports the cohort-specific ceilings
+for the four birth cohorts in the sample.
+\begin{table}[htbp]
+\centering
+\caption{Draft-eligibility ceilings by birth cohort (Vietnam application)}
+\label{tab:vietnam_cutoffs}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Birth cohort & Lottery year & Eligibility ceiling \\
+\midrule
+1950 & 1970 & $RSN_i \leq 195$ \\
+1951 & 1971 & $RSN_i \leq 125$ \\
+1952 & 1972 & $RSN_i \leq 95$  \\
+1953 & 1973 & $RSN_i \leq 95$  \\
+\bottomrule
+\end{tabular}
+\end{table}
+Hence, draft eligibility did not determine military service perfectly, since some eligible men did not serve and other ineligible men volunteered. It however shift the probability of military service (Relevance).
+Furthermore, the RSN where randomly assigned to birth dates. As the birth is genuinly an event that is in a random relation to military services especially since partens did not have knowledge at the time that tehre was gonna be a lottery the usage of this instrument can also be seen as as good as randomly assigned.
+Finally the thought that eligibility would affect later earnings only over military service is an assumption that is plausible to take (Exclusion restriction).\\
+The cohort-specific nature of the lottery matters for the estimators
+used below. Lottery numbers were assigned randomly within each cohort,
+but the eligibility ceiling differed across cohorts, so the
+unconditional probability of draft eligibility varies with birth year:
+%
+\begin{equation}
+  \Pr(Z_i = 1 \mid b(i)) \;=\; \Pr\!\left(RSN_i \leq c_{b(i)} \mid b(i)\right).
+  \label{eq:vietnam_propensity_cohort}
+\end{equation}
+In the pooled sample, draft eligibility is therefore conditionally
+random given birth cohort, not unconditionally random. This is why
+controlling for age is required
+for the instrument propensity score $p(X_i) = \Pr(Z_i = 1 \mid X_i)$
+to be correctly specified.
+\subsubsection{Sample, Variables, and Design Diagnostics}
+\label{subsubsec:vietnam_sample}
+
+The used sample in this thesis follows \citet{sloczynski2025abadie} in revisiting \citet{angrist1990lifetime}.
+Here it especially uses Angrists subsample of the 1984 Survey of Income and Program Participation
+(SIPP) which contains $N = 3{,}027$ white men born between 1950 and
+1953. Table~\ref{tab:vietnam_vars} summarises the three
+core variables of the IV design.
+
+\begin{table}[htbp]
+\centering
+\caption{IV design variables: Vietnam draft lottery application}
+\label{tab:vietnam_vars}
+\begin{tabular}{@{}llp{7.5cm}@{}}
+\toprule
+Role & Symbol & Definition \\
+\midrule
+Instrument  & $Z_i$ & Draft eligibility: $\mathbbm{1}\{RSN_i \leq c_{b(i)}\}$;
+                       randomly assigned within birth cohort \\[4pt]
+Treatment   & $D_i$ & Vietnam-era veteran status: indicator for
+                       military service \\[4pt]
+Outcome     & $Y_i$ & Log hourly wages \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\newpage
+
+
+
+
+
 
 \subsection{Point Estimates and Replication}
 \label{subsec:vietnam_estimates}
