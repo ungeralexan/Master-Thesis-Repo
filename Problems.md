@@ -47,3 +47,12 @@ For unnormalized estimators, this fails in two ways:
 
 1. The +1 translation in 1 − workedm = −workedm + 1 contaminates the estimate.
 2. The sign flip then doesn't recover the original, because the translation contamination is asymmetric.
+
+### Empirically I am applying the SUW normalization distinction
+The question : ganz kurz hold on a moment what I then right now only do is to shift the log outcome from dollars into cents, which is what the SUW framework basically does right. On the other hand as I compare like a madman knaus and SUW normalization mabye read my master tehsis paer for this again, I knowjust apply the SUW normlaization right and not the other one, what do you think of that do I neeed more sections or is this corretc or can the otehr onyl be shown theoreticsl, it is just something that I have just figured, but I am not really sure whether this goes inn the right aor in the wrong direction.
+
+In your thesis, you already separate this nicely: kappa normalization means rescaling the kappa/IPW components inside the estimator, while Knaus normalization refers to whether the final outcome weights ω
+i satisfy properties like ∑0, treated mass +1, and untreated mass −1.
+In your thesis, you already separate this nicely: kappa normalization means rescaling the kappa/IPW components inside the estimator, while Knaus normalization refers to whether the final outcome weights.
+
+One more precision point: Knaus full normalization is stronger than what you need for the SUW recoding exercise. For the cents/dollars shift, only the sum of w to zero. Full Knaus normalization also requires the treated and untreated outcome-weight components to sum to +1 and −1, respectively. Your thesis already says this: full normalization in the Knaus sense is stronger, while the first condition alone gives translation invariance.

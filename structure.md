@@ -245,8 +245,7 @@ match SUW (2025) Table 2.*
   specs, dollars and cents
 - Show normalized estimators (τ̂ᵤ, τ̂ₐ,₁₀) stable under outcome recoding;
   unnormalized (τ̂ₐ, τ̂ₐ,₁, τ̂ₐ,₀) change when Y → Y×100 (cents)
-- DML Wald-AIPW benchmark: grf (cubic + saturated), DoubleML (ranger, XGBoost,
-  linear+logistic)
+
 
 **Section 4.3 — DML learner comparison** 🔲
 - Three learners (ranger, XGBoost, linear+logistic): estimates converge at
