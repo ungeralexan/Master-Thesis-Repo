@@ -1166,7 +1166,24 @@ instrument is near-randomly assigned conditional on birth cohort, and the
 only adjustment variable is age. In this low-dimensional, near-random-
 assignment setting, the parametric logit and the generalised random forest
 estimate essentially the same propensity-score surface.
-The outcome weights diagnostics in the next section formalise this primary observation. The effective sample size and the share of negative weights are virtually identical across all estimators, which confirms that the instrument design rather then than the nuisance learner dirves the weight structure. In this case the primary idea is to suspect that the design dominates the learner. 
+ The effective sample size and the share of negative weights are virtually identical across all estimators, which confirms that the instrument design rather then than the nuisance learner dirves the weight structure. In this case the primary idea is to suspect that the design dominates the learner. 
+
+The generalized random forest based estimates above use a single learner class, a natural question results in assessing whther the convergence result is specific to generalised random forests or whether it holds across fundamentally different nuisance estimators such as parametric, tree ensembles with other packages or boosted sequential learners.
+These make different approximation choices and carry different theoretical guarantees for the smoother condition $\sum_i \omega_i = 0$.
+To assess whether learner choice within the DoubleML framework
+produces different results, Table~\ref{tab:vietnam_dml} additionally
+reports Wald-AIPW estimates from \texttt{DoubleMLIIVM} with three
+alternative nuisance learners: linear regression and logistic
+classification (the parametric baseline), ranger random forests, and
+XGBoost.
+The three learner variants span a range from 0.218 to 0.246. These estimates remain close to the grf Wald-AIPW benchmark of 0.229, the cubic 2SLS
+estimate of 0.227, and the broader range of normalised kappa estimates reported
+above. The parametric linear/logistic learner lies at the lower end of the
+DoubleML range, which is consistent with stronger functional-form restrictions
+relative to the more flexible tree-based learners. Given the large standard
+errors and the low-dimensional covariate structure of the Vietnam design, these
+differences should be interpreted as learner sensitivity checks rather than as
+distinct empirical conclusions.
 
 
 
@@ -1222,7 +1239,24 @@ In the cubic specification, $\sum_i\omega_i = 0$ holds
 for PLR-IV, Wald-AIPW, and all three normalised kappa estimators.
 On the other hand the three
 unnormalised kappa estimators have weight sums between 0.046 and 0.049,
-accounting precisely for the instability observed in Table~\ref{tab:vietnam_kappa}. The saturated specification does not make the unnormalised estimators translation invariant in general. Rather, in this application it estimates the instrument propensity score at the age-cell level, which aligns the sample normalisations of the kappa components closely enough that the implied outcome weights sum to zero. The disappearance of the cents--dollars discrepancy is therefore a feature of this saturated design, not a general robustness property of the unnormalised estimators.\\
+accounting precisely for the instability observed in Table~\ref{tab:vietnam_kappa}.
+ The result in Table~\ref{tab:vietnam_dml} extends to the alternative
+DoubleML learner specifications. The linear/logistic and \texttt{ranger}
+variants both pass the algebraic identity check
+\(\hat\tau=\sum_i\omega_iY_i\) and have \(\sum_i\omega_i=0\), so their
+recovered outcome weights can be interpreted as translation-invariant
+Wald-AIPW weights in this application. This is consistent with
+\citet{knaus2024treatment}, who shows that Wald-AIPW is normalized when
+the relevant outcome nuisance learners are affine smoothers.
+XGBoost is different. Although the recovered weights have an almost-zero
+sum, \(\sum_i\omega_i=-3.7\times10^{-6}\), they fail the algebraic identity
+\(\hat\tau=\sum_i\omega_iY_i\).
+This caveat is consistent with
+\citet{knaus2024treatment}, who notes that boosted trees can violate the
+affine-smoother condition required for the normalization results.
+
+
+The saturated specification does not make the unnormalised estimators translation invariant in general. Rather, in this application it estimates the instrument propensity score at the age-cell level, which aligns the sample normalisations of the kappa components closely enough that the implied outcome weights sum to zero. The disappearance of the cents--dollars discrepancy is therefore a feature of this saturated design, not a general robustness property of the unnormalised estimators.\\
 The remaining three columns of Table~\ref{tab:vietnam_weights} reveal a
 striking uniformity. In the cubic specification, every estimator has an ESS
 of either 5 or 6, a negative-weight share of exactly 54.4\%, and a maximum
@@ -1266,10 +1300,39 @@ flexibility.
 \end{figure}
 
 
+\subsection{Conclusion on Angrist Vietnam Framework}
+\label{subsec:vietnam_summary}
+The Vietnam application establishes a solid based behaviour of the unified outcome weights diagnostics in a clean, low dimensional, near-random-assignment design.
+Several results stand out. Section~\ref{subsec:vietnam_estimates} using the cents/dollars recoding reproduces
+the central finding of \citet{sloczynski2025abadie}.Normalised kappa
+estimators are invariant to additive outcome shifts, while unnormalised
+estimators are not, with the linear-age specification reversing sign entirely. In the case of the staurated specification all estimators collapse to a common value (0.241). As \citet{sloczynski2025abadie} note his as a demonstration that fully flexible
+propensity-score specifications can remove finite-sample pathologies.
+Moreover, using the \textit{Outcome Weights} package provided by \citet{knaus2024treatment} it is can be seen that the identity \(\hat\tau=\sum_i\omega_iY_i\) holds and  point estimates,
+effective sample sizes, and negative-weight shares are virtually identical
+across all kappa and DML estimators and across grf, ranger, and XGBoost
+learners. It is to mention that when using Wald-AIPW with gradient-boosted trees the affine-smoother condition fails. This caveat is also documented by \citet{knaus2024treatment} as XGBoost does not produce an exact smoother matrix not guaranteeing that the weights sum up to 0 even with the four required hyperparameters set. \\
+Apart from the application of the theoretical concepts a central finding is that in this design the instrument structure, not the choice of estimator
+or learner, determines the weight properties, this can be shown as the weight diagnostics are virtually identical across all estimators.
+. The four
+Wald-AIPW variants (grf 0.229, linear+logit 0.218, ranger 0.246,
+XGBoost 0.246) span only 0.03 log points, all consistent with the
+normalised kappa range of 0.20–0.21.
+The covariate balance is achieved equally by all estimators as Unadjusted
+ASMD 0.5 on all three age moments all eight estimators reduce it below
+0.1. The estimators that FAIL translation invariance achieve the same
+balance as those that pass it, emphasizing that the balance is rather set by design and nor by normalization choice. 
+Finally in the saturated design the parametric learner is the one that breaks  as the linear and logistic Wald-AIPW cannot produce outcome weights
+in the saturated specification, while flexible learners can handle it without issue.
+Hence, the Vietnam design can be seen as a benchmark precisely
+because the diagnostics are almost too clean. 
+In the next section the \citet{card1993using} application introduces a richer covariate-adjustment problem and an observational instrument, to detect whether the diagnistcs begin to differentiate across estimators.
+
+
 
 \newpage
 % ==============================================================================
-\section{Empirical Applications: Card (1995) and Angrist--Evans (1998)}
+\section{Empirical Applications: Card (1995)}
 \label{sec:card_ae}
 % ==============================================================================
 
@@ -1391,20 +1454,6 @@ not a failure of the estimator or the propensity score specification.
 \appendix
 \renewcommand{\thesection}{\Alph{section}}
 
-\section{Proofs}
-\label{app:proofs}
-
-% [Formal proofs of sum-to-zero for tau_u and tau_a10 if needed]
-
-\section{Additional Tables and Figures}
-\label{app:additional}
-
-% [Additional Love plots, full weight diagnostics tables, learner comparison details]
-
-\section{Data Sources and Variable Definitions}
-\label{app:data}
-
-% [Detailed variable definitions for all three applications]
 
 
 \section{Outcome Weights of \texorpdfstring{$\hat\tau_{a,1}$}{tau(a,1)}}
@@ -1692,6 +1741,39 @@ $^{*}p{<}0.10$, $^{**}p{<}0.05$, $^{***}p{<}0.01$.
 Replicates Słoczyński, Uysal, \& Wooldridge (2025), Table~2.}
 \end{tabular}
 \end{table}
+
+
+\newpage
+\section{DML learner comparison}
+\begin{table}[htbp]
+\centering
+\caption{DoubleML learner comparison: Wald-AIPW (Vietnam, cubic age)}
+\label{tab:vietnam_dml_appendix}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c c}
+\toprule
+Learner & Est. & SE & $\omega'\mathbf{Y} = \hat{\tau}$ & $\sum_i\omega_i$ \\
+\midrule
+\addlinespace[2pt]
+Linear + logistic          & 0.2178 & (0.233) & \checkmark  & $0.000$                  \\
+Ranger RF                  & 0.2461 & (0.234) & \checkmark  & $0.000$                  \\
+XGBoost$^{\dagger}$        & 0.2463 & (0.234) & $\times$    & $-3.7\!\times\!10^{-6}$  \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} All models use \texttt{DoubleMLIIVM} with
+five-fold cross-fitting \citep{bach2022doubleml}
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+
+
+
+\newpage
+
 
 % ==============================================================================
 \bibliographystyle{apalike}

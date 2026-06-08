@@ -1,0 +1,117 @@
+---
+title: "Outcome Weights for DoubleML Objects"
+subtitle: ""
+author:
+  - Michael Knaus
+  - Roman Rakov
+date: "01/26"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{Outcome Weights for DoubleML Objects}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+## Introduction
+
+This notebook shows how to calculate the outcome weights ([Knaus, 2024](https://arxiv.org/abs/2411.11559)) for a [`DoubleML`](https://docs.doubleml.org/r/stable/) object. Similar to other notebooks, will use the `get_outcome_weights()` method to extract the outcome weights as described in the paper.
+
+## **Load packages and data**
+
+Load the relevant packages
+
+```{r}
+library(OutcomeWeights)
+library(mlr3verse)
+library(DoubleML)
+```
+
+## Outcome weights for DoubleML
+
+Outcome weights can be extracted when base learners are *XGBoost*, *linear regression*, or *ranger's random forests*.
+
+We estimate four models:
+
+1.  Partially linear regression ([`DoubleMLPLR`](https://docs.doubleml.org/r/stable/reference/DoubleMLPLR.html)) using ranger
+2.  Partially linear IV regression ([`DoubleMLPLIV`](https://docs.doubleml.org/r/stable/reference/DoubleMLPLIV.html)) using linear regression
+3.  AIPW-ATE ([`DoubleMLIRM`](https://docs.doubleml.org/r/stable/reference/DoubleMLIRM.html)) using XGBoost
+4.  Wald-AIPW ([`DoubleMLIIVM`](https://docs.doubleml.org/r/stable/reference/DoubleMLIIVM.html)) using XGBoost
+
+For XGBoost, outcome weights multiplied by the outcome vector reproduce point estimates only if certain estimation practices are followed. Four hyperparameters must be set to ensure that $SY = \hat{Y}$:
+
+```{r}
+regr_xgb <- lrn("regr.xgboost", 
+                   alpha = 0, 
+                   subsample = 1, 
+                   max_delta_step = 0, 
+                   base_score = 0)
+
+regr_lm <- lrn("regr.lm")
+regr_rf <- lrn("regr.ranger", keep.inbag = TRUE)
+classif_xgb <- lrn("classif.xgboost")
+
+# PLR
+ml_l_plr <- regr_rf$clone()
+ml_m_plr <- regr_rf$clone()
+
+# PLIV
+ml_l_pliv <- regr_lm$clone()
+ml_m_pliv <- regr_lm$clone()
+ml_r_pliv <- regr_lm$clone()
+
+# IRM (AIPW-ATE)
+ml_g_irm <- regr_xgb$clone()
+ml_m_irm <- classif_xgb$clone()
+
+# IIVM (Wald-AIPW)
+ml_g_iivm <- regr_xgb$clone()
+ml_m_iivm <- classif_xgb$clone()
+ml_r_iivm <- classif_xgb$clone()
+```
+
+Using some generic `DoubleML` data to keep it simple:
+
+```{r}
+n_obs <- 1000
+dim_x <- 10
+cf_folds <- 3
+
+plr_data  <- make_plr_CCDDHNR2018(n_obs, dim_x = dim_x)
+irm_data  <- make_irm_data(n_obs, dim_x = dim_x)
+pliv_data <- make_pliv_CHS2015(n_obs, dim_x = dim_x, dim_z = 1)
+iivm_data <- make_iivm_data(n_obs, dim_x = dim_x)
+
+# Create DML objects
+plr_obj  <- DoubleMLPLR$new(plr_data,  ml_l_plr,  ml_m_plr,  n_folds = cf_folds)
+pliv_obj <- DoubleMLPLIV$new(pliv_data, ml_l_pliv, ml_m_pliv, ml_r_pliv, n_folds = cf_folds)
+irm_obj  <- DoubleMLIRM$new(irm_data,  ml_g_irm, ml_m_irm, n_folds = cf_folds)
+iivm_obj <- DoubleMLIIVM$new(iivm_data, ml_g_iivm, ml_m_iivm, ml_r_iivm, n_folds = cf_folds)
+```
+
+We now fit the models and extract the outcome weights that recover the `DoubleML` package output:
+
+```{r}
+plr_obj$fit(store_models = TRUE, store_predictions = TRUE)
+pliv_obj$fit(store_models = TRUE, store_predictions = TRUE)
+irm_obj$fit(store_models = TRUE, store_predictions = TRUE)
+iivm_obj$fit(store_models = TRUE, store_predictions = TRUE)
+
+omega_plr   <- get_outcome_weights(object = plr_obj, dml_data = plr_data)
+omega_plriv <- get_outcome_weights(object = pliv_obj, dml_data = pliv_data)
+omega_aipw  <- get_outcome_weights(object = irm_obj, dml_data = irm_data)
+omega_waipw <- get_outcome_weights(object = iivm_obj, dml_data = iivm_data)
+```
+
+and check equivalence:
+
+```{r}
+results <- c(
+  plr   = all.equal(omega_plr$omega %*% plr_data$data$y,   plr_obj$all_coef),
+  pliv  = all.equal(omega_plriv$omega %*% pliv_data$data$y, pliv_obj$all_coef),
+  aipw  = all.equal(omega_aipw$omega %*% irm_data$data$y,  irm_obj$all_coef),
+  waipw = all.equal(omega_waipw$omega %*% iivm_data$data$y, iivm_obj$all_coef))
+
+print(results)
+```
+
+\
