@@ -1,0 +1,598 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.7cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black
+}
+
+\setlength{\parskip}{0.65em}
+\setlength{\parindent}{0pt}
+
+\title{Merkblatt: XGBoost, Affine Smoothers, and Wald-AIPW Outcome Weights}
+\author{Working note for the thesis}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Purpose of this note}
+
+This note summarizes why XGBoost is delicate in the outcome-weight framework of
+Knaus (2024), especially for Wald-AIPW estimators. The aim is not to argue that
+XGBoost is generally invalid as a nuisance learner in Double Machine Learning.
+Rather, the point is more specific:
+
+\begin{quote}
+XGBoost may produce a reasonable Wald-AIPW point estimate, but the recovered
+outcome weights may fail to be an exact finite-sample representation of that
+estimate.
+\end{quote}
+
+This distinction is crucial. A DML point estimate can be computed with many
+learners. However, Knaus-style outcome-weight diagnostics require stronger
+algebraic conditions. In particular, the fitted outcome regressions must behave
+like smoother operations on the outcome vector.
+
+\section{Outcome weights and why smoothers matter}
+
+The outcome-weight framework starts from estimators that can be written as
+\begin{equation}
+    \hat\tau = \omega'Y = \sum_{i=1}^N \omega_i Y_i .
+    \label{eq:omega_rep}
+\end{equation}
+
+For pseudo-IV estimators, a sufficient route to such a representation is that the
+pseudo-outcome can be written as a linear transformation of the observed outcome:
+\begin{equation}
+    \tilde Y = TY .
+    \label{eq:pseudo_outcome}
+\end{equation}
+Then the estimator can be written as a weighted sum of observed outcomes.
+
+For kappa estimators, this is usually straightforward. The pseudo-outcome has the
+form
+\begin{equation}
+    \tilde Y_i = t_i Y_i,
+\end{equation}
+where \(t_i\) depends on \(Z_i\), \(D_i\), and the estimated propensity score, but
+not on the outcome vector \(Y\). The corresponding matrix \(T\) is diagonal.
+
+For Wald-AIPW and other DML estimators, the situation is different. The
+pseudo-outcome includes fitted outcome regressions, such as
+\begin{equation}
+    \widehat{\mathbb E}[Y\mid Z=z,X].
+\end{equation}
+Therefore, the fitted outcome predictions themselves must be expressible as
+smoother operations on \(Y\). Schematically, one needs
+\begin{equation}
+    \hat m = SY
+    \quad\text{or more generally}\quad
+    \hat m = a + SY .
+    \label{eq:smoother}
+\end{equation}
+
+This is where XGBoost becomes delicate.
+
+\section{Linear smoother versus affine smoother}
+
+A \emph{linear smoother} has fitted values of the form
+\begin{equation}
+    \hat m = SY.
+\end{equation}
+A standard example is OLS with a fixed design matrix:
+\begin{equation}
+    \hat Y = X(X'X)^{-1}X'Y = HY,
+\end{equation}
+where \(H\) is the usual hat matrix.
+
+An \emph{affine smoother} allows for an intercept-like component:
+\begin{equation}
+    \hat m = a + SY.
+\end{equation}
+The important point is not merely that the model contains a constant. The crucial
+property for normalization is that the smoother treats constant shifts in the
+outcome correctly. In particular, Knaus's affine-smoother condition can be
+summarized as
+\begin{equation}
+    S\mathbf{1}_N = \mathbf{1}_N.
+    \label{eq:affine_condition}
+\end{equation}
+
+In plain language, this means:
+
+\begin{quote}
+If every outcome is increased by the same constant \(c\), then every fitted
+outcome prediction should also increase by \(c\).
+\end{quote}
+
+Equivalently, for shifted outcomes \(Y^c = Y+c\mathbf{1}_N\), a well-behaved
+affine smoother satisfies
+\begin{equation}
+    \hat m(Y^c) = \hat m(Y) + c\mathbf{1}_N.
+\end{equation}
+
+This is why the condition matters for translation invariance. If the outcome
+residual is
+\begin{equation}
+    Y_i - \hat m_i,
+\end{equation}
+then after shifting the outcome by \(c\), one wants
+\begin{equation}
+    (Y_i+c) - (\hat m_i+c) = Y_i-\hat m_i.
+\end{equation}
+The constant should cancel. If the fitted outcome prediction does not shift by
+exactly \(c\), the constant does not cancel perfectly. Then the final estimator
+can become sensitive to the outcome level.
+
+\section{Scale-normalization and full normalization for Wald-AIPW}
+
+For an exact outcome-weight vector \(\omega\), three sums are important:
+\begin{align}
+    C   &= \sum_{i=1}^N \omega_i, \\
+    C_1 &= \sum_{i=1}^N \omega_i D_i, \\
+    C_0 &= \sum_{i=1}^N \omega_i(1-D_i).
+\end{align}
+
+\subsection{Scale-normalization / translation invariance}
+
+The estimator is translation invariant if
+\begin{equation}
+    \sum_{i=1}^N \omega_i = 0.
+    \label{eq:sum_zero}
+\end{equation}
+This implies that additive outcome shifts do not change the estimate:
+\begin{equation}
+    \hat\tau(Y+c\mathbf{1}_N)-\hat\tau(Y)
+    =
+    c\sum_{i=1}^N\omega_i
+    =
+    0.
+\end{equation}
+
+For log outcomes, this is also connected to unit invariance. If wages are changed
+from dollars to cents before taking logs, then
+\begin{equation}
+    \log(100Y_i) = \log(Y_i)+\log(100),
+\end{equation}
+which is just an additive shift of the log outcome.
+
+For Wald-AIPW, scale-normalization requires the outcome smoother to satisfy the
+affine condition. In the notation above, the key requirement is essentially
+\begin{equation}
+    S\mathbf{1}_N=\mathbf{1}_N.
+\end{equation}
+If this fails, even the weaker sum-to-zero property is not guaranteed.
+
+\subsection{Full normalization}
+
+Full normalization is stronger. It requires
+\begin{equation}
+    \sum_{i=1}^N \omega_iD_i = 1
+    \quad\text{and}\quad
+    \sum_{i=1}^N \omega_i(1-D_i) = -1.
+    \label{eq:full_norm}
+\end{equation}
+
+If both conditions hold, the estimator behaves like a normalized treated-control
+contrast:
+\begin{equation}
+    \hat\tau
+    =
+    \underbrace{\sum_{D_i=1}\omega_iY_i}_{\text{weighted treated mean}}
+    +
+    \underbrace{\sum_{D_i=0}\omega_iY_i}_{-\text{weighted untreated mean}}.
+\end{equation}
+
+Full normalization implies scale-normalization, because
+\begin{equation}
+    \sum_i\omega_i
+    =
+    \sum_i\omega_iD_i+\sum_i\omega_i(1-D_i)
+    =
+    1-1
+    =
+    0.
+\end{equation}
+But the reverse is not true. Wald-AIPW can be scale-normalized without being fully
+normalized.
+
+\section{Which conditions are needed for Wald-AIPW?}
+
+For Wald-AIPW, there are two separate layers.
+
+\subsection{Condition 3: affine outcome smoother}
+
+The first important condition is the affine-smoother condition. In simplified
+form:
+\begin{equation}
+    S\mathbf{1}_N=\mathbf{1}_N.
+\end{equation}
+
+This condition concerns the \emph{outcome regression}. It asks whether the learner
+used for outcome prediction correctly reproduces constant shifts in the outcome.
+
+If Condition 3 holds, the Wald-AIPW weights are expected to be scale-normalized:
+\begin{equation}
+    \sum_i\omega_i=0.
+\end{equation}
+
+If Condition 3 fails, even this basic property is not guaranteed. This is the
+main XGBoost problem in the Knaus framework.
+
+\subsection{Condition 5b: treatment predictions must use the same outcome smoothers}
+
+Full normalization requires more than the affine outcome-smoother condition. For
+Wald-AIPW, Knaus's additional condition can be summarized as follows.
+
+Let \(S^z_1\) and \(S^z_0\) denote the smoother matrices used for the
+instrument-specific outcome regressions. That is, these matrices generate fitted
+outcome predictions such as
+\begin{equation}
+    \widehat{\mathbb E}[Y\mid Z=1,X],
+    \qquad
+    \widehat{\mathbb E}[Y\mid Z=0,X].
+\end{equation}
+
+For full normalization, the corresponding treatment predictions must be generated
+by applying the same smoother matrices to the treatment vector \(D\):
+\begin{equation}
+    S^z_1D = \hat D^z_1,
+    \qquad
+    S^z_0D = \hat D^z_0.
+    \label{eq:c5b}
+\end{equation}
+
+This is the condition that is easy to describe incorrectly. It is not that the
+same smoother is used for ``treatment and instrument prediction''. The instrument
+\(Z\) defines the groups. The condition is that, within the instrument-specific
+regressions, the same smoother matrices used for the outcome predictions are also
+used to construct the treatment predictions.
+
+In plain language:
+
+\begin{quote}
+The treatment nuisance must be produced by applying the same instrument-specific
+smoothers that were used for the outcome nuisance.
+\end{quote}
+
+This is usually not how standard flexible DML is implemented. Standard DML often
+uses separate learners for outcome and treatment nuisance functions. Therefore,
+Wald-AIPW may be scale-normalized but not fully normalized.
+
+\section{Why random forests behave better than XGBoost}
+
+A random forest prediction can often be represented as a weighted average of
+observed outcomes:
+\begin{equation}
+    \hat m_i = \sum_{j=1}^N s_{ij}Y_j.
+\end{equation}
+If the forest weights satisfy
+\begin{equation}
+    \sum_{j=1}^N s_{ij}=1,
+\end{equation}
+then a constant shift in the outcome is reproduced exactly:
+\begin{align}
+    \hat m_i(Y+c\mathbf{1}_N)
+    &=
+    \sum_j s_{ij}(Y_j+c) \\
+    &=
+    \sum_j s_{ij}Y_j
+    +
+    c\sum_j s_{ij} \\
+    &=
+    \hat m_i(Y)+c.
+\end{align}
+
+Thus, forests naturally behave like affine smoothers when the forest weights are
+row-normalized. This explains why ranger/random forest implementations often pass
+the scale-normalization or translation-invariance diagnostic:
+\begin{equation}
+    \sum_i\omega_i=0.
+\end{equation}
+
+However, random forest Wald-AIPW may still fail full normalization if Condition
+5b does not hold. Thus, the typical classification is:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Learner & Condition 3 & Condition 5b \\
+\midrule
+Random forest / ranger & typically holds & usually fails in standard DML \\
+XGBoost & can fail & usually fails in standard DML \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Hence:
+\begin{align}
+    \text{ranger Wald-AIPW}
+    &\approx
+    \text{scale-normalized but not fully normalized}, \\
+    \text{XGBoost Wald-AIPW}
+    &\approx
+    \text{not guaranteed scale-normalized and not fully normalized}.
+\end{align}
+
+\section{What is \texttt{base\_score} in XGBoost?}
+
+XGBoost does not start with an empty model. It starts with an initial prediction
+for every observation. This initial prediction is called \texttt{base\_score}.
+
+Schematically, the fitted XGBoost outcome regression has the form
+\begin{equation}
+    \hat m_i
+    =
+    \texttt{base\_score}
+    +
+    \nu f_1(X_i)
+    +
+    \nu f_2(X_i)
+    +
+    \cdots
+    +
+    \nu f_B(X_i),
+    \label{eq:xgb_prediction}
+\end{equation}
+where \(f_b\) are boosted trees and \(\nu\) is the learning rate.
+
+Thus, \texttt{base\_score} is the global starting value or intercept before any
+tree corrections are added.
+
+\subsection{Why automatic \texttt{base\_score} is delicate}
+
+If \texttt{base\_score} is automatically estimated from the outcome, then the
+initial intercept is itself a function of \(Y\):
+\begin{equation}
+    \texttt{base\_score} = g(Y).
+\end{equation}
+
+This creates an additional outcome-dependent component in the fitted values.
+Unless the outcome-weight extraction explicitly accounts for this component, the
+recovered smoother matrix may miss part of the dependence of \(\hat m\) on \(Y\).
+Then the algebraic identity
+\begin{equation}
+    \hat\tau = \omega'Y
+\end{equation}
+may fail.
+
+\subsection{Why fixed \texttt{base\_score = 0} is also not a guarantee}
+
+One may try to avoid the hidden outcome-dependent intercept by fixing
+\texttt{base\_score}, for example:
+\begin{equation}
+    \texttt{base\_score}=0.
+\end{equation}
+
+This makes the initial value known. But it does not guarantee the affine-smoother
+condition. The reason is simple. If the outcome is shifted by \(c\),
+\begin{equation}
+    Y_i^c = Y_i+c,
+\end{equation}
+then the initial prediction remains
+\begin{equation}
+    \hat m_i^{(0)}=0.
+\end{equation}
+It does not automatically become \(c\). Therefore, the boosted trees must learn
+the entire constant shift exactly.
+
+With finite boosting rounds, shrinkage, regularization, and tree constraints,
+there is no guarantee that XGBoost learns this constant shift perfectly. Hence,
+one can have
+\begin{equation}
+    \hat m(Y+c\mathbf{1}_N)
+    \neq
+    \hat m(Y)+c\mathbf{1}_N.
+\end{equation}
+
+This is precisely a failure of the affine-smoother property.
+
+\section{Why the other XGBoost hyperparameters matter}
+
+In the implementation used for the learner comparison, the XGBoost learner was
+configured with hyperparameters intended to make it closer to an affine smoother,
+for example
+\begin{verbatim}
+alpha = 0
+subsample = 1
+max_delta_step = 0
+base_score = 0
+\end{verbatim}
+
+The intuition behind these choices is as follows.
+
+\begin{table}[h!]
+\centering
+\caption{Why the XGBoost hyperparameters matter for affine-smoother behavior}
+\begin{tabular}{p{0.24\textwidth}p{0.66\textwidth}}
+\toprule
+Hyperparameter & Relevance for outcome-weight diagnostics \\
+\midrule
+\texttt{base\_score} &
+Initial global prediction. If estimated automatically, it may introduce an
+outcome-dependent intercept not captured by the recovered smoother. If fixed,
+the trees must learn constant shifts exactly. \\
+\addlinespace
+\texttt{alpha = 0} &
+Removes L1 regularization. L1 regularization can create thresholding and
+non-smooth dependence of fitted values on \(Y\). \\
+\addlinespace
+\texttt{subsample = 1} &
+Uses all observations for each tree. This removes one source of randomness and
+makes the implicit smoother more stable. \\
+\addlinespace
+\texttt{max\_delta\_step = 0} &
+Avoids imposing a cap on leaf updates. If updates are capped, constant shifts in
+the outcome may not be absorbed correctly. \\
+\addlinespace
+\texttt{eta} / learning rate &
+Shrinkage can prevent the model from absorbing constant shifts exactly unless
+enough boosting rounds are used. \\
+\addlinespace
+\texttt{nrounds} &
+With too few boosting rounds, the model may not learn the outcome level or its
+constant shifts accurately. \\
+\addlinespace
+\texttt{lambda} &
+L2 regularization shrinks leaf values and can prevent exact reproduction of
+constant shifts. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These choices may help, but they do not turn XGBoost into a guaranteed affine
+smoother. Boosted trees remain an algorithmic learner whose fitted values are not
+generally a row-normalized weighted average of observed outcomes.
+
+\section{Why this can create strange Wald-AIPW results}
+
+Wald-AIPW contains outcome residualization terms. Very schematically, it uses
+objects of the form
+\begin{equation}
+    Y_i - \hat m_i.
+\end{equation}
+
+If the outcome smoother is affine, then after shifting \(Y_i\) by \(c\), the
+prediction also shifts by \(c\), and the residual stays the same:
+\begin{equation}
+    (Y_i+c)-(\hat m_i+c)=Y_i-\hat m_i.
+\end{equation}
+
+If XGBoost does not reproduce the constant shift exactly, then
+\begin{equation}
+    (Y_i+c)-\hat m_i(Y+c)
+    \neq
+    Y_i-\hat m_i(Y).
+\end{equation}
+The constant level of the outcome leaks into the residualized term. Therefore,
+the final estimator can become sensitive to arbitrary outcome shifts.
+
+In outcome-weight language:
+\begin{equation}
+    \hat\tau(Y+c\mathbf{1}_N)-\hat\tau(Y)
+    =
+    c\sum_i\omega_i.
+\end{equation}
+If \(\sum_i\omega_i\neq0\), translation invariance fails.
+
+This explains why XGBoost can produce strange values in Knaus's diagnostic
+simulation. In that simulation, the artificial outcome is
+\begin{equation}
+    Y_i^* = 1 + D_i,
+\end{equation}
+so the true treatment effect is exactly one. A fully normalized estimator gives
+\begin{equation}
+    \omega'Y^*
+    =
+    \omega'\mathbf{1}_N + \omega'D
+    =
+    0+1
+    =
+    1.
+\end{equation}
+If the estimator is only scale-normalized but not fully normalized, then
+\(\omega'\mathbf{1}_N=0\) but \(\omega'D\) need not equal one. If the estimator is
+not even scale-normalized, then \(\omega'\mathbf{1}_N\neq0\), so the baseline
+level \(1\) contaminates the estimated treatment effect.
+
+This is why the XGBoost case is especially problematic in the outcome-weight
+diagnostic framework.
+
+\section{How this relates to the thesis implementation}
+
+In the Vietnam application, the XGBoost Wald-AIPW point estimate is close to the
+ranger estimate. This suggests that, in that low-dimensional near-random-assignment
+design, the point estimate itself is not practically driven by the learner choice.
+
+However, the algebraic identity check fails for XGBoost:
+\begin{equation}
+    \omega'Y \neq \hat\tau.
+\end{equation}
+
+This is the decisive diagnostic warning. It means that the recovered XGBoost
+weights should not be interpreted as an exact outcome-weight representation of
+the reported Wald-AIPW estimate. Therefore, diagnostics such as
+\(\sum_i\omega_i\), effective sample size, negative weight shares, or covariate
+balance under XGBoost weights must be interpreted cautiously.
+
+The correct thesis interpretation is therefore:
+
+\begin{quote}
+XGBoost is included as a learner comparison for the DML point estimate. However,
+because the algebraic identity \(\hat\tau=\omega'Y\) fails, the XGBoost weights are
+not used as the preferred source of outcome-weight diagnostics. The main
+diagnostic interpretation is based on learners for which the identity is verified,
+such as linear outcome regression or ranger.
+\end{quote}
+
+\section{Short summary}
+
+\begin{enumerate}[label=\arabic*.]
+    \item Outcome weights require an exact representation
+    \[
+        \hat\tau=\omega'Y.
+    \]
+
+    \item For Wald-AIPW, this depends on how the outcome regressions are fitted.
+
+    \item Condition 3 is the affine outcome-smoother condition:
+    \[
+        S\mathbf{1}_N=\mathbf{1}_N.
+    \]
+    It means that constant shifts in \(Y\) must be reproduced by the fitted
+    outcome predictions.
+
+    \item If Condition 3 holds, Wald-AIPW can be scale-normalized:
+    \[
+        \sum_i\omega_i=0.
+    \]
+
+    \item Full normalization is stronger and requires the treated and untreated
+    outcome-weight sums to be \(+1\) and \(-1\).
+
+    \item For Wald-AIPW full normalization, Condition 5b is also needed: the same
+    instrument-specific outcome smoothers must be used to generate treatment
+    predictions.
+
+    \item Random forests often satisfy the affine-smoother condition because they
+    predict by row-normalized weighted averages of observed outcomes.
+
+    \item XGBoost can violate the affine-smoother condition because predictions
+    start from \texttt{base\_score} and are then updated by boosted trees under
+    shrinkage, regularization, and finite boosting rounds.
+
+    \item Fixing \texttt{base\_score = 0} avoids a hidden automatically estimated
+    intercept, but it does not guarantee affine behavior. The trees must still
+    learn constant shifts exactly.
+
+    \item Therefore, XGBoost may produce a reasonable DML point estimate but fail
+    the exact Knaus outcome-weight identity:
+    \[
+        \omega'Y=\hat\tau.
+    \]
+\end{enumerate}
+
+\section{One-sentence explanation}
+
+\begin{quote}
+The problem with XGBoost is not that it cannot be used to compute a Wald-AIPW
+estimate; the problem is that its fitted outcome regression need not behave like
+an affine smoother, so the recovered outcome weights may fail to represent the
+estimate exactly and may not satisfy the normalization properties predicted by
+Knaus's framework.
+\end{quote}
+
+\end{document}
