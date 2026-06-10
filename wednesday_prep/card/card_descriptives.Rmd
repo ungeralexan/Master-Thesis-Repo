@@ -1,0 +1,430 @@
+---
+title: "Card (1995) — Design Diagnostics & Weight Stability"
+subtitle: "Why is the Effective Sample Size so Low? Propensity Scores, Overlap, and Weak Instrument"
+author: "Alexander Unger"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+    code_folding: hide
+    df_print: kable
+---
+
+```{css, echo=FALSE}
+body { font-size: 15px; color: #2c2c2c; }
+h1   { border-bottom: 2px solid #2c7bb6; padding-bottom: 6px; margin-top: 36px; }
+h2   { color: #2c7bb6; margin-top: 28px; }
+h3   { color: #444; margin-top: 20px; }
+.note-box { background:#eaf4ff; border-left:4px solid #2c7bb6; padding:10px 16px; border-radius:4px; margin:14px 0; font-size:14px; }
+.warn-box { background:#fff3e0; border-left:4px solid #fb8c00; padding:10px 16px; border-radius:4px; margin:14px 0; font-size:14px; }
+.key-box  { background:#fdeaea; border-left:4px solid #d7191c; padding:10px 16px; border-radius:4px; margin:14px 0; font-size:14px; }
+table { font-size: 13px; }
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 11, fig.height = 5.5, dpi = 110)
+```
+
+```{r packages}
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(AER)
+library(sandwich)
+library(lmtest)
+library(scales)
+
+# Shared kappa toolkit (logit_mle, get_cbps_p, kappa_outcome_weights,
+# kappa_weights, weight_diag, ...). Nothing estimation-related is defined here.
+source("functions_all.R")
+
+# Consistent palette
+col_z1   <- "#2c7bb6"   # Z = 1 (near college)
+col_z0   <- "#d7191c"   # Z = 0 (far from college)
+col_grey <- "#4d4d4d"
+col_card <- "#2166ac"
+col_kit  <- "#984ea3"
+```
+
+```{r data}
+data_path <- "/Users/alexung/Desktop/master_thesis/code/"
+card      <- read_dta(file.path(data_path, "card.dta"))
+card      <- card[!is.na(card$wage) & !is.na(card$educ), ]
+
+# Treatments, instrument, covariates
+card$somecol <- as.integer(card$educ > 12)    # D1: some college
+card$educ16  <- as.integer(card$educ >= 16)   # D2: college completion
+card$Z       <- as.integer(card$nearc4)       # Z: grew up near 4-yr college
+if (!"expersq" %in% names(card)) card$expersq <- card$exper^2
+
+# Propensity scores p(X) = Pr(Z = 1 | X) under both specs
+X_card <- model.matrix(~ exper + expersq + black + south + smsa + smsa66 +
+                          reg661+reg662+reg663+reg664+reg665+reg666+reg667+reg668, card)
+X_kit  <- model.matrix(~ black + south + smsa + smsa66 + south66, card)
+
+card$p_card <- logit_mle(card$Z, X_card)
+card$p_kit  <- logit_mle(card$Z, X_kit)
+
+cat(sprintf("N = %d | Pr(Z=1) = %.3f | somecol = %.3f | educ16 = %.3f\n",
+            nrow(card), mean(card$Z), mean(card$somecol), mean(card$educ16)))
+```
+
+---
+
+# 1. The Puzzle
+
+<div class="key-box">
+**The finding to explain.** In the Card application the effective sample size (ESS = $1/\sum_i \omega_i^2$) of the kappa weights collapses to single digits — for the Kitagawa specification it falls near 1 — even though $N = 3{,}010$. This notebook diagnoses *why*, working through three candidate explanations: (1) a **weak first stage**, (2) **propensity-score concentration / non-overlap**, and (3) **sign-reversing observations** (high $\hat p(X)$ yet $Z=0$ and treated, or the reverse) that destabilize the kappa weights.
+</div>
+
+```{r ess-preview}
+# Quick ESS preview across both specs and both treatments
+ess_one <- function(D, p) {
+  w <- kappa_outcome_weights(card$Z, D, p)$w_u
+  1 / sum(w^2)
+}
+ess_tab <- data.frame(
+  Specification = c("Card", "Kitagawa"),
+  `somecol (ESS)` = c(ess_one(card$somecol, card$p_card),
+                      ess_one(card$somecol, card$p_kit)),
+  `educ16 (ESS)`  = c(ess_one(card$educ16,  card$p_card),
+                      ess_one(card$educ16,  card$p_kit)),
+  check.names = FALSE
+)
+ess_tab[,2:3] <- round(ess_tab[,2:3], 1)
+
+ess_tab %>%
+  kbl(caption = "Effective sample size (τ_ml_u weights) — the puzzle in one table",
+      align = c("l","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 14) %>%
+  column_spec(2:3, bold = TRUE, color = "#d7191c") %>%
+  footnote(general = sprintf("Out of N = %d observations. ESS this low means a handful of observations carry essentially all the weight.", nrow(card)))
+```
+
+---
+
+# 2. First Stage: Is the Instrument Weak?
+
+<div class="note-box">
+**Why this matters.** The kappa weights divide by the conditional first stage. A weak instrument means $\Pr(D=1\mid Z=1,X) - \Pr(D=1\mid Z=0,X)$ is small for many cells; dividing by a near-zero first stage inflates weights and destroys ESS. Card's instrument (college proximity) is known to be weaker than the Vietnam draft lottery.
+</div>
+
+```{r first-stage-table}
+fs_F <- function(formula, data) {
+  fit <- lm(formula, data = data)
+  ct  <- coeftest(fit, vcov = vcovHC(fit, type = "HC1"))
+  c(coef = unname(ct["Z","Estimate"]),
+    se   = unname(ct["Z","Std. Error"]),
+    F    = unname((ct["Z","Estimate"]/ct["Z","Std. Error"])^2))
+}
+
+# First stage for both treatments and both specs
+fs_rows <- rbind(
+  data.frame(Treatment="somecol", Spec="Card",
+             t(fs_F(somecol ~ Z + exper+expersq+black+south+smsa+smsa66+
+                      reg661+reg662+reg663+reg664+reg665+reg666+reg667+reg668, card))),
+  data.frame(Treatment="somecol", Spec="Kitagawa",
+             t(fs_F(somecol ~ Z + black+south+smsa+smsa66+south66, card))),
+  data.frame(Treatment="educ16", Spec="Card",
+             t(fs_F(educ16 ~ Z + exper+expersq+black+south+smsa+smsa66+
+                      reg661+reg662+reg663+reg664+reg665+reg666+reg667+reg668, card))),
+  data.frame(Treatment="educ16", Spec="Kitagawa",
+             t(fs_F(educ16 ~ Z + black+south+smsa+smsa66+south66, card)))
+)
+fs_rows$coef <- round(fs_rows$coef, 4)
+fs_rows$se   <- round(fs_rows$se, 4)
+fs_rows$F    <- round(fs_rows$F, 1)
+fs_rows$`Stock-Yogo (>10)?` <- ifelse(fs_rows$F >= 10, "✓ strong", "✗ WEAK")
+
+fs_rows %>%
+  kbl(caption = "First-stage strength: effect of college proximity (Z) on each treatment",
+      col.names = c("Treatment","Spec","First stage δ̂","SE","F-stat","Stock-Yogo (>10)?"),
+      align = c("l","l","r","r","r","c")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) %>%
+  row_spec(which(fs_rows$F < 10), background = "#fdeaea", bold = TRUE) %>%
+  footnote(general = "HC1-robust first-stage F on the instrument. Compare to Vietnam, where F was far above 10. A weak first stage here is the first driver of weight instability.")
+```
+
+```{r first-stage-plot}
+# First-stage gap: D-rate by Z, for somecol
+fs_gap <- card %>%
+  summarise(
+    `Z = 1 (near college)` = mean(somecol[Z == 1]),
+    `Z = 0 (far)`          = mean(somecol[Z == 0])
+  )
+gap_some <- fs_gap$`Z = 1 (near college)` - fs_gap$`Z = 0 (far)`
+
+fs_gap_e <- card %>%
+  summarise(
+    `Z = 1 (near college)` = mean(educ16[Z == 1]),
+    `Z = 0 (far)`          = mean(educ16[Z == 0])
+  )
+gap_educ <- fs_gap_e$`Z = 1 (near college)` - fs_gap_e$`Z = 0 (far)`
+
+fs_plot_df <- data.frame(
+  Treatment = rep(c("somecol\n(educ > 12)", "educ16\n(educ ≥ 16)"), each = 2),
+  Z = rep(c("Z = 1 (near college)", "Z = 0 (far)"), 2),
+  rate = c(fs_gap$`Z = 1 (near college)`, fs_gap$`Z = 0 (far)`,
+           fs_gap_e$`Z = 1 (near college)`, fs_gap_e$`Z = 0 (far)`)
+)
+
+ggplot(fs_plot_df, aes(x = Treatment, y = rate, fill = Z)) +
+  geom_col(position = position_dodge(0.7), width = 0.6, alpha = 0.9) +
+  geom_text(aes(label = sprintf("%.1f%%", 100*rate)),
+            position = position_dodge(0.7), vjust = -0.4, size = 3.4) +
+  annotate("text", x = 1, y = 0.55,
+           label = sprintf("gap = %.3f", gap_educ), size = 3.5, colour = col_grey) +
+  annotate("text", x = 2, y = 0.55,
+           label = sprintf("gap = %.3f", gap_some), size = 3.5, colour = col_grey) +
+  scale_fill_manual(values = c("Z = 1 (near college)" = col_z1, "Z = 0 (far)" = col_z0)) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 0.62)) +
+  labs(title = "First stage: treatment rates by college proximity",
+       subtitle = "The gap between bars is the unconditional first stage. Small gaps = weak instrument.",
+       x = NULL, y = "Treatment rate", fill = NULL,
+       caption = "Card (1995), N = 3,010.") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom", panel.grid.major.x = element_blank(),
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey40", size = 10),
+        plot.caption = element_text(colour = "grey50", size = 9))
+```
+
+---
+
+# 3. Propensity Score: Concentration & Overlap
+
+<div class="note-box">
+**Why this matters.** The kappa weights contain $1/p(X)$ and $1/(1-p(X))$ terms. Observations with $\hat p(X)$ near 0 or 1 get enormous weights. Unlike Vietnam (where $\hat p$ was tightly clustered around 0.46 by design), the richer Card and Kitagawa covariate sets can push $\hat p(X)$ toward the boundaries — directly inflating weights.
+</div>
+
+## Summary Statistics
+
+```{r ps-summary}
+ps_summary <- function(p, name) {
+  data.frame(Specification = name,
+             Min = min(p), P05 = quantile(p,0.05), P25 = quantile(p,0.25),
+             Mean = mean(p), P75 = quantile(p,0.75), P95 = quantile(p,0.95),
+             Max = max(p), SD = sd(p),
+             `near 0/1` = mean(p < 0.05 | p > 0.95),
+             check.names = FALSE)
+}
+ps_tab <- bind_rows(ps_summary(card$p_card, "Card (14 covariates)"),
+                    ps_summary(card$p_kit,  "Kitagawa (5 covariates)"))
+ps_tab[,2:10] <- lapply(ps_tab[,2:10], function(x) round(x, 4))
+
+ps_tab %>%
+  kbl(caption = "Propensity score p̂(X) = Pr(Z=1|X): summary by specification",
+      align = c("l", rep("r", 9))) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 12.5) %>%
+  column_spec(9, bold = TRUE) %>%
+  column_spec(10, bold = TRUE, color = "#d7191c") %>%
+  footnote(general = "Compare SD and the 'near 0/1' share against Vietnam (SD ≈ 0.10, essentially nothing near the boundaries). Higher dispersion here is the second driver of low ESS.")
+```
+
+## Distribution by Instrument Status
+
+```{r ps-dist-plot, fig.height=6}
+ps_long <- card %>%
+  select(p_card, p_kit, Z) %>%
+  pivot_longer(c(p_card, p_kit), names_to = "spec", values_to = "p_hat") %>%
+  mutate(Specification = factor(spec,
+                                levels = c("p_card", "p_kit"),
+                                labels = c("Card spec", "Kitagawa spec")),
+         Zlab = factor(ifelse(Z == 1, "Z = 1 (near college)", "Z = 0 (far)"),
+                       levels = c("Z = 1 (near college)", "Z = 0 (far)")))
+
+ggplot(ps_long, aes(x = p_hat, fill = Zlab)) +
+  geom_histogram(bins = 40, alpha = 0.7, colour = "white", position = "identity") +
+  geom_vline(xintercept = mean(card$Z), linetype = "dashed", colour = col_grey) +
+  facet_wrap(~ Specification, ncol = 1, scales = "free_y") +
+  scale_fill_manual(values = c("Z = 1 (near college)" = col_z1, "Z = 0 (far)" = col_z0)) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Propensity score distribution by instrument status",
+       subtitle = "Overlap requires both colours present at every p̂. Gaps at the tails = overlap violations → exploding weights.",
+       x = expression(hat(p)(X) == Pr(Z == 1 ~ "|" ~ X)), y = "Count", fill = NULL,
+       caption = "Dashed line = pooled Pr(Z=1).") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom", strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey40", size = 9.5),
+        plot.caption = element_text(colour = "grey50", size = 9))
+```
+
+<div class="warn-box">
+**What to look for.** Where the red (Z=0) bars vanish at high $\hat p$, or blue (Z=1) bars vanish at low $\hat p$, the inverse-probability terms $Z/p$ and $(1-Z)/(1-p)$ have no counterpart to balance against — those observations receive extreme weights. The Kitagawa panel, with only 5 binary covariates, produces discrete $\hat p$ clumps that are especially prone to this.
+</div>
+
+---
+
+# 4. Where Do the Weights Explode?
+
+<div class="note-box">
+**The mechanism.** The kappa weight for the normalized estimator is built from $Z/p - (1-Z)/(1-p)$ scaled by the first stage. Plotting each observation's absolute weight against its $\hat p(X)$ shows exactly which observations dominate — and confirms whether it is the tails of $\hat p$, the sign-reversing cells, or both.
+</div>
+
+```{r weight-vs-pscore, fig.height=6}
+# Build per-observation weights for the worst cell (Kitagawa, the low-ESS one)
+make_wdf <- function(D, p, spec, treat) {
+  w <- kappa_outcome_weights(card$Z, D, p)$w_u
+  data.frame(p_hat = p, w = w, abs_w = abs(w),
+             Z = card$Z, D = D,
+             Spec = spec, Treat = treat)
+}
+wdf <- bind_rows(
+  make_wdf(card$somecol, card$p_kit,  "Kitagawa", "somecol"),
+  make_wdf(card$somecol, card$p_card, "Card",     "somecol")
+)
+wdf$cell <- paste(wdf$Spec, "spec")
+wdf$status <- factor(
+  ifelse(wdf$Z == 1 & wdf$D == 1, "Z=1, treated",
+  ifelse(wdf$Z == 1 & wdf$D == 0, "Z=1, untreated",
+  ifelse(wdf$Z == 0 & wdf$D == 1, "Z=0, treated",
+                                  "Z=0, untreated"))),
+  levels = c("Z=1, treated","Z=1, untreated","Z=0, treated","Z=0, untreated"))
+
+ggplot(wdf, aes(x = p_hat, y = abs_w, colour = status)) +
+  geom_point(alpha = 0.45, size = 1.1) +
+  facet_wrap(~ cell, ncol = 2, scales = "free") +
+  scale_colour_manual(values = c("Z=1, treated"   = "#2c7bb6",
+                                 "Z=1, untreated" = "#abd9e9",
+                                 "Z=0, treated"   = "#d7191c",
+                                 "Z=0, untreated" = "#fdae61")) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Absolute outcome weight vs. propensity score (somecol)",
+       subtitle = "Each point is one observation. Points high on the y-axis dominate the estimate and collapse the ESS.",
+       x = expression(hat(p)(X)), y = expression("|" ~ omega[i] ~ "|"),
+       colour = NULL,
+       caption = "Watch for: 'Z=0, treated' at high p̂ and 'Z=1, untreated' at low p̂ — these sign-reversing cells generate the largest weights.") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom", strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey40", size = 9.5),
+        plot.caption = element_text(colour = "grey50", size = 8.8))
+```
+
+## The Top-Weighted Observations
+
+```{r top-weights}
+# How concentrated? Show how much total weight the top-k observations carry.
+conc_one <- function(D, p, spec) {
+  w  <- kappa_outcome_weights(card$Z, D, p)$w_u
+  aw <- sort(abs(w), decreasing = TRUE)
+  tot <- sum(aw)
+  data.frame(Spec = spec,
+             `Top 1 (%)`  = round(100 * aw[1] / tot, 1),
+             `Top 5 (%)`  = round(100 * sum(aw[1:5]) / tot, 1),
+             `Top 10 (%)` = round(100 * sum(aw[1:10]) / tot, 1),
+             `Top 25 (%)` = round(100 * sum(aw[1:25]) / tot, 1),
+             ESS = round(1 / sum(w^2), 1),
+             check.names = FALSE)
+}
+conc_tab <- bind_rows(
+  conc_one(card$somecol, card$p_card, "Card / somecol"),
+  conc_one(card$somecol, card$p_kit,  "Kitagawa / somecol"),
+  conc_one(card$educ16,  card$p_card, "Card / educ16"),
+  conc_one(card$educ16,  card$p_kit,  "Kitagawa / educ16")
+)
+
+conc_tab %>%
+  kbl(caption = "Weight concentration: share of total |ω| carried by the most extreme observations",
+      align = c("l","r","r","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) %>%
+  column_spec(6, bold = TRUE, color = "#d7191c") %>%
+  footnote(general = "If a handful of observations carry most of the weight, the estimator is effectively using only those points — that is what the low ESS reports numerically.")
+```
+
+---
+
+# 5. Overlap Diagnosis by Treatment Cell
+
+<div class="note-box">
+**Putting it together.** The cross-tabulation of $Z$ × $D$ within propensity-score bins shows where compliers actually live and where cells are empty or near-empty. Empty diagonal cells (e.g. high-$\hat p$ but no $Z=0$ controls) are the formal overlap violations.
+</div>
+
+```{r overlap-table}
+overlap_by_bin <- function(D, p, spec) {
+  bin <- cut(p, breaks = quantile(p, seq(0,1,0.2)), include.lowest = TRUE,
+             labels = c("Q1 (low p̂)","Q2","Q3","Q4","Q5 (high p̂)"))
+  out <- card %>%
+    mutate(bin = bin, D = D) %>%
+    group_by(bin) %>%
+    summarise(n = n(),
+              `n(Z=1)` = sum(Z == 1),
+              `n(Z=0)` = sum(Z == 0),
+              `Pr(D|Z=1)` = round(mean(D[Z==1]), 3),
+              `Pr(D|Z=0)` = round(ifelse(sum(Z==0)>0, mean(D[Z==0]), NA), 3),
+              `first stage` = round(mean(D[Z==1]) - ifelse(sum(Z==0)>0, mean(D[Z==0]), NA), 3),
+              .groups = "drop")
+  out$Spec <- spec
+  out
+}
+ov_kit <- overlap_by_bin(card$somecol, card$p_kit, "Kitagawa")
+
+ov_kit %>%
+  select(bin, n, `n(Z=1)`, `n(Z=0)`, `Pr(D|Z=1)`, `Pr(D|Z=0)`, `first stage`) %>%
+  kbl(caption = "Overlap by propensity-score quintile — Kitagawa spec, somecol (the low-ESS cell)",
+      align = c("l","r","r","r","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) %>%
+  row_spec(which(ov_kit$`n(Z=0)` < 30), background = "#fdeaea") %>%
+  footnote(general = "Highlighted rows: bins with very few Z=0 observations — thin overlap. A near-zero or negative 'first stage' within a bin is where the kappa weights flip sign and explode.")
+```
+
+---
+
+# 6. Summary: Three Drivers of the Low ESS
+
+<div class="key-box">
+**For the meeting.** The low ESS in Card is not an error — it is the visible symptom of three reinforcing design features, all absent in the Vietnam application:
+
+1. **Weak first stage** (Section 2). College proximity moves treatment far less than the draft lottery moved veteran status, so the conditional first stage in the weight denominator is small for many cells.
+
+2. **Dispersed / boundary propensity scores** (Section 3). The richer Card and Kitagawa covariate sets push $\hat p(X)$ toward 0 and 1, where the $1/p$ and $1/(1-p)$ terms blow up — unlike Vietnam's tightly clustered $\hat p \approx 0.46$.
+
+3. **Sign-reversing cells & thin overlap** (Sections 4–5). A small number of observations with high $\hat p$ but $Z=0$ (or low $\hat p$ but $Z=1$) receive enormous weights and carry most of the total — the ESS simply counts how few observations effectively drive the estimate.
+
+The Kitagawa specification is worst on all three counts, which is exactly why its ESS approaches 1.
+</div>
+
+```{r vietnam-contrast}
+contrast <- data.frame(
+  Feature = c("First-stage F (typical)",
+              "p̂(X) standard deviation",
+              "Share of p̂ near 0 or 1",
+              "Resulting ESS"),
+  Vietnam = c("≫ 10 (strong)", "≈ 0.10 (tight)", "≈ 0%", "uniform, moderate"),
+  `Card / Kitagawa` = c("can fall below 10", 
+                        sprintf("%.3f / %.3f", sd(card$p_card), sd(card$p_kit)),
+                        sprintf("%.1f%% / %.1f%%",
+                                100*mean(card$p_card<0.05 | card$p_card>0.95),
+                                100*mean(card$p_kit<0.05  | card$p_kit>0.95)),
+                        "collapses toward 1"),
+  check.names = FALSE
+)
+contrast %>%
+  kbl(caption = "Why Card differs from Vietnam — side by side",
+      align = c("l","l","l")) %>%
+  kable_styling(bootstrap_options = c("striped","hover"),
+                full_width = TRUE, font_size = 13) %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(1, bold = TRUE)
+```
+
+---
+
+*Design diagnostics for the Card (1995) application.*  
+*All weight/propensity functions sourced from `functions_all.R`.*
