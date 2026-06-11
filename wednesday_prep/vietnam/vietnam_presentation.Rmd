@@ -70,8 +70,7 @@ library(ggplot2)
 library(knitr)
 library(kableExtra)
 
-# All kappa estimators, analytical SEs, DML helpers, weight diagnostics
-# are defined in functions_all.R — nothing is defined in this notebook.
+
 source("functions_all.R")
 cat("functions_all.R sourced.\n")
 ```
@@ -99,8 +98,8 @@ sipp_clean$lwage     <- log(sipp_clean$kwage)
 sipp_clean$lwage_cnt <- log(100 * sipp_clean$kwage)
 
 # Core vectors — exact variable names from the original scripts
-Z_sipp <- sipp_clean$rsncode   # instrument:  draft lottery eligibility
-D_sipp <- sipp_clean$nvstat    # treatment:   veteran status
+Z_sipp <- sipp_clean$rsncode   
+D_sipp <- sipp_clean$nvstat    
 Y_dol  <- sipp_clean$lwage
 Y_cnt  <- sipp_clean$lwage_cnt
 k      <- log(100)
@@ -678,9 +677,7 @@ iivm_xgb$summary() %>%
 
 Algebraic identity check (`Σω Y = τ̂`): **`r ok_xgb`**
 
-<div class="warn-box">
-**Note on XGBoost.** The algebraic identity $\sum_i \omega_i Y_i = \hat\tau$ may fail for XGBoost due to a change in `base_score` behaviour in XGBoost ≥ 1.6, which violates the affine smoother condition (Knaus & Rakov). This is a known limitation; ranger is recommended for standard use.
-</div>
+
 
 ---
 
