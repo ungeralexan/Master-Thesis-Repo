@@ -185,3 +185,162 @@ If the norm is below the tolerance we say convergence and stop
 Then we compute the Jacobian (the matrix of derivatives of the moment conditions with respect to the coefficients) and solve J * step.
 Then a backtracking line search is activated in which we try the full step then half, then quater up to 50 halvings until the momet norm actually decreases. 
 I also implemented a ridge fallback as if the Jacobian is singular (collinearity), I add a small positive number along the diagonal (ridge) which makes the matrix invertible again
+
+
+
+## 6 `cbps()`
+---
+
+```r
+cbps <- function(Z, X, tol = 1e-9, max_iter = 5000, verbose = FALSE) {
+  fit_cbps_alpha(Z, X, tol = tol, max_iter = max_iter)
+}
+```
+
+### What it does : 
+It is a wrapper, it just calls fit_cbps_alpha() and controls what gets handed back to the caller.
+It exists for readability and inputs the instrument vector, the covariate mateix with intercpet and the parameters tol, max_iter.
+It iotputs the same list from fit_cbps_alpha(): alpha, p, X_used, converged, max_moment
+
+
+
+## 7 `get_cbps_p()`
+
+---
+
+```r
+get_cbps_p <- function(Z, X) {
+  out <- cbps(Z, X)
+  if (is.list(out) && !is.null(out$p)) return(as.vector(out$p))
+  as.vector(out)
+}
+```
+
+
+
+### What it does 
+As the next functions mainly need propensity scores and not alpha or the X matrix we just extract the out$p 
+We again input the the instrument vector and teh covariate matrix with the intercepz and get as output the p vector whihc is a plain numeric vector of CBPS propensity scores. 
+
+
+## 8 `kappa_outcome_weights()`
+
+---
+
+```r
+kappa_weights <- function(Z, D, p) {
+  list(
+    kappa  = 1 - D * (1 - Z) / (1 - p) - (1 - D) * Z / p,
+    kappa1 = D * (Z - p) / (p * (1 - p)),
+    kappa0 = (1 - D) * ((1 - Z) - (1 - p)) / (p * (1 - p))
+  )
+}
+```
+
+### What it does:
+Kappa ifentifies Abbadies original identification weight. Kappa 1 identifies the treated complier weight and kappa 0 identifies the untreated complier weight. 
+It inputs the instruement (0/1), the treatment (0/1) and the proipensity scores
+(maybe make sure they all are kind of binary).
+It outputs a list of three vectors each length N :
+- Kappa: WHich is abbadies original identification weight
+- Kappa1: which is the treated complier weight
+- Kappa0: which is the untreated complier weight
+
+
+## 9 `tau_u()`
+
+---
+
+```r
+tau_u <- function(Y, Z, D, p) {
+  s1 <- sum(Z / p)
+  s0 <- sum((1 - Z) / (1 - p))
+  numerator   <- sum(Y * Z / p) / s1 - sum(Y * (1 - Z) / (1 - p)) / s0
+  denominator <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  numerator / denominator
+}
+```
+
+### What it does:
+This is the normalized estimator by UYsal which is translation invariance at the same time.
+It Computes separately normalised IPW means for Z=1 and Z=0, then takes.
+It takes as input the the outcome vector Y the unstrument the treatement and the propesnity scores. 
+It gives as uotput a single number which is the estimator. 
+
+
+## 10 `tau_a10()`
+
+---
+
+```r
+tau_a10 <- function(Y, Z, D, p) {
+  kw <- kappa_weights(Z, D, p)
+  sum(kw$kappa1 * Y) / sum(kw$kappa1) - sum(kw$kappa0 * Y) / sum(kw$kappa0)
+}
+```
+
+### What it does
+It depicts : BADIE-CATTANEO NORMALIZED ESTIMATOR  [translation invariant]. It sepperately normalizes kappa 1 and kappa 0 weighted outcome weights. 
+It takes the same inputs as the function above and outputs the LE using the Badie Cattaneo normalization
+
+
+
+## 11 `tau_unnorm()`
+
+---
+
+```r
+tau_unnorm <- function(Y, Z, D, p, which = "a") {
+  kw        <- kappa_weights(Z, D, p)
+  numerator <- mean(Y * (Z - p) / (p * (1 - p)))
+  denom_val <- switch(which,
+                      "a"  = mean(kw$kappa),
+                      "a1" = mean(kw$kappa1),
+                      "a0" = mean(kw$kappa0)
+  )
+  numerator / denom_val
+}
+```
+
+
+### What it does :
+We use the property that all thre unnormlised estimators share the same numerator only the denominator differs. So rather than writing three separate functions, your code implements all three in one, with a switch statement to pick the denominator.
+The input are the outcome, the instrument the treatment and the propensity score and a which function whihc determines which of the three functions I should use. Like which of three denominators and then gives as output the estimator we select.
+
+
+## 12 `kappa_outcome_weights()`
+
+---
+
+```r
+kappa_outcome_weights <- function(Z, D, p) {
+  n  <- length(Z)
+  kw <- kappa_weights(Z, D, p)
+
+  # tau_u weights
+  s1  <- sum(Z / p)
+  s0  <- sum((1 - Z) / (1 - p))
+  dD  <- sum(D * Z / p) / s1 - sum(D * (1 - Z) / (1 - p)) / s0
+  w_u <- (Z / p / s1 - (1 - Z) / (1 - p) / s0) / dD
+
+  # tau_a10 weights
+  w_a10 <- kw$kappa1 / sum(kw$kappa1) - kw$kappa0 / sum(kw$kappa0)
+
+  # common numerator weight for unnormalized estimators
+  num_w <- (Z - p) / (p * (1 - p)) / n
+
+  list(
+    w_u   = as.vector(w_u),
+    w_a10 = as.vector(w_a10),
+    w_a   = as.vector(num_w / mean(kw$kappa)),
+    w_a1  = as.vector(num_w / mean(kw$kappa1)),
+    w_a0  = as.vector(num_w / mean(kw$kappa0))
+  )
+}
+```
+
+### What it does:
+Every single estimator can be written as a sum of the outcomes times the weighst per observation. 
+We take the five estimator formulas you already know and algebraically collapse each one into its weight form. 
+The inputs are the Instrument, the treatment and he propensity score and as outcomes we get different weight vectors of length N.
+Which is the number of observations

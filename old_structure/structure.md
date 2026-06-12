@@ -48,8 +48,7 @@ estimators but does not apply it empirically. This thesis fills that gap.
 
 **Section 1.4 — Contribution**
 1. Derive closed-form outcome weights for τ̂ᵤ in the Knaus PIVE framework; show
-   analytically why Σωᵢ = 0 iff translation invariant. τ̂ₐ,₁₀ handled via
-   algebraic contrast with τ̂ᵤ.
+   analytically why Σωᵢ = 0 iff translation invariant, check this also for all the applications in the code, noticing that there are genuinly to methods how to proceed there. 
 2. Clarify the distinction between Abadie's kappa weights (identification objects)
    and outcome weights in the PIVE sense (ωᵢ such that τ̂ = ΣωᵢYᵢ).
 3. Apply Love plots and ESS diagnostics to kappa estimators for the first time,
@@ -57,13 +56,11 @@ estimators but does not apply it empirically. This thesis fills that gap.
 4. Compare kappa estimators (τ̂ᵤᵐˡ, τ̂ᵤᶜᵇ, τ̂ₐ,₁₀) with DML Wald-AIPW across
    three empirical applications, using multiple ML learners for the nuisance
    parameters.
-5. **Design dominates learner:** document empirically that in low-dimensional
-   near-random-assignment designs, ESS and weight structure are identical across
-   all estimators and ML learners — normalization, not covariate adjustment, drives
-   estimate divergence.
-6. Discuss implications for the OutcomeWeights package: show how kappa outcome
-   weights can be computed in the same format as `get_outcome_weights()`, enabling
-   unified Love-plot diagnostics.
+5. Apply the DML estimators using Knaus outcome weights package. And make a full diagnostics section meaning really look sometimes at the smoother matrix and maybe look also at the descritptives or so.  
+6. Implement the Wald AIPW estimation with double machine learning using XGBOOST and linear regression and the ranger function of the package and try there to set up a tuning section which tunes the parameters for the xgboost in order to get clean results for the DMl estimator section.
+7. New task from Knaus whihc he summarised as 2. Eine sehr spannende Erweiterung wäre noch Wald-AIPW und PLR-IV mit logit pscore und OLS outcome regression zu implementieren, quasi als Zwischenstufe zwischen den parametrischen Methoden im Wooldridge Paper und den DML Methoden. Das ist nicht im OutcomeWeights Paket abgedeckt und wäre gerade deswegen ideal, um auch ein bisschen zu Coden. Am einfachsten wäre es vermutlich, das über das DoubleML package zu machen. Ich hänge dir mal an, wie man es ohne Instrument innerhalb von DoubeML implementieren würde. Ich denke es würde dann darauf hinauslaufen diese Funktion https://github.com/MCKnaus/OutcomeWeights/blob/0c94f940b04c14d0247b46842af37752e306b79e/R/DoubleML.R#L191 kompatibel zu machen mit lrn("regr.lm"). Wenn du das sauber hinbekommst (ich würde dir bei Problemen auch helfen) hättest du deutlich mehr erreicht, als wenn du die instrumental_forest Funktionen einfach anwendest und es würde sich exzellent in die übergeordnete Fragestellung einfügen. Was meinst du?
+
+
 
 **Section 1.5 — Road map**
 Brief chapter-by-chapter overview. The three applications are chosen to span the
